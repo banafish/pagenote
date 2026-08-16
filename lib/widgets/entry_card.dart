@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
+import '../models/canvas_page.dart';
 import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
+import 'canvas/canvas_view.dart';
 
 /// 时间轴中的手账卡片。
 class EntryCard extends StatelessWidget {
@@ -28,14 +30,147 @@ class EntryCard extends StatelessWidget {
   final ValueChanged<String>? onShare;
   final bool compact;
 
+  /// 旧数据（无 canvas 列）首次展示时合成等价画布并记忆在条目上,
+  /// 随条目下次落库自然持久化 —— 非破坏性的渐进迁移。
+  JournalCanvas? get _canvas {
+    if (entry.canvas != null) return entry.canvas;
+    if (!_hasLegacyContent) return null;
+    return entry.canvas = synthesizeCanvas(entry);
+  }
+
+  bool get _hasLegacyContent =>
+      entry.title.trim().isNotEmpty ||
+      entry.content.trim().isNotEmpty ||
+      entry.images.isNotEmpty ||
+      entry.stickers.isNotEmpty ||
+      entry.paper.isNotEmpty;
+
+  /// 按画布纵横比渲染整页。
+  Widget _page(JournalCanvas canvas) => AspectRatio(
+    aspectRatio: 1 / canvas.effectiveHeight,
+    child: CanvasView(canvas: canvas, entry: entry),
+  );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final date = DateUtils2.parseKey(entry.date);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final canvas = _canvas;
+    if (canvas != null) {
+      // 画布条目：整页 WYSIWYG 预览（与编辑器、分享长图同一渲染器）。
+      final capped = canvas.effectiveHeight > 1.9;
+      return Card(
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: onTap,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(19),
+                    ),
+                    child: capped
+                        ? SizedBox(
+                            height: 1.9 * (compact ? 300.0 : 360.0),
+                            child: Center(
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: SizedBox(
+                                  width: compact ? 300.0 : 360.0,
+                                  child: _page(canvas),
+                                ),
+                              ),
+                            ),
+                          )
+                        : _page(canvas),
+                  ),
+                ),
+                if (entry.tags.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final tag in entry.tags.take(4))
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer.withValues(
+                                alpha: 0.55,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '#$tag',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        if (entry.tags.length > 4)
+                          Text(
+                            '+${entry.tags.length - 4}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            // 快速速记「未整理」标记（REQ-16）。
+            if (entry.isQuickNote)
+              Positioned(
+                top: 10,
+                left: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(color: const Color(0x33E6A23C)),
+                  ),
+                  child: const Text(
+                    '未整理',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF9C6B1F),
+                    ),
+                  ),
+                ),
+              ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: _MenuButton(
+                isFavorite: entry.isFavorite,
+                canShare: onShare != null,
+                onToggleFavorite: () => onToggleFavorite(entry.id),
+                onDelete: () => onDelete(entry.id),
+                onShare: onShare == null ? null : () => onShare!(entry.id),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     // 纸张装饰背景（REQ-13）：设置过纸张的条目以纸张纹理为卡片底。
     final paper = paperById(entry.paper);
+    final date = DateUtils2.parseKey(entry.date);
 
     return Card(
       clipBehavior: Clip.antiAlias,

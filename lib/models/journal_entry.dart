@@ -1,3 +1,4 @@
+import 'canvas_page.dart';
 import 'decoration.dart';
 import 'mood.dart';
 
@@ -15,6 +16,7 @@ class JournalEntry {
     List<String>? activities,
     this.paper = '',
     List<Sticker>? stickers,
+    this.canvas,
     this.isQuickNote = false,
     this.isFavorite = false,
     required this.createdAt,
@@ -45,6 +47,11 @@ class JournalEntry {
   /// 页面贴纸（REQ-13），见 models/decoration.dart。
   List<Sticker> stickers;
 
+  /// 画布版面（元素树，REQ-13 完整版）：背景 + 元素列表。
+  /// 保存过画布编辑后即为版面事实源；旧数据为 null,展示前用
+  /// [synthesizeCanvas] 自动生成等价元素。
+  JournalCanvas? canvas;
+
   /// 快速速记标记（REQ-16）：true 表示尚未整理的速记。
   bool isQuickNote;
   bool isFavorite;
@@ -69,6 +76,7 @@ class JournalEntry {
     'activities': activities.join('\u001F'),
     'paper': paper,
     'stickers': encodeStickers(stickers),
+    'canvas': encodeCanvas(canvas),
     'isQuickNote': isQuickNote ? 1 : 0,
     'isFavorite': isFavorite ? 1 : 0,
     'createdAt': createdAt.millisecondsSinceEpoch,
@@ -90,6 +98,7 @@ class JournalEntry {
     activities: _splitField(map['activities']),
     paper: (map['paper'] ?? '') as String,
     stickers: decodeStickers((map['stickers'] ?? '') as String),
+    canvas: decodeCanvas((map['canvas'] ?? '') as String),
     isQuickNote: (map['isQuickNote'] ?? 0) as int == 1,
     isFavorite: (map['isFavorite'] ?? 0) as int == 1,
     createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']! as int),

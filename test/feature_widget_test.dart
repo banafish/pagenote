@@ -18,6 +18,8 @@ import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
+import 'package:pagenote/utils/date_utils.dart';
+import 'package:pagenote/widgets/canvas/canvas_view.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -100,23 +102,36 @@ void main() {
   }
 
   testWidgets('REQ-01 那年今天：有历史时展示卡片，无历史不占位', (tester) async {
+    // 用真实「今天」构造同月同日,避免测试随时钟过期。
+    final today = DateTime.now();
+    String key(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final lastYear = DateTime(today.year - 1, today.month, today.day);
+
     // 有去年今天的记录 → 展示。
     await tester.pumpWidget(
       await wrap(
         tester,
         child: HomePage(onOpenEditor: (_, _) {}),
         seed: [
-          entry('old', date: '2025-08-16', title: '去年今天写的'),
-          entry('today', date: '2026-08-16', title: '今天写的'),
+          entry('old', date: key(lastYear), title: '去年今天写的'),
+          entry('today', date: key(today), title: '今天写的'),
         ],
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('那年今天'), findsOneWidget);
-    expect(find.text('2025 年的今天'), findsOneWidget);
-    // 标题在回忆卡片与时间轴卡片中各出现一次。
-    expect(find.text('去年今天写的'), findsNWidgets(2));
+    expect(find.text('${today.year - 1} 年的今天'), findsOneWidget);
+    expect(find.text('去年今天写的'), findsOneWidget, reason: '回忆卡片中可见');
+
+    // 时间线卡片现在渲染整页画布,较高 → 滚动到旧条目卡片出现。
+    final canvasTitle = find.descendant(
+      of: find.byType(CanvasView),
+      matching: find.text('去年今天写的'),
+    );
+    await tester.scrollUntilVisible(canvasTitle, 400);
+    expect(canvasTitle, findsOneWidget, reason: '时间线画布整页渲染旧条目标题');
   });
 
   testWidgets('REQ-01 那年今天：无历史记录时完全不出现', (tester) async {
@@ -124,7 +139,7 @@ void main() {
       await wrap(
         tester,
         child: HomePage(onOpenEditor: (_, _) {}),
-        seed: [entry('today', date: '2026-08-16')],
+        seed: [entry('today', date: DateUtils2.dateKey(DateTime.now()))],
       ),
     );
     await tester.pumpAndSettle();
@@ -273,44 +288,41 @@ void main() {
     expect(find.text('📖'), findsOneWidget);
   });
 
-  testWidgets('REQ-04 编辑页：新条目默认展开一问并可插入正文；编辑旧条目默认收起', (tester) async {
-    final todayKey =
-        '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}';
+  testWidgets('REQ-04 编辑页：一问可插入画布正文（调研二阶段「今日手账」入口）', (tester) async {
+    final todayKey = DateUtils2.dateKey(DateTime.now());
     final prompt = promptForDate(todayKey);
 
-    // 新建：默认展开。
+    // 新建：一问收纳在底部工具栏,点开即展示并可插入。
     await tester.pumpWidget(await wrap(tester, child: const EditorPage()));
+    await tester.pumpAndSettle();
+    expect(find.text('一问'), findsOneWidget, reason: '工具栏提供每日一问入口');
+
+    await tester.tap(find.text('一问'));
     await tester.pumpAndSettle();
     expect(find.text('今日一问'), findsOneWidget);
     expect(find.text(prompt), findsOneWidget);
 
-    // 插入正文开头（REQ-04.2）：拖动表单直到正文输入框构建（标题框会先出现）。
-    expect(find.text(prompt), findsOneWidget);
-    final chip = find.widgetWithText(ActionChip, '插入正文');
-    expect(chip, findsOneWidget);
-    final gesture = await tester.startGesture(tester.getCenter(chip.first));
-    await gesture.up();
+    // 插入正文开头（REQ-04.2）：问题填入画布正文文本框。
+    await tester.tap(find.text('插入正文'));
     await tester.pumpAndSettle();
-    final contentField = find.widgetWithText(TextField, '记录此刻的所思所感…');
-    var guard = 0;
-    while (contentField.evaluate().isEmpty && guard++ < 30) {
-      await tester.drag(find.byType(ListView).first, const Offset(0, -150));
-      await tester.pumpAndSettle();
-    }
-    final editableTexts = find
-        .byType(EditableText)
-        .evaluate()
-        .map((e) => (e.widget as EditableText).controller.text)
-        .toList();
-    expect(
-      editableTexts.any((t) => t.contains(prompt)),
-      isTrue,
-      reason: '问题应被插入正文开头，实际输入框内容: $editableTexts',
-    );
+    expect(find.textContaining(prompt), findsOneWidget, reason: '问题已填入正文文本框');
 
-    // 编辑已有条目：默认收起，可手动展开（REQ-04.3）。
-    // 先卸载页面重置滚动位置。
-    await tester.pumpWidget(const SizedBox.shrink());
+    // 保存后正文结构化字段包含问题。
+    final journal = tester
+        .element(find.byType(EditorPage))
+        .read<JournalProvider>();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(
+      journal.entries.first.content,
+      contains(prompt),
+      reason: '保存后 content 同步自画布正文元素',
+    );
+  });
+
+  testWidgets('REQ-04 编辑旧条目：打开编辑不会自动插入一问', (tester) async {
+    final prompt = promptForDate(DateUtils2.dateKey(DateTime.now()));
+
     await tester.pumpWidget(
       await wrap(
         tester,
@@ -318,11 +330,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('今日一问'), findsOneWidget);
-    expect(find.text(prompt), findsNothing, reason: '编辑模式默认收起');
 
-    await tester.tap(find.text('今日一问'));
-    await tester.pumpAndSettle();
-    expect(find.text(prompt), findsOneWidget, reason: '手动展开可见');
+    // 画布只显示旧内容,不自动带入一问（REQ-04.3）。
+    expect(find.text('旧手账'), findsOneWidget);
+    expect(find.text(prompt), findsNothing, reason: '编辑模式不自动插入一问');
   });
 }

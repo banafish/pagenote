@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../database/app_database.dart';
+import '../models/canvas_page.dart';
 import '../models/journal_entry.dart';
 import '../models/template.dart' as tpl show builtinTemplates;
 import '../models/template.dart' show JournalTemplate, newTemplateId;
@@ -25,14 +26,19 @@ class TemplateProvider extends ChangeNotifier {
       _backing.where((t) => !t.builtin).toList();
 
   /// 首次启动补种内置模板（已存在则跳过）。
+  /// 内置模板升级出整页版式后（canvas 列）,存量安装也自动补上版式,
+  /// 但保留用户改过的名字等字段。
   Future<void> load() async {
     final existing = await _db.getAllTemplates();
-    final existingIds = existing.map((t) => t.id).toSet();
     // 注意：此处必须引用 models/template.dart 的顶层种子列表，
     // 而非本类的 builtinTemplates getter（此时 _backing 尚为空）。
     for (final b in tpl.builtinTemplates) {
-      if (!existingIds.contains(b.id)) {
+      final stored = existing.where((t) => t.id == b.id).firstOrNull;
+      if (stored == null) {
         await _db.insertTemplate(b);
+      } else if (b.canvas != null && stored.canvas == null && stored.builtin) {
+        stored.canvas = b.canvas;
+        await _db.insertTemplate(stored);
       }
     }
     _backing = await _db.getAllTemplates();
@@ -50,14 +56,19 @@ class TemplateProvider extends ChangeNotifier {
     await load();
   }
 
-  /// 将一篇手账另存为模板（REQ-09.3）。
-  Future<JournalTemplate> saveFromEntry(JournalEntry entry, String name) async {
+  /// 将一篇手账另存为模板（REQ-09.3）：连同整页版式一起保存。
+  Future<JournalTemplate> saveFromEntry(
+    JournalEntry entry,
+    String name, {
+    JournalCanvas? canvas,
+  }) async {
     final template = JournalTemplate(
       id: newTemplateId(),
       name: name,
       title: entry.title,
       content: entry.content,
       tags: List.from(entry.tags),
+      canvas: canvas?.clone(),
     );
     await saveTemplate(template);
     return template;

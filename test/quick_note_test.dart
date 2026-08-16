@@ -161,8 +161,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 整理提示可见。
-    expect(find.textContaining('这是一条速记'), findsOneWidget);
+    // 画布上可见速记内容（旧数据自动合成为正文文本框）。
+    expect(find.textContaining('地铁上想到的一个点子'), findsOneWidget);
 
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();

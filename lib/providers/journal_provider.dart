@@ -379,15 +379,24 @@ class JournalProvider extends ChangeNotifier {
     for (final incoming in data.entries) {
       final mapped = incoming.copy();
       final newPaths = <String>[];
+      final nameToNewPath = <String, String>{};
       for (final name in mapped.images) {
         final bytes = data.attachments[name];
         if (bytes != null) {
-          newPaths.add(
-            await Attachments.persistBytes(bytes, p.extension(name)),
+          final newPath = await Attachments.persistBytes(
+            bytes,
+            p.extension(name),
           );
+          newPaths.add(newPath);
+          nameToNewPath[name] = newPath;
         }
       }
       mapped.images = newPaths;
+      // 画布上的照片元素路径按文件名同步重映射（跨设备附件路径不同）。
+      mapped.canvas?.remapImagePaths((path) {
+        final mapped2 = nameToNewPath[p.basename(path)];
+        return mapped2 ?? path;
+      });
 
       if (!overwrite) {
         final existing = [

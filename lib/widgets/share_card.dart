@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
+import '../models/canvas_page.dart';
 import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
+import 'canvas/canvas_view.dart';
 import 'sticker_layer.dart';
 
 /// 分享长图卡面（REQ-11）：固定浅色纸质风格,深色模式下导出同样用浅色模板。
@@ -27,6 +29,57 @@ class ShareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 画布条目：整页元素树直出（与编辑器、时间线同一渲染器,WYSIWYG）。
+    final canvas = entry.canvas ??
+        (entry.title.trim().isNotEmpty ||
+                entry.content.trim().isNotEmpty ||
+                entry.images.isNotEmpty ||
+                entry.stickers.isNotEmpty ||
+                entry.paper.isNotEmpty
+            ? entry.canvas = synthesizeCanvas(entry)
+            : null);
+    if (canvas != null) {
+      return ColoredBox(
+        color: paper,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 400,
+              child: CanvasView(canvas: canvas, entry: entry),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(26, 6, 26, 10),
+              child: _Divider(),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(26, 0, 26, 18),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  if (showSignature)
+                    const Row(
+                      children: [
+                        Text('📖', style: TextStyle(fontSize: 13)),
+                        SizedBox(width: 4),
+                        Text(
+                          '拾页 PageNote',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final images = entry.images.take(3).toList();
     final entryPaper = paperById(entry.paper);
 

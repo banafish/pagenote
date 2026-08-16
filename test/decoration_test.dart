@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pagenote/database/app_database.dart';
+import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/models/decoration.dart';
 import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/pages/editor_page.dart';
@@ -15,7 +16,6 @@ import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/services/backup_service.dart';
-import 'package:pagenote/widgets/sticker_layer.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -124,7 +124,7 @@ void main() {
     recorder.endRecording().dispose();
   });
 
-  testWidgets('编辑页装饰：选纸张、加贴纸并保存后持久化（REQ-13）', (tester) async {
+  testWidgets('编辑页装饰：选纸张、加贴纸并保存后持久化（REQ-13 画布版）', (tester) async {
     final db = AppDatabase.inMemory();
     final sqlite = await db.database;
     await sqlite.delete('entries');
@@ -157,41 +157,42 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 表单较长(装饰区在正文上方):先处理装饰,再向下滚到正文输入。
-    await tester.scrollUntilVisible(
-      find.text('加贴纸'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    // 选择「方格」纸张。
-    await tester.tap(find.byKey(const ValueKey('paper-grid')));
+    // 底部工具栏打开贴纸面板,切到「表情」页签添加一枚 emoji 贴纸。
+    await tester.tap(find.text('贴纸'));
     await tester.pumpAndSettle();
-
-    // 打开贴纸面板并添加一枚贴纸。
-    await tester.tap(find.text('加贴纸'));
+    await tester.tap(find.text('表情'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('🌸').first);
     await tester.pumpAndSettle();
-    expect(find.byType(StickerView), findsOneWidget, reason: '添加后贴纸浮在页面上');
 
-    // 滚到正文输入框并输入内容。
-    final contentField = find.widgetWithText(TextField, '记录此刻的所思所感…');
-    await tester.scrollUntilVisible(
-      contentField,
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.enterText(contentField, '装饰的手账');
-    await tester.pump();
+    // 选择「方格」纸张。
+    await tester.tap(find.text('纸张'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('方格'));
+    await tester.pumpAndSettle();
+
+    // 点标题占位（首点选中,再点打开文字编辑）输入标题。
+    final titleHint = find.text('点击输入标题…');
+    await tester.tap(titleHint, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(titleHint, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '装饰的手账');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
 
     // 保存。
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
     final saved = journal.entries.single;
-    expect(saved.paper, 'grid');
-    expect(saved.stickers.single.emoji, '🌸');
-    expect(saved.stickers.single.dx, 0.5);
+    expect(saved.paper, 'grid', reason: '画布纸张同步进结构化字段');
+    expect(saved.title, '装饰的手账');
+    final canvas = saved.canvas!;
+    expect(canvas.paperId, 'grid');
+    final sticker = canvas.elements.whereType<StickerElement>().single;
+    expect(sticker.key, 'emoji:🌸');
+    expect(canvas.firstOfRole('title')?.text, '装饰的手账');
 
     await db.close();
   });

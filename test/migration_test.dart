@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pagenote/database/app_database.dart';
+import 'package:pagenote/models/canvas_page.dart';
 
 void main() {
   setUpAll(() {
@@ -10,7 +11,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  test('全新安装直接建最新表结构（v4）', () async {
+  test('全新安装直接建最新表结构（v5）', () async {
     final db = AppDatabase.inMemory();
     final sqlite = await db.database;
     expect(await sqlite.getVersion(), AppDatabase.dbVersion);
@@ -21,13 +22,13 @@ void main() {
     expect(names, containsAll([
       'id', 'date', 'title', 'content', 'mood', 'weather', 'tags',
       'images', 'activities', 'isFavorite', 'createdAt', 'updatedAt',
-      'deletedAt', 'paper', 'stickers', 'isQuickNote',
+      'deletedAt', 'paper', 'stickers', 'canvas', 'isQuickNote',
     ]));
 
     final templateColumns =
         await sqlite.rawQuery('PRAGMA table_info(templates)');
     expect(templateColumns.map((c) => c['name']), containsAll(
-        ['id', 'name', 'title', 'content', 'tags', 'builtin']));
+        ['id', 'name', 'title', 'content', 'tags', 'builtin', 'canvas']));
 
     await db.close();
   });
@@ -189,6 +190,92 @@ void main() {
 
     final sqlite = await appDb.database;
     expect(await sqlite.getVersion(), AppDatabase.dbVersion);
+    await appDb.close();
+    await databaseFactory.deleteDatabase(path);
+  });
+
+  test('v4 → v5 迁移：补 entries/templates 的 canvas 列,旧数据原样保留（调研三阶段）', () async {
+    final dir = await databaseFactory.getDatabasesPath();
+    final path = p.join(dir, 'pagenote-migration-test-v4.db');
+    await databaseFactory.deleteDatabase(path);
+
+    final v4 = await openDatabase(path, version: 4, onCreate: (db, _) async {
+      await db.execute('''
+        CREATE TABLE entries (
+          id TEXT PRIMARY KEY,
+          date TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          mood TEXT,
+          weather TEXT,
+          tags TEXT NOT NULL DEFAULT '',
+          images TEXT NOT NULL DEFAULT '',
+          activities TEXT NOT NULL DEFAULT '',
+          paper TEXT NOT NULL DEFAULT '',
+          stickers TEXT NOT NULL DEFAULT '',
+          isQuickNote INTEGER NOT NULL DEFAULT 0,
+          isFavorite INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL,
+          deletedAt INTEGER
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL DEFAULT '',
+          tags TEXT NOT NULL DEFAULT '',
+          builtin INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+          "INSERT INTO entries VALUES ('e4', '2026-05-01', 'v4条目', '带装饰的旧手账', NULL, NULL, '', '', '', 'stars', '[]', 0, 0, 1, 2, NULL)");
+      await db.execute(
+          "INSERT INTO templates VALUES ('t4', '旧模板', '', '内容', '', 0, 1, 2)");
+    });
+    await v4.close();
+
+    final appDb = AppDatabase.atPath(path);
+    final entries = await appDb.getAllEntries();
+    expect(entries.length, 1);
+    expect(entries.first.title, 'v4条目');
+    expect(entries.first.paper, 'stars');
+    expect(entries.first.canvas, isNull, reason: 'v4 条目无画布,展示时惰性合成');
+
+    // canvas 列可写可读。
+    final entry = entries.first;
+    entry.canvas = synthesizeCanvas(entry);
+    await appDb.updateEntry(entry);
+    final reloaded = (await appDb.getAllEntries()).first;
+    expect(reloaded.canvas, isNotNull);
+    expect(reloaded.canvas!.firstOfRole('title')!.text, 'v4条目');
+
+    // 模板 canvas 列同样可用。
+    final templates = await appDb.getAllTemplates();
+    expect(templates.single.canvas, isNull);
+    templates.single.canvas = JournalCanvas(paperId: 'sakura');
+    await appDb.insertTemplate(templates.single);
+    expect(
+      (await appDb.getAllTemplates()).single.canvas!.paperId,
+      'sakura',
+    );
+
+    final sqlite = await appDb.database;
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
+    final entryColumns =
+        (await sqlite.rawQuery('PRAGMA table_info(entries)'))
+            .map((c) => c['name'])
+            .toSet();
+    expect(entryColumns, contains('canvas'));
+    final templateColumns =
+        (await sqlite.rawQuery('PRAGMA table_info(templates)'))
+            .map((c) => c['name'])
+            .toSet();
+    expect(templateColumns, contains('canvas'));
     await appDb.close();
     await databaseFactory.deleteDatabase(path);
   });

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/journal_entry.dart';
+import '../models/mood.dart';
 import '../models/template.dart';
 import '../providers/template_provider.dart';
+import '../utils/date_utils.dart';
+import 'canvas/canvas_view.dart';
 
-/// 模板选择底部弹层（REQ-09.2）：新建手账时一键套用。
+/// 模板选择底部弹层（REQ-09.2 + 调研二阶段）：
+/// 整页版式模板直接展示画布预览,「新建 → 选模板 → 替换文字」三步成稿。
 Future<JournalTemplate?> showTemplatePicker(BuildContext context) {
   return showModalBottomSheet<JournalTemplate>(
     context: context,
@@ -12,7 +17,7 @@ Future<JournalTemplate?> showTemplatePicker(BuildContext context) {
     isScrollControlled: true,
     builder: (sheetContext) => DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.55,
+      initialChildSize: 0.62,
       builder: (_, controller) => ListView(
         controller: controller,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -25,7 +30,7 @@ Future<JournalTemplate?> showTemplatePicker(BuildContext context) {
           ),
           const SizedBox(height: 4),
           Text(
-            '将一键填充预设标题与分节结构',
+            '套用整页版式,替换文字即可成稿',
             style: TextStyle(
               fontSize: 12.5,
               color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
@@ -50,6 +55,17 @@ class _TemplateTile extends StatelessWidget {
   final JournalTemplate template;
   final VoidCallback onTap;
 
+  /// 预览用条目：组件元素（日期/心情等）从它读取展示数据。
+  static final _previewEntry = JournalEntry(
+    id: 'preview',
+    date: DateUtils2.dateKey(DateTime.now()),
+    title: '',
+    content: '',
+    mood: Mood.calm,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -63,20 +79,38 @@ class _TemplateTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.description_outlined,
-                  size: 20,
-                  color: scheme.onPrimaryContainer,
+              // 整页版式预览（纯文本模板回退为图标）。
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 56,
+                  height: 72,
+                  child: template.canvas == null
+                      ? Container(
+                          color: scheme.primaryContainer.withValues(alpha: 0.6),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.description_outlined,
+                            size: 20,
+                            color: scheme.onPrimaryContainer,
+                          ),
+                        )
+                      : FittedBox(
+                          fit: BoxFit.contain,
+                          child: SizedBox(
+                            width: 112,
+                            child: AspectRatio(
+                              aspectRatio: 1 / template.canvas!.effectiveHeight,
+                              child: CanvasView(
+                                canvas: template.canvas!,
+                                entry: _previewEntry,
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -86,6 +120,14 @@ class _TemplateTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
+                        if (template.isTodayTemplate) ...[
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            size: 16,
+                            color: scheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
                         Flexible(
                           child: Text(
                             template.name,
@@ -121,7 +163,17 @@ class _TemplateTile extends StatelessWidget {
                         ],
                       ],
                     ),
-                    if (template.content.trim().isNotEmpty) ...[
+                    if (template.isTodayTemplate) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '自动填入今日一问',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ] else if (template.content.trim().isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
                         template.content.trim().replaceAll('\n', ' · '),

@@ -12,6 +12,7 @@ import '../models/template.dart';
 /// - v2：entries 新增 deletedAt（回收站软删除，REQ-02）。
 /// - v3：entries 新增 activities（活动打卡，REQ-12）；新建 templates 表（REQ-09）。
 /// - v4：entries 新增 paper/stickers（装饰排版，REQ-13）与 isQuickNote（快速速记，REQ-16）。
+/// - v5：entries 新增 canvas（画布元素树）；templates 新增 canvas（整页版式模板）。
 class AppDatabase {
   AppDatabase._();
 
@@ -35,7 +36,7 @@ class AppDatabase {
   }
 
   static const _dbName = 'pagenote.db';
-  static const dbVersion = 4;
+  static const dbVersion = 5;
 
   Database? _db;
   bool _inMemory = false;
@@ -75,7 +76,7 @@ class AppDatabase {
       await db.execute(
         "ALTER TABLE entries ADD COLUMN activities TEXT NOT NULL DEFAULT ''",
       );
-      await _createTemplatesTable(db);
+      await _createTemplatesTable(db, withCanvas: false);
     },
     4: (db) async {
       await db.execute(
@@ -86,6 +87,14 @@ class AppDatabase {
       );
       await db.execute(
         'ALTER TABLE entries ADD COLUMN isQuickNote INTEGER NOT NULL DEFAULT 0',
+      );
+    },
+    5: (db) async {
+      await db.execute(
+        "ALTER TABLE entries ADD COLUMN canvas TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE templates ADD COLUMN canvas TEXT NOT NULL DEFAULT ''",
       );
     },
   };
@@ -104,6 +113,7 @@ class AppDatabase {
         activities TEXT NOT NULL DEFAULT '',
         paper TEXT NOT NULL DEFAULT '',
         stickers TEXT NOT NULL DEFAULT '',
+        canvas TEXT NOT NULL DEFAULT '',
         isQuickNote INTEGER NOT NULL DEFAULT 0,
         isFavorite INTEGER NOT NULL DEFAULT 0,
         createdAt INTEGER NOT NULL,
@@ -115,7 +125,11 @@ class AppDatabase {
     await _createTemplatesTable(db);
   }
 
-  static Future<void> _createTemplatesTable(Database db) async {
+  /// [withCanvas] 为 false 时建 v3 时期的老结构（迁移链上 canvas 由 v5 补加）。
+  static Future<void> _createTemplatesTable(
+    Database db, {
+    bool withCanvas = true,
+  }) async {
     await db.execute('''
       CREATE TABLE templates (
         id TEXT PRIMARY KEY,
@@ -124,6 +138,7 @@ class AppDatabase {
         content TEXT NOT NULL DEFAULT '',
         tags TEXT NOT NULL DEFAULT '',
         builtin INTEGER NOT NULL DEFAULT 0,
+        ${withCanvas ? "canvas TEXT NOT NULL DEFAULT ''," : ''}
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
       )

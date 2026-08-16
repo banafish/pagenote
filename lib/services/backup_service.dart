@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/canvas_page.dart';
 import '../models/journal_entry.dart';
 import '../models/template.dart';
 
@@ -56,7 +57,13 @@ class BackupService {
     final entryMaps = <Map<String, Object?>>[];
     for (final e in entries) {
       final imageNames = <String>[];
-      for (final path in e.images) {
+      // 画布上的照片元素与 images 列一并打包（photos on canvas）。
+      final canvasImages = e.canvas?.images ?? const <ImageElement>[];
+      for (final path in [
+        ...e.images,
+        for (final img in canvasImages)
+          if (img.path.isNotEmpty) img.path,
+      ]) {
         final name = p.basename(path);
         final file = File(path);
         if (await file.exists()) {
