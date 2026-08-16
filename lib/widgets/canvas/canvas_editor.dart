@@ -211,7 +211,7 @@ class CanvasEditorState extends State<CanvasEditor> {
         return Stack(
           children: [
             SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 76),
+              padding: const EdgeInsets.only(bottom: 120),
               child: page,
             ),
             if (_selected != null)
@@ -340,7 +340,7 @@ class CanvasEditorState extends State<CanvasEditor> {
     return Positioned(
       left: 8,
       right: 8,
-      bottom: 8,
+      bottom: 92,
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),

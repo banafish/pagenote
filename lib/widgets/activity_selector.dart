@@ -24,6 +24,8 @@ class ActivitySelector extends StatefulWidget {
 }
 
 class _ActivitySelectorState extends State<ActivitySelector> {
+  String? _pressedName;
+
   List<Activity> get _all {
     final customs = widget.customActivities
         .where((n) => !presetActivities.any((a) => a.name == n))
@@ -118,9 +120,17 @@ class _ActivitySelectorState extends State<ActivitySelector> {
   Widget _activityChip(BuildContext context, Activity activity) {
     final scheme = Theme.of(context).colorScheme;
     final selected = widget.selected.contains(activity.name);
+    final pressed = _pressedName == activity.name;
     return GestureDetector(
+      onTapDown: (_) => setState(() => _pressedName = activity.name),
+      onTapUp: (_) => setState(() => _pressedName = null),
+      onTapCancel: () => setState(() => _pressedName = null),
       onTap: () => _toggle(activity.name),
-      child: AnimatedContainer(
+      child: AnimatedScale(
+        scale: pressed ? 0.92 : 1,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
@@ -147,6 +157,7 @@ class _ActivitySelectorState extends State<ActivitySelector> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

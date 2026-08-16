@@ -499,109 +499,120 @@ class _EditorPageState extends State<EditorPage> {
   // ---------------- 信息面板（日期/心情/天气/活动/标签） ----------------
 
   Future<void> _showInfoSheet() async {
+    // sheet 内自管理选中状态并即时刷新：ModalBottomSheet 的 builder
+    // 不会随页面 setState 重建,若直接读 _draft 选中态会一直不更新。
+    var mood = _draft.mood;
+    var weather = _draft.weather;
+    var activities = List<String>.from(_draft.activities);
+
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        builder: (_, controller) => ListView(
-          controller: controller,
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          children: [
-            Text(
-              '手账信息',
-              style: Theme.of(
-                sheetContext,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '心情、天气与活动同时用于统计,也可在画布上自由排版',
-              style: TextStyle(
-                fontSize: 12.5,
-                color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _dateSelector(sheetContext),
-            const SizedBox(height: 18),
-            EmojiSelector(
-              label: '今日心情',
-              items: [
-                for (final m in Mood.values)
-                  EmojiItem(
-                    id: m.id,
-                    emoji: m.emoji,
-                    label: m.label,
-                    color: m.color,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          // 同时刷新页面与 sheet：页面负责画布组件同步,sheet 负责选中态。
+          void apply(VoidCallback fn) {
+            setState(fn);
+            _syncComponents();
+            _commit();
+            setSheetState(() {
+              mood = _draft.mood;
+              weather = _draft.weather;
+              activities = List<String>.from(_draft.activities);
+            });
+          }
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.7,
+            builder: (_, controller) => ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              children: [
+                Text(
+                  '手账信息',
+                  style: Theme.of(
+                    sheetContext,
+                  ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '心情、天气与活动同时用于统计,也可在画布上自由排版',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
                   ),
-              ],
-              selectedId: _draft.mood?.id,
-              onSelected: (id) {
-                setState(() {
-                  _draft.mood = id == null ? null : Mood.fromId(id);
-                  _syncComponents();
-                });
-                _commit();
-              },
-            ),
-            const SizedBox(height: 18),
-            EmojiSelector(
-              label: '今日天气',
-              items: [
-                for (final w in Weather.values)
-                  EmojiItem(
-                    id: w.id,
-                    emoji: w.emoji,
-                    label: w.label,
-                    color: w.color,
+                ),
+                const SizedBox(height: 12),
+                _dateSelector(sheetContext, () => setSheetState(() {})),
+                const SizedBox(height: 18),
+                EmojiSelector(
+                  label: '今日心情',
+                  items: [
+                    for (final m in Mood.values)
+                      EmojiItem(
+                        id: m.id,
+                        emoji: m.emoji,
+                        label: m.label,
+                        color: m.color,
+                      ),
+                  ],
+                  selectedId: mood?.id,
+                  onSelected: (id) =>
+                      apply(() => _draft.mood = id == null ? null : Mood.fromId(id)),
+                ),
+                const SizedBox(height: 18),
+                EmojiSelector(
+                  label: '今日天气',
+                  items: [
+                    for (final w in Weather.values)
+                      EmojiItem(
+                        id: w.id,
+                        emoji: w.emoji,
+                        label: w.label,
+                        color: w.color,
+                      ),
+                  ],
+                  selectedId: weather?.id,
+                  onSelected: (id) => apply(
+                    () => _draft.weather = id == null ? null : Weather.fromId(id),
                   ),
+                ),
+                const SizedBox(height: 20),
+                ActivitySelector(
+                  selected: activities,
+                  customActivities:
+                      sheetContext.watch<SettingsProvider>().customActivities,
+                  onChanged: (next) =>
+                      apply(() => _draft.activities = List.of(next)),
+                  onAddCustom: (name) =>
+                      sheetContext.read<SettingsProvider>().addCustomActivity(name),
+                ),
+                const SizedBox(height: 20),
+                TagEditor(
+                  tags: _draft.tags,
+                  suggestions: sheetContext.watch<JournalProvider>().allTags,
+                  onChanged: (tags) {
+                    setState(() => _draft.tags = tags);
+                    _dirty = true;
+                  },
+                ),
               ],
-              selectedId: _draft.weather?.id,
-              onSelected: (id) {
-                setState(() {
-                  _draft.weather = id == null ? null : Weather.fromId(id);
-                  _syncComponents();
-                });
-                _commit();
-              },
             ),
-            const SizedBox(height: 20),
-            ActivitySelector(
-              selected: _draft.activities,
-              customActivities:
-                  sheetContext.watch<SettingsProvider>().customActivities,
-              onChanged: (activities) {
-                setState(() {
-                  _draft.activities = activities;
-                  _syncComponents();
-                });
-                _commit();
-              },
-              onAddCustom: (name) =>
-                  sheetContext.read<SettingsProvider>().addCustomActivity(name),
-            ),
-            const SizedBox(height: 20),
-            TagEditor(
-              tags: _draft.tags,
-              suggestions: sheetContext.watch<JournalProvider>().allTags,
-              onChanged: (tags) {
-                setState(() => _draft.tags = tags);
-                _dirty = true;
-              },
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _dateSelector(BuildContext context) {
+  Widget _dateSelector(BuildContext context, VoidCallback onChanged) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: _pickDate,
+      onTap: () async {
+        await _pickDate();
+        onChanged();
+      },
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -784,29 +795,35 @@ class _EditorPageState extends State<EditorPage> {
             ),
           ),
         Expanded(
-          // 画布编辑器自带纵向滚动与选中操作条;外层不再包 ScrollView。
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: CanvasEditor(
-                    key: _editorKey,
-                    canvas: _canvas,
-                    entry: _draft,
-                    onCommit: _commit,
-                    onEditText: _editText,
-                    onEditImage: _editImage,
-                    onEditComponent: _editComponent,
+          // 画布编辑器自带纵向滚动与选中操作条;底部工具栏悬浮其上。
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: CanvasEditor(
+                          key: _editorKey,
+                          canvas: _canvas,
+                          entry: _draft,
+                          onCommit: _commit,
+                          onEditText: _editText,
+                          onEditImage: _editImage,
+                          onEditComponent: _editComponent,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+              _bottomToolbar(scheme),
+            ],
           ),
         ),
-        _bottomToolbar(scheme),
       ],
     );
 
@@ -882,14 +899,12 @@ class _EditorPageState extends State<EditorPage> {
                 if (value == 'save_template') _saveAsTemplate();
               },
             ),
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.check_rounded, size: 19),
-                label: const Text('保存'),
-              ),
+            IconButton(
+              tooltip: '保存',
+              icon: const Icon(Icons.save_rounded),
+              onPressed: _save,
             ),
+            const SizedBox(width: 12),
           ],
         ),
         body: body,
@@ -898,53 +913,56 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   /// 底部工具栏：贴纸 / 照片 / 文字 / 纸张 / 一问 / 信息。
+  /// 悬浮在画布上方的胶囊长条（椭圆形）。
   Widget _bottomToolbar(ColorScheme scheme) {
-    Widget tool(String label, IconData icon, VoidCallback onTap) => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+    Widget tool(String label, IconData icon, VoidCallback onTap) => Tooltip(
+      message: label,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        customBorder: const StadiumBorder(),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: scheme.primary),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Icon(icon, size: 23, color: scheme.onSurfaceVariant),
         ),
       ),
     );
 
-    return SafeArea(
-      top: false,
-      child: Container(
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          border: Border(
-            top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              tool('贴纸', Icons.emoji_emotions_outlined, _addSticker),
-              tool('照片', Icons.add_photo_alternate_outlined, _addPhoto),
-              tool('文字', Icons.text_fields_rounded, _addText),
-              tool('纸张', Icons.layers_outlined, _pickPaper),
-              tool('一问', Icons.auto_awesome_rounded, _showPromptSheet),
-              tool('信息', Icons.tune_rounded, _showInfoSheet),
-            ],
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: SafeArea(
+        minimum: const EdgeInsets.only(bottom: 12),
+        top: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  tool('贴纸', Icons.emoji_emotions_outlined, _addSticker),
+                  tool('照片', Icons.add_photo_alternate_outlined, _addPhoto),
+                  tool('文字', Icons.text_fields_rounded, _addText),
+                  tool('纸张', Icons.layers_outlined, _pickPaper),
+                  tool('一问', Icons.auto_awesome_rounded, _showPromptSheet),
+                  tool('信息', Icons.tune_rounded, _showInfoSheet),
+                ],
+              ),
+            ),
           ),
         ),
       ),

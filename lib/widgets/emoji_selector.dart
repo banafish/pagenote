@@ -15,7 +15,7 @@ class EmojiItem {
 }
 
 /// 心情/天气的横向表情选择器，可取消选择。
-class EmojiSelector extends StatelessWidget {
+class EmojiSelector extends StatefulWidget {
   const EmojiSelector({
     super.key,
     required this.label,
@@ -30,13 +30,20 @@ class EmojiSelector extends StatelessWidget {
   final void Function(String? id) onSelected;
 
   @override
+  State<EmojiSelector> createState() => _EmojiSelectorState();
+}
+
+class _EmojiSelectorState extends State<EmojiSelector> {
+  String? _pressedId;
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          widget.label,
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w700,
@@ -48,14 +55,22 @@ class EmojiSelector extends StatelessWidget {
           height: 84,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: items.length,
+            itemCount: widget.items.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, i) {
-              final item = items[i];
-              final selected = item.id == selectedId;
+              final item = widget.items[i];
+              final selected = item.id == widget.selectedId;
+              final pressed = _pressedId == item.id;
               return GestureDetector(
-                onTap: () => onSelected(selected ? null : item.id),
-                child: AnimatedContainer(
+                onTapDown: (_) => setState(() => _pressedId = item.id),
+                onTapUp: (_) => setState(() => _pressedId = null),
+                onTapCancel: () => setState(() => _pressedId = null),
+                onTap: () => widget.onSelected(selected ? null : item.id),
+                child: AnimatedScale(
+                  scale: pressed ? 0.88 : 1,
+                  duration: const Duration(milliseconds: 110),
+                  curve: Curves.easeOut,
+                  child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   width: 64,
                   decoration: BoxDecoration(
@@ -87,6 +102,7 @@ class EmojiSelector extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
                 ),
               );
             },
