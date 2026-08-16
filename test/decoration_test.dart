@@ -1,0 +1,198 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:pagenote/database/app_database.dart';
+import 'package:pagenote/models/decoration.dart';
+import 'package:pagenote/models/journal_entry.dart';
+import 'package:pagenote/pages/editor_page.dart';
+import 'package:pagenote/providers/journal_provider.dart';
+import 'package:pagenote/providers/settings_provider.dart';
+import 'package:pagenote/providers/template_provider.dart';
+import 'package:pagenote/services/backup_service.dart';
+import 'package:pagenote/widgets/sticker_layer.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfiNoIsolate;
+  });
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  test('内置纸张 ≥8 款纹理 + 素笺,id 查找正确（REQ-13）', () {
+    expect(
+      paperStyles.length,
+      greaterThanOrEqualTo(9),
+      reason: '8 款纹理 + 1 款素笺',
+    );
+    expect(
+      paperStyles.where((p) => !p.isPlain).length,
+      greaterThanOrEqualTo(8),
+      reason: '至少 8 款程序绘制的纹理',
+    );
+    expect(paperById(''), isNull);
+    expect(paperById('unknown'), isNull);
+    expect(paperById('dots')!.name, '云点');
+  });
+
+  test('贴纸 JSON 序列化往返,损坏数据退化为空列表（REQ-13）', () {
+    final stickers = [
+      Sticker(emoji: '🌸', dx: 0.25, dy: 0.1, scale: 1.4, rotation: -30),
+      Sticker(emoji: '⭐️'),
+    ];
+    final raw = encodeStickers(stickers);
+    expect(raw, isNotEmpty);
+
+    final decoded = decodeStickers(raw);
+    expect(decoded.length, 2);
+    expect(decoded.first.emoji, '🌸');
+    expect(decoded.first.dx, closeTo(0.25, 1e-9));
+    expect(decoded.first.scale, closeTo(1.4, 1e-9));
+    expect(decoded.first.rotation, closeTo(-30, 1e-9));
+    expect(decoded.last.dx, 0.5);
+
+    // 空 / 非法输入。
+    expect(decodeStickers(''), isEmpty);
+    expect(decodeStickers('not-json'), isEmpty);
+    expect(decodeStickers('[{"x":0.5}]'), isEmpty, reason: '缺 emoji 的项被丢弃');
+  });
+
+  test('条目 toMap/fromMap 往返保留装饰与速记标记', () {
+    final now = DateTime(2026, 8, 16, 10);
+    final entry = JournalEntry(
+      id: 'd1',
+      date: '2026-08-16',
+      title: '装饰页',
+      content: '内容',
+      paper: 'stars',
+      stickers: [Sticker(emoji: '🌙', dx: 0.8, dy: 0.2, rotation: 15)],
+      isQuickNote: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    final restored = JournalEntry.fromMap(entry.toMap());
+    expect(restored.paper, 'stars');
+    expect(restored.stickers.length, 1);
+    expect(restored.stickers.first.emoji, '🌙');
+    expect(restored.stickers.first.rotation, 15);
+    expect(restored.isQuickNote, true);
+  });
+
+  test('装饰随备份 zip 导出并在导入后保留（REQ-13 + REQ-03）', () async {
+    final now = DateTime(2026, 8, 16, 10);
+    final entry = JournalEntry(
+      id: 'd2',
+      date: '2026-08-16',
+      title: '带装饰的备份',
+      content: '内容',
+      paper: 'petals',
+      stickers: [Sticker(emoji: '🌷', dx: 0.1, dy: 0.9, scale: 2)],
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    final bytes = await BackupService.instance.buildZip(
+      entries: [entry],
+      templates: [],
+    );
+    final data = BackupService.instance.parseBackup(bytes);
+
+    expect(data.entries.single.paper, 'petals');
+    expect(data.entries.single.stickers.single.emoji, '🌷');
+    expect(data.entries.single.stickers.single.scale, 2);
+  });
+
+  test('PaperPainter 各纸样在浅/深两种模式下均可绘制', () {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    for (final paper in paperStyles) {
+      for (final dark in [false, true]) {
+        PaperPainter(paper, dark: dark).paint(canvas, const Size(400, 800));
+      }
+    }
+    recorder.endRecording().dispose();
+  });
+
+  testWidgets('编辑页装饰：选纸张、加贴纸并保存后持久化（REQ-13）', (tester) async {
+    final db = AppDatabase.inMemory();
+    final sqlite = await db.database;
+    await sqlite.delete('entries');
+    await sqlite.delete('templates');
+
+    final journal = JournalProvider(database: db);
+    await journal.load();
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsProvider(prefs);
+    final templates = TemplateProvider(database: db);
+    await templates.load();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: journal),
+          ChangeNotifierProvider.value(value: settings),
+          ChangeNotifierProvider.value(value: templates),
+        ],
+        child: MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const EditorPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 表单较长(装饰区在正文上方):先处理装饰,再向下滚到正文输入。
+    await tester.scrollUntilVisible(
+      find.text('加贴纸'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    // 选择「方格」纸张。
+    await tester.tap(find.byKey(const ValueKey('paper-grid')));
+    await tester.pumpAndSettle();
+
+    // 打开贴纸面板并添加一枚贴纸。
+    await tester.tap(find.text('加贴纸'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('🌸').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(StickerView), findsOneWidget, reason: '添加后贴纸浮在页面上');
+
+    // 滚到正文输入框并输入内容。
+    final contentField = find.widgetWithText(TextField, '记录此刻的所思所感…');
+    await tester.scrollUntilVisible(
+      contentField,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.enterText(contentField, '装饰的手账');
+    await tester.pump();
+
+    // 保存。
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final saved = journal.entries.single;
+    expect(saved.paper, 'grid');
+    expect(saved.stickers.single.emoji, '🌸');
+    expect(saved.stickers.single.dx, 0.5);
+
+    await db.close();
+  });
+}

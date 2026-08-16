@@ -17,8 +17,7 @@ void main() {
     final h1 = PinHasher.hash('1234', salt1);
     expect(PinHasher.verify('1234', salt1, h1), isTrue);
     expect(PinHasher.verify('1235', salt1, h1), isFalse);
-    expect(PinHasher.verify('1234', salt2, h1), isFalse,
-        reason: '盐不同则哈希不同');
+    expect(PinHasher.verify('1234', salt2, h1), isFalse, reason: '盐不同则哈希不同');
   });
 
   test('连续错 5 次锁定 30 秒（REQ-08.3）', () {
@@ -26,8 +25,7 @@ void main() {
     final guard = PinAttemptGuard(() => now);
 
     for (var i = 0; i < 4; i++) {
-      expect(guard.registerFailure(), isFalse,
-          reason: '前 4 次不触发锁定');
+      expect(guard.registerFailure(), isFalse, reason: '前 4 次不触发锁定');
     }
     expect(guard.isLocked, isFalse);
 
@@ -66,8 +64,10 @@ void main() {
     final salt = PinHasher.newSalt();
     await settings.setPin(salt, PinHasher.hash('8888', salt));
     expect(settings.lockEnabled, isTrue);
-    expect(PinHasher.verify('8888', settings.lockSalt, settings.pinHash),
-        isTrue);
+    expect(
+      PinHasher.verify('8888', settings.lockSalt, settings.pinHash),
+      isTrue,
+    );
 
     await settings.setLockDelayIndex(1);
     expect(settings.lockDelay, const Duration(minutes: 1));
@@ -76,7 +76,6 @@ void main() {
 
     await settings.disableLock();
     expect(settings.lockEnabled, isFalse);
-    expect(settings.lockBiometric, isFalse,
-        reason: '关闭应用锁同时关闭生物识别');
+    expect(settings.lockBiometric, isFalse, reason: '关闭应用锁同时关闭生物识别');
   });
 }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../data/prompts.dart';
 import '../models/journal_entry.dart';
 import '../pages/monthly_report_page.dart';
+import '../pages/quick_note_page.dart';
 import '../pages/share_card_page.dart';
 import '../providers/journal_provider.dart';
 import '../providers/settings_provider.dart';
@@ -33,8 +34,9 @@ class _HomePageState extends State<HomePage> {
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
 
-    final entries =
-        _favoritesOnly ? _favoriteEntries(journal) : journal.entries;
+    final entries = _favoritesOnly
+        ? _favoriteEntries(journal)
+        : journal.entries;
     final grouped = _groupByDate(entries);
 
     return CustomScrollView(
@@ -56,18 +58,28 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           actions: [
+            // 快速速记入口（REQ-16）。
+            IconButton(
+              tooltip: '速记',
+              icon: const Icon(Icons.bolt_rounded),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const QuickNotePage())),
+            ),
             IconButton(
               tooltip: '搜索',
               icon: const Icon(Icons.search),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SearchPage()),
-              ),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SearchPage())),
             ),
             IconButton(
               tooltip: _favoritesOnly ? '显示全部' : '只看收藏',
               isSelected: _favoritesOnly,
-              selectedIcon: const Icon(Icons.favorite,
-                  color: Color(0xFFE57373)),
+              selectedIcon: const Icon(
+                Icons.favorite,
+                color: Color(0xFFE57373),
+              ),
               icon: const Icon(Icons.favorite_border),
               onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly),
             ),
@@ -97,8 +109,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       OnThisDayCard(
                         byYear: journal.onThisDay(),
-                        onOpen: (entry) =>
-                            widget.onOpenEditor(context, entry),
+                        onOpen: (entry) => widget.onOpenEditor(context, entry),
                       ),
                       _MonthlyReportCard(onOpen: _openLastMonthReport),
                     ],
@@ -106,8 +117,7 @@ class _HomePageState extends State<HomePage> {
                   return isPhone
                       ? child
                       : ConstrainedBox(
-                          constraints:
-                              const BoxConstraints(maxWidth: 760),
+                          constraints: const BoxConstraints(maxWidth: 760),
                           child: child,
                         );
                 }
@@ -202,8 +212,9 @@ class _MonthlyReportCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     final now = DateTime.now();
-    final lastMonth =
-        now.month == 1 ? DateTime(now.year - 1, 12, 1) : DateTime(now.year, now.month - 1, 1);
+    final lastMonth = now.month == 1
+        ? DateTime(now.year - 1, 12, 1)
+        : DateTime(now.year, now.month - 1, 1);
     final ym = DateUtils2.ym(lastMonth);
     final report = journal.monthlyReport(lastMonth.year, lastMonth.month);
 
@@ -224,8 +235,11 @@ class _MonthlyReportCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.workspace_premium_outlined,
-              size: 24, color: scheme.tertiary),
+          Icon(
+            Icons.workspace_premium_outlined,
+            size: 24,
+            color: scheme.tertiary,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -329,9 +343,9 @@ class _DateGroupView extends StatelessWidget {
   }
 
   void _openShare(BuildContext context, JournalEntry entry) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry)));
   }
 }
 
@@ -372,10 +386,9 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 24),
             Text(
               favoritesOnly ? '还没有收藏的手账' : '写下你的第一页',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
             Text(
@@ -388,10 +401,7 @@ class _EmptyState extends StatelessWidget {
               const SizedBox(height: 26),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
-                child: DailyPromptCard(
-                  prompt: prompt,
-                  compact: true,
-                ),
+                child: DailyPromptCard(prompt: prompt, compact: true),
               ),
               const SizedBox(height: 18),
               FilledButton.icon(

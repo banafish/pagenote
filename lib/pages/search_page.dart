@@ -104,8 +104,9 @@ class _SearchPageState extends State<SearchPage> {
     final scheme = Theme.of(context).colorScheme;
     final recentTags = journal.allTags.take(10).toList();
     final showResults = _searched || _filtersActive;
-    final results =
-        showResults ? filterEntries(journal.entries, _query, _filters) : const <JournalEntry>[];
+    final results = showResults
+        ? filterEntries(journal.entries, _query, _filters)
+        : const <JournalEntry>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -255,7 +256,7 @@ class _SearchPageState extends State<SearchPage> {
               _filters.startDate == null
                   ? '日期区间'
                   : '${_filters.startDate!.substring(5)} ~ '
-                      '${_filters.endDate!.substring(5)}',
+                        '${_filters.endDate!.substring(5)}',
               selected: _filters.startDate != null,
               onToggle: () {
                 if (_filters.startDate != null) {
@@ -272,13 +273,15 @@ class _SearchPageState extends State<SearchPage> {
               '⭐ 只看收藏',
               selected: _filters.favoritesOnly,
               onToggle: () => setState(
-                  () => _filters.favoritesOnly = !_filters.favoritesOnly),
+                () => _filters.favoritesOnly = !_filters.favoritesOnly,
+              ),
             ),
             _selectChip(
               '🖼️ 只看有图',
               selected: _filters.withImagesOnly,
               onToggle: () => setState(
-                  () => _filters.withImagesOnly = !_filters.withImagesOnly),
+                () => _filters.withImagesOnly = !_filters.withImagesOnly,
+              ),
             ),
           ]),
         ],
@@ -347,25 +350,30 @@ class _SearchPageState extends State<SearchPage> {
     final chips = <Widget>[];
 
     void add(String label, VoidCallback onRemove) {
-      chips.add(Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: InputChip(
-          label: Text(label, style: const TextStyle(fontSize: 12.5)),
-          onDeleted: onRemove,
-          visualDensity: VisualDensity.compact,
-          backgroundColor:
-              scheme.primaryContainer.withValues(alpha: 0.55),
+      chips.add(
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: InputChip(
+            label: Text(label, style: const TextStyle(fontSize: 12.5)),
+            onDeleted: onRemove,
+            visualDensity: VisualDensity.compact,
+            backgroundColor: scheme.primaryContainer.withValues(alpha: 0.55),
+          ),
         ),
-      ));
+      );
     }
 
     for (final m in _filters.moods) {
-      add('${m.emoji} ${m.label}',
-          () => setState(() => _filters.moods.remove(m)));
+      add(
+        '${m.emoji} ${m.label}',
+        () => setState(() => _filters.moods.remove(m)),
+      );
     }
     for (final w in _filters.weathers) {
-      add('${w.emoji} ${w.label}',
-          () => setState(() => _filters.weathers.remove(w)));
+      add(
+        '${w.emoji} ${w.label}',
+        () => setState(() => _filters.weathers.remove(w)),
+      );
     }
     for (final t in _filters.tags) {
       add('#$t', () => setState(() => _filters.tags.remove(t)));
@@ -380,29 +388,29 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
     if (_filters.favoritesOnly) {
-      add('只看收藏',
-          () => setState(() => _filters.favoritesOnly = false));
+      add('只看收藏', () => setState(() => _filters.favoritesOnly = false));
     }
     if (_filters.withImagesOnly) {
-      add('只看有图',
-          () => setState(() => _filters.withImagesOnly = false));
+      add('只看有图', () => setState(() => _filters.withImagesOnly = false));
     }
-    chips.add(ActionChip(
-      label: Text(
-        '清空',
-        style: TextStyle(fontSize: 12.5, color: scheme.primary),
+    chips.add(
+      ActionChip(
+        label: Text(
+          '清空',
+          style: TextStyle(fontSize: 12.5, color: scheme.primary),
+        ),
+        onPressed: () => setState(() {
+          _filters.moods.clear();
+          _filters.weathers.clear();
+          _filters.tags.clear();
+          _filters.startDate = null;
+          _filters.endDate = null;
+          _filters.favoritesOnly = false;
+          _filters.withImagesOnly = false;
+        }),
+        visualDensity: VisualDensity.compact,
       ),
-      onPressed: () => setState(() {
-        _filters.moods.clear();
-        _filters.weathers.clear();
-        _filters.tags.clear();
-        _filters.startDate = null;
-        _filters.endDate = null;
-        _filters.favoritesOnly = false;
-        _filters.withImagesOnly = false;
-      }),
-      visualDensity: VisualDensity.compact,
-    ));
+    );
 
     return Container(
       width: double.infinity,
@@ -454,8 +462,11 @@ class ResultsView extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.search_off_rounded,
-                          size: 52, color: scheme.onSurfaceVariant),
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 52,
+                        color: scheme.onSurfaceVariant,
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         query.isEmpty ? '没有符合筛选条件的手账' : '没有找到「$query」相关的手账',
@@ -479,17 +490,15 @@ class ResultsView extends StatelessWidget {
                         );
                         onDeleted?.call();
                       },
-                      onToggleFavorite: (id) => context
-                          .read<JournalProvider>()
-                          .toggleFavorite(id),
+                      onToggleFavorite: (id) =>
+                          context.read<JournalProvider>().toggleFavorite(id),
                       onDelete: (id) async {
                         await deleteWithUndo(context, id);
                         onDeleted?.call();
                       },
                       onShare: (id) => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) =>
-                              ShareCardPage(entry: results[i]),
+                          builder: (_) => ShareCardPage(entry: results[i]),
                         ),
                       ),
                     ),

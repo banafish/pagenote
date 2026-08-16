@@ -54,8 +54,7 @@ class EmojiSelector extends StatelessWidget {
               final item = items[i];
               final selected = item.id == selectedId;
               return GestureDetector(
-                onTap: () =>
-                    onSelected(selected ? null : item.id),
+                onTap: () => onSelected(selected ? null : item.id),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   width: 64,
@@ -65,24 +64,22 @@ class EmojiSelector extends StatelessWidget {
                         : scheme.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: selected
-                          ? item.color
-                          : Colors.transparent,
+                      color: selected ? item.color : Colors.transparent,
                       width: 1.8,
                     ),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(item.emoji,
-                          style: const TextStyle(fontSize: 25)),
+                      Text(item.emoji, style: const TextStyle(fontSize: 25)),
                       const SizedBox(height: 5),
                       Text(
                         item.label,
                         style: TextStyle(
                           fontSize: 11.5,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                           color: selected
                               ? scheme.onSurface
                               : scheme.onSurfaceVariant,

@@ -50,9 +50,7 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('$_year 年 $_month 月报'),
-      ),
+      appBar: AppBar(title: Text('$_year 年 $_month 月报')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
@@ -66,7 +64,10 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
               ),
               Text(
                 DateUtils2.monthTitle(DateTime(_year, _month)),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               IconButton(
                 tooltip: '下一月',
@@ -156,14 +157,17 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
                                   child: Text(
                                     '#${report.topTags[i].key}',
                                     style: const TextStyle(
-                                        fontSize: 14, fontWeight: FontWeight.w600),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                                 Text(
                                   '${report.topTags[i].value} 次',
                                   style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: scheme.onSurfaceVariant),
+                                    fontSize: 12.5,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ],
                             ),
@@ -179,7 +183,10 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
                 report.busiestWeekday == null
                     ? '本月暂无记录'
                     : '周${_weekdayCN(report.busiestWeekday!)}',
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -289,7 +296,9 @@ class _ReportCard extends StatelessWidget {
               Text(
                 title,
                 style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),

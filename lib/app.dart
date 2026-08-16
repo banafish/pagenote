@@ -8,6 +8,7 @@ import 'pages/settings_page.dart';
 import 'pages/stats_page.dart';
 import 'providers/journal_provider.dart';
 import 'services/notification_service.dart';
+import 'services/widget_service.dart';
 import 'utils/date_utils.dart';
 import 'widgets/adaptive_scaffold.dart';
 
@@ -24,14 +25,15 @@ class _RootShellState extends State<RootShell> {
   void initState() {
     super.initState();
     // 冷启动由写作提醒通知拉起时，直接进入编辑页（REQ-07.3）。
-    NotificationService.instance
-        .consumePendingAction(() => _newEntry(context));
+    NotificationService.instance.consumePendingAction(() => _newEntry(context));
+    // 冷启动由桌面小组件点击拉起时，直接进入编辑页（REQ-14）。
+    WidgetService.instance.consumePendingEditor(() => _newEntry(context));
   }
 
   void _openEditor(BuildContext context, JournalEntry? entry) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => EditorPage(entry: entry)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => EditorPage(entry: entry)));
   }
 
   void _newEntry(BuildContext context) {

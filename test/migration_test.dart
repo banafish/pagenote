@@ -10,7 +10,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  test('全新安装直接建最新表结构（v3）', () async {
+  test('全新安装直接建最新表结构（v4）', () async {
     final db = AppDatabase.inMemory();
     final sqlite = await db.database;
     expect(await sqlite.getVersion(), AppDatabase.dbVersion);
@@ -21,7 +21,7 @@ void main() {
     expect(names, containsAll([
       'id', 'date', 'title', 'content', 'mood', 'weather', 'tags',
       'images', 'activities', 'isFavorite', 'createdAt', 'updatedAt',
-      'deletedAt',
+      'deletedAt', 'paper', 'stickers', 'isQuickNote',
     ]));
 
     final templateColumns =
@@ -32,7 +32,7 @@ void main() {
     await db.close();
   });
 
-  test('v1 → v3 迁移：旧数据保留，新列可用（NFR-01）', () async {
+  test('v1 → v4 迁移：旧数据保留，新列可用（NFR-01）', () async {
     final dir = await databaseFactory.getDatabasesPath();
     final path = p.join(dir, 'pagenote-migration-test-v1.db');
     await databaseFactory.deleteDatabase(path);
@@ -59,15 +59,18 @@ void main() {
     });
     await v1.close();
 
-    // 用正式路径打开：应自动迁移到 v3。
+    // 用正式路径打开：应自动迁移到 v4。
     final appDb = AppDatabase.atPath(path);
     final entries = await appDb.getAllEntries();
     expect(entries.length, 1);
     expect(entries.first.title, '旧数据');
     expect(entries.first.activities, isEmpty);
     expect(entries.first.deletedAt, isNull);
+    expect(entries.first.paper, isEmpty, reason: 'v4 前的条目无装饰');
+    expect(entries.first.stickers, isEmpty);
+    expect(entries.first.isQuickNote, false);
 
-    // 迁移后新列可写（软删除 + 活动）。
+    // 迁移后新列可写（软删除 + 活动 + 装饰 + 速记）。
     final entry = entries.first;
     entry
       ..activities = ['运动']
@@ -79,12 +82,12 @@ void main() {
     expect((await appDb.getAllEntries()), isEmpty);
 
     final sqlite = await appDb.database;
-    expect(await sqlite.getVersion(), 3);
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
     await appDb.close();
     await databaseFactory.deleteDatabase(path);
   });
 
-  test('v2 → v3 迁移：补 activities 列与 templates 表', () async {
+  test('v2 → v4 迁移：补 activities/paper/stickers/isQuickNote 列', () async {
     final dir = await databaseFactory.getDatabasesPath();
     final path = p.join(dir, 'pagenote-migration-test-v2.db');
     await databaseFactory.deleteDatabase(path);
@@ -116,12 +119,76 @@ void main() {
     expect((await appDb.getAllEntries()), isEmpty);
 
     final sqlite = await appDb.database;
-    expect(await sqlite.getVersion(), 3);
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
     final columns =
         (await sqlite.rawQuery('PRAGMA table_info(entries)'))
             .map((c) => c['name'])
             .toSet();
-    expect(columns, contains('activities'));
+    expect(columns, containsAll(['activities', 'paper', 'stickers', 'isQuickNote']));
+    await appDb.close();
+    await databaseFactory.deleteDatabase(path);
+  });
+
+  test('v3 → v4 迁移：补装饰与速记三列,旧数据原样保留（REQ-13/16）', () async {
+    final dir = await databaseFactory.getDatabasesPath();
+    final path = p.join(dir, 'pagenote-migration-test-v3.db');
+    await databaseFactory.deleteDatabase(path);
+
+    final v3 = await openDatabase(path, version: 3, onCreate: (db, _) async {
+      await db.execute('''
+        CREATE TABLE entries (
+          id TEXT PRIMARY KEY,
+          date TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          mood TEXT,
+          weather TEXT,
+          tags TEXT NOT NULL DEFAULT '',
+          images TEXT NOT NULL DEFAULT '',
+          activities TEXT NOT NULL DEFAULT '',
+          isFavorite INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL,
+          deletedAt INTEGER
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL DEFAULT '',
+          tags TEXT NOT NULL DEFAULT '',
+          builtin INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+          "INSERT INTO entries VALUES ('e3', '2026-01-02', 'v3条目', 'v3 内容', NULL, NULL, '旧', '', '运动', 0, 1, 2, NULL)");
+    });
+    await v3.close();
+
+    final appDb = AppDatabase.atPath(path);
+    final entries = await appDb.getAllEntries();
+    expect(entries.length, 1);
+    expect(entries.first.title, 'v3条目');
+    expect(entries.first.tags, ['旧']);
+    expect(entries.first.activities, ['运动']);
+    expect(entries.first.paper, '');
+
+    // v4 新列可写并读回。
+    final entry = entries.first;
+    entry
+      ..paper = 'dots'
+      ..isQuickNote = true;
+    await appDb.updateEntry(entry);
+    final reloaded = (await appDb.getAllEntries()).first;
+    expect(reloaded.paper, 'dots');
+    expect(reloaded.isQuickNote, true);
+
+    final sqlite = await appDb.database;
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
     await appDb.close();
     await databaseFactory.deleteDatabase(path);
   });

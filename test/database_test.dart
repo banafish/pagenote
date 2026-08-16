@@ -11,7 +11,6 @@ void main() {
   });
 
   test('建表与条目 CRUD 往返', () async {
-    
     final appDb = AppDatabase.inMemory();
 
     final now = DateTime(2026, 8, 16, 10, 30);
@@ -59,20 +58,26 @@ void main() {
   });
 
   test('搜索覆盖标题、正文与标签', () async {
-    
     final appDb = AppDatabase.inMemory();
     final now = DateTime(2026, 8, 15);
 
-    Future<void> add(String id, String title, String content, String tags) async {
-      await appDb.insertEntry(JournalEntry(
-        id: id,
-        date: '2026-08-15',
-        title: title,
-        content: content,
-        tags: tags.split(',').where((t) => t.isNotEmpty).toList(),
-        createdAt: now,
-        updatedAt: now,
-      ));
+    Future<void> add(
+      String id,
+      String title,
+      String content,
+      String tags,
+    ) async {
+      await appDb.insertEntry(
+        JournalEntry(
+          id: id,
+          date: '2026-08-15',
+          title: title,
+          content: content,
+          tags: tags.split(',').where((t) => t.isNotEmpty).toList(),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
     }
 
     await add('1', '晨跑', '今天跑了五公里', '运动');
@@ -88,19 +93,20 @@ void main() {
   });
 
   test('多条目按日期倒序排列', () async {
-    
     final appDb = AppDatabase.inMemory();
     final now = DateTime(2026, 8, 14);
 
     for (final d in ['2026-08-10', '2026-08-14', '2026-08-12']) {
-      await appDb.insertEntry(JournalEntry(
-        id: d,
-        date: d,
-        title: '',
-        content: d,
-        createdAt: now,
-        updatedAt: now,
-      ));
+      await appDb.insertEntry(
+        JournalEntry(
+          id: d,
+          date: d,
+          title: '',
+          content: d,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
     }
 
     final order = (await appDb.getAllEntries()).map((e) => e.date).toList();

@@ -2,12 +2,18 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Glance 小组件（REQ-14）依赖 Compose 编译器,需在 Kotlin 插件之后应用。
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.pagenote.pagenote"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    buildFeatures {
+        compose = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -44,6 +50,8 @@ kotlin {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // 桌面小组件（REQ-14,仅 Android）。
+    implementation("androidx.glance:glance-appwidget:1.1.1")
 }
 
 flutter {

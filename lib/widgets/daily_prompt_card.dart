@@ -50,8 +50,11 @@ class _DailyPromptCardState extends State<DailyPromptCard> {
             borderRadius: BorderRadius.circular(8),
             child: Row(
               children: [
-                Icon(Icons.tips_and_updates_outlined,
-                    size: 18, color: scheme.tertiary),
+                Icon(
+                  Icons.tips_and_updates_outlined,
+                  size: 18,
+                  color: scheme.tertiary,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   '今日一问',
@@ -89,16 +92,22 @@ class _DailyPromptCardState extends State<DailyPromptCard> {
                 children: [
                   if (widget.onInsert != null)
                     ActionChip(
-                      avatar: Icon(Icons.format_quote_rounded,
-                          size: 15, color: scheme.primary),
+                      avatar: Icon(
+                        Icons.format_quote_rounded,
+                        size: 15,
+                        color: scheme.primary,
+                      ),
                       label: const Text('插入正文'),
                       onPressed: widget.onInsert,
                     ),
                   const SizedBox(width: 8),
                   if (widget.onRefresh != null)
                     ActionChip(
-                      avatar: Icon(Icons.refresh_rounded,
-                          size: 15, color: scheme.primary),
+                      avatar: Icon(
+                        Icons.refresh_rounded,
+                        size: 15,
+                        color: scheme.primary,
+                      ),
                       label: Text(
                         widget.refreshRemaining > 0
                             ? '换一条 (${widget.refreshRemaining})'

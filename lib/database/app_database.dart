@@ -11,6 +11,7 @@ import '../models/template.dart';
 /// - v1：entries 基础表。
 /// - v2：entries 新增 deletedAt（回收站软删除，REQ-02）。
 /// - v3：entries 新增 activities（活动打卡，REQ-12）；新建 templates 表（REQ-09）。
+/// - v4：entries 新增 paper/stickers（装饰排版，REQ-13）与 isQuickNote（快速速记，REQ-16）。
 class AppDatabase {
   AppDatabase._();
 
@@ -34,7 +35,7 @@ class AppDatabase {
   }
 
   static const _dbName = 'pagenote.db';
-  static const dbVersion = 3;
+  static const dbVersion = 4;
 
   Database? _db;
   bool _inMemory = false;
@@ -46,7 +47,8 @@ class AppDatabase {
   }
 
   Future<Database> _open() async {
-    final path = _overridePath ??
+    final path =
+        _overridePath ??
         (_inMemory
             ? inMemoryDatabasePath
             : p.join(await getDatabasesPath(), _dbName));
@@ -71,8 +73,20 @@ class AppDatabase {
     },
     3: (db) async {
       await db.execute(
-          "ALTER TABLE entries ADD COLUMN activities TEXT NOT NULL DEFAULT ''");
+        "ALTER TABLE entries ADD COLUMN activities TEXT NOT NULL DEFAULT ''",
+      );
       await _createTemplatesTable(db);
+    },
+    4: (db) async {
+      await db.execute(
+        "ALTER TABLE entries ADD COLUMN paper TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE entries ADD COLUMN stickers TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        'ALTER TABLE entries ADD COLUMN isQuickNote INTEGER NOT NULL DEFAULT 0',
+      );
     },
   };
 
@@ -88,6 +102,9 @@ class AppDatabase {
         tags TEXT NOT NULL DEFAULT '',
         images TEXT NOT NULL DEFAULT '',
         activities TEXT NOT NULL DEFAULT '',
+        paper TEXT NOT NULL DEFAULT '',
+        stickers TEXT NOT NULL DEFAULT '',
+        isQuickNote INTEGER NOT NULL DEFAULT 0,
         isFavorite INTEGER NOT NULL DEFAULT 0,
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL,
@@ -120,34 +137,42 @@ class AppDatabase {
 
   Future<List<JournalEntry>> getAllEntries() async {
     final db = await database;
-    final rows = await db.query('entries',
-        where: 'deletedAt IS NULL',
-        orderBy: 'date DESC, updatedAt DESC');
+    final rows = await db.query(
+      'entries',
+      where: 'deletedAt IS NULL',
+      orderBy: 'date DESC, updatedAt DESC',
+    );
     return rows.map(JournalEntry.fromMap).toList();
   }
 
   Future<List<JournalEntry>> getTrashedEntries() async {
     final db = await database;
-    final rows = await db.query('entries',
-        where: 'deletedAt IS NOT NULL',
-        orderBy: 'deletedAt DESC');
+    final rows = await db.query(
+      'entries',
+      where: 'deletedAt IS NOT NULL',
+      orderBy: 'deletedAt DESC',
+    );
     return rows.map(JournalEntry.fromMap).toList();
   }
 
   Future<List<JournalEntry>> getEntriesByDate(String date) async {
     final db = await database;
-    final rows = await db.query('entries',
-        where: 'date = ? AND deletedAt IS NULL',
-        whereArgs: [date],
-        orderBy: 'updatedAt DESC');
+    final rows = await db.query(
+      'entries',
+      where: 'date = ? AND deletedAt IS NULL',
+      whereArgs: [date],
+      orderBy: 'updatedAt DESC',
+    );
     return rows.map(JournalEntry.fromMap).toList();
   }
 
   Future<List<JournalEntry>> getFavorites() async {
     final db = await database;
-    final rows = await db.query('entries',
-        where: 'isFavorite = 1 AND deletedAt IS NULL',
-        orderBy: 'date DESC, updatedAt DESC');
+    final rows = await db.query(
+      'entries',
+      where: 'isFavorite = 1 AND deletedAt IS NULL',
+      orderBy: 'date DESC, updatedAt DESC',
+    );
     return rows.map(JournalEntry.fromMap).toList();
   }
 
@@ -166,14 +191,21 @@ class AppDatabase {
 
   Future<void> insertEntry(JournalEntry entry) async {
     final db = await database;
-    await db.insert('entries', entry.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      'entries',
+      entry.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<void> updateEntry(JournalEntry entry) async {
     final db = await database;
-    await db
-        .update('entries', entry.toMap(), where: 'id = ?', whereArgs: [entry.id]);
+    await db.update(
+      'entries',
+      entry.toMap(),
+      where: 'id = ?',
+      whereArgs: [entry.id],
+    );
   }
 
   Future<void> deleteEntry(String id) async {
@@ -193,8 +225,11 @@ class AppDatabase {
 
   Future<void> insertTemplate(JournalTemplate template) async {
     final db = await database;
-    await db.insert('templates', template.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      'templates',
+      template.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<void> deleteTemplate(String id) async {
@@ -209,8 +244,10 @@ class AppDatabase {
 
   Future<List<JournalTemplate>> getAllTemplates() async {
     final db = await database;
-    final rows =
-        await db.query('templates', orderBy: 'builtin DESC, updatedAt DESC');
+    final rows = await db.query(
+      'templates',
+      orderBy: 'builtin DESC, updatedAt DESC',
+    );
     return rows.map(JournalTemplate.fromMap).toList();
   }
 }

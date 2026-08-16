@@ -12,10 +12,12 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  JournalEntry entry(String id,
-      {String date = '2026-08-16',
-      String content = '内容',
-      List<String> images = const []}) {
+  JournalEntry entry(
+    String id, {
+    String date = '2026-08-16',
+    String content = '内容',
+    List<String> images = const [],
+  }) {
     final now = DateTime(2026, 8, 16, 12, 0);
     return JournalEntry(
       id: id,

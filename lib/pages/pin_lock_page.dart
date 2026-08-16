@@ -154,8 +154,10 @@ class _PinLockPageState extends State<PinLockPage> {
                       !locked) ...[
                     const SizedBox(height: 6),
                     TextButton.icon(
-                      icon: Icon(Icons.fingerprint_rounded,
-                          color: scheme.primary),
+                      icon: Icon(
+                        Icons.fingerprint_rounded,
+                        color: scheme.primary,
+                      ),
                       label: const Text('使用生物识别'),
                       onPressed: _tryBiometric,
                     ),

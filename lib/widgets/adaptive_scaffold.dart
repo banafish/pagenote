@@ -131,10 +131,7 @@ class _BrandMark extends StatelessWidget {
             ),
             Text(
               'PageNote',
-              style: TextStyle(
-                fontSize: 11,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ],
         ),

@@ -51,10 +51,7 @@ void main() {
   });
 
   test('当天补写的新条目不影响历史展示（REQ-01.4）', () {
-    final seed = [
-      _e('old', '2025-08-16'),
-      _e('new', '2026-08-16'),
-    ];
+    final seed = [_e('old', '2025-08-16'), _e('new', '2026-08-16')];
     final provider = ProviderForTest(seed);
     var result = provider.onThisDay(now);
     expect(result.length, 1);
@@ -68,8 +65,13 @@ void main() {
 
   test('月报：篇数/字数/均值/标签TOP5/星期/环比（REQ-10.1）', () {
     final ts = DateTime(2026, 8, 16);
-    JournalEntry entry(String id, String date, List<String> tags,
-        {int words = 10, Mood? mood}) {
+    JournalEntry entry(
+      String id,
+      String date,
+      List<String> tags, {
+      int words = 10,
+      Mood? mood,
+    }) {
       return JournalEntry(
         id: id,
         date: date,

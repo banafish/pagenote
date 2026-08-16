@@ -8,7 +8,7 @@ import '../models/template.dart' show JournalTemplate, newTemplateId;
 /// 手账模板仓库（REQ-09）：内置模板 + 用户自建模板。
 class TemplateProvider extends ChangeNotifier {
   TemplateProvider({AppDatabase? database})
-      : _db = database ?? AppDatabase.instance;
+    : _db = database ?? AppDatabase.instance;
 
   final AppDatabase _db;
 
@@ -51,8 +51,7 @@ class TemplateProvider extends ChangeNotifier {
   }
 
   /// 将一篇手账另存为模板（REQ-09.3）。
-  Future<JournalTemplate> saveFromEntry(
-      JournalEntry entry, String name) async {
+  Future<JournalTemplate> saveFromEntry(JournalEntry entry, String name) async {
     final template = JournalTemplate(
       id: newTemplateId(),
       name: name,
@@ -75,7 +74,9 @@ class TemplateProvider extends ChangeNotifier {
   /// 导入备份中的模板（REQ-09.4）：合并按 id 去重、更新时间新者胜；
   /// 覆盖模式清空后导入。内置模板标志始终保留。
   Future<void> importTemplates(
-      List<JournalTemplate> incoming, {required bool overwrite}) async {
+    List<JournalTemplate> incoming, {
+    required bool overwrite,
+  }) async {
     if (overwrite) {
       await _db.deleteAllTemplates();
       for (final t in incoming) {

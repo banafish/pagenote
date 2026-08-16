@@ -19,10 +19,9 @@ Future<JournalTemplate?> showTemplatePicker(BuildContext context) {
         children: [
           Text(
             '选择模板',
-            style: Theme.of(sheetContext)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(
+              sheetContext,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
@@ -74,8 +73,11 @@ class _TemplateTile extends StatelessWidget {
                   color: scheme.primaryContainer.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.description_outlined,
-                    size: 20, color: scheme.onPrimaryContainer),
+                child: Icon(
+                  Icons.description_outlined,
+                  size: 20,
+                  color: scheme.onPrimaryContainer,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -98,10 +100,13 @@ class _TemplateTile extends StatelessWidget {
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1.5),
+                              horizontal: 6,
+                              vertical: 1.5,
+                            ),
                             decoration: BoxDecoration(
-                              color: scheme.secondaryContainer
-                                  .withValues(alpha: 0.7),
+                              color: scheme.secondaryContainer.withValues(
+                                alpha: 0.7,
+                              ),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -131,8 +136,7 @@ class _TemplateTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded,
-                  color: scheme.onSurfaceVariant),
+              Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
             ],
           ),
         ),

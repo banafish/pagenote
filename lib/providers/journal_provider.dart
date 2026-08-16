@@ -48,7 +48,7 @@ class MonthlyReport {
 /// 手账数据仓库：维护全部条目并派生标签与统计数据。
 class JournalProvider extends ChangeNotifier {
   JournalProvider({AppDatabase? database})
-      : _db = database ?? AppDatabase.instance;
+    : _db = database ?? AppDatabase.instance;
 
   final AppDatabase _db;
 
@@ -81,9 +81,8 @@ class JournalProvider extends ChangeNotifier {
   int get totalCount => entries.length;
 
   /// 今日条数。
-  int get todayCount => entries
-      .where((e) => e.date == DateUtils2.dateKey(DateTime.now()))
-      .length;
+  int get todayCount =>
+      entries.where((e) => e.date == DateUtils2.dateKey(DateTime.now())).length;
 
   /// 连续记录天数（自今天或昨天向前数）。
   int get streakDays {
@@ -132,7 +131,9 @@ class JournalProvider extends ChangeNotifier {
 
   /// 累计字数（按汉字/字母估算）。
   int get totalWords => entries.fold(
-      0, (sum, e) => sum + e.plainContent.replaceAll(RegExp(r'\s'), '').length);
+    0,
+    (sum, e) => sum + e.plainContent.replaceAll(RegExp(r'\s'), '').length,
+  );
 
   /// 心情最常出现的情绪，无记录时返回 null。
   Mood? get dominantMood {
@@ -218,8 +219,9 @@ class JournalProvider extends ChangeNotifier {
   /// 最常记录的星期与对比上月增减。
   MonthlyReport monthlyReport(int year, int month) {
     final prefix = '$year-${month.toString().padLeft(2, '0')}';
-    final monthEntries =
-        entries.where((e) => e.date.startsWith(prefix)).toList();
+    final monthEntries = entries
+        .where((e) => e.date.startsWith(prefix))
+        .toList();
 
     var words = 0;
     final moodScores = <double>[];
@@ -253,8 +255,9 @@ class JournalProvider extends ChangeNotifier {
         ? DateTime(year - 1, 12, 1)
         : DateTime(year, month - 1, 1);
     final prevPrefix = '${prev.year}-${prev.month.toString().padLeft(2, '0')}';
-    final prevCount =
-        entries.where((e) => e.date.startsWith(prevPrefix)).length;
+    final prevCount = entries
+        .where((e) => e.date.startsWith(prevPrefix))
+        .length;
 
     return MonthlyReport(
       year: year,
@@ -379,17 +382,19 @@ class JournalProvider extends ChangeNotifier {
       for (final name in mapped.images) {
         final bytes = data.attachments[name];
         if (bytes != null) {
-          newPaths.add(await Attachments.persistBytes(bytes, p.extension(name)));
+          newPaths.add(
+            await Attachments.persistBytes(bytes, p.extension(name)),
+          );
         }
       }
       mapped.images = newPaths;
 
       if (!overwrite) {
-        final existing = [..._backing, ..._trashedBacking]
-            .where((e) => e.id == mapped.id)
-            .firstOrNull;
-        if (existing != null &&
-            !mapped.updatedAt.isAfter(existing.updatedAt)) {
+        final existing = [
+          ..._backing,
+          ..._trashedBacking,
+        ].where((e) => e.id == mapped.id).firstOrNull;
+        if (existing != null && !mapped.updatedAt.isAfter(existing.updatedAt)) {
           continue; // 本地较新，保留本地版本
         }
       }

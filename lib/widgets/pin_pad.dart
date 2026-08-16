@@ -122,8 +122,11 @@ class _Key extends StatelessWidget {
           height: 58,
           child: Center(
             child: isBack
-                ? Icon(Icons.backspace_outlined,
-                    size: 22, color: scheme.onSurfaceVariant)
+                ? Icon(
+                    Icons.backspace_outlined,
+                    size: 22,
+                    color: scheme.onSurfaceVariant,
+                  )
                 : Text(
                     label,
                     style: TextStyle(

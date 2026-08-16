@@ -85,10 +85,9 @@ void main() {
         updatedAt: DateTime(2026, 8, 16),
       ),
       // 与内置同 id 的较旧版本 → 不覆盖。
-      builtinTemplates.first
-          .copy()
-          ..name = '被篡改的内置名'
-          ..updatedAt = DateTime(2020, 1, 1),
+      builtinTemplates.first.copy()
+        ..name = '被篡改的内置名'
+        ..updatedAt = DateTime(2020, 1, 1),
     ];
 
     await provider.importTemplates(incoming, overwrite: false);
@@ -96,8 +95,7 @@ void main() {
       provider.templates.where((t) => t.id == 'tpl-x').single.name,
       '备份模板',
     );
-    expect(provider.builtinTemplates.first.name,
-        isNot('被篡改的内置名'));
+    expect(provider.builtinTemplates.first.name, isNot('被篡改的内置名'));
 
     // 覆盖导入后重新补种内置模板。
     await provider.importTemplates([], overwrite: true);

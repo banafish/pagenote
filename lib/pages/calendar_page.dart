@@ -60,9 +60,9 @@ class _CalendarPageState extends State<CalendarPage> {
       onToggleFavorite: (id) =>
           context.read<JournalProvider>().toggleFavorite(id),
       onDelete: (id) => deleteWithUndo(context, id),
-      onShare: (entry) => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry)),
-      ),
+      onShare: (entry) => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry))),
       onNewEntry: () => widget.onOpenEditor(
         context,
         JournalEntry(
@@ -122,10 +122,9 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 Text(
                   '日历',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -253,8 +252,8 @@ class _MonthCalendar extends StatelessWidget {
           color: isSelected
               ? scheme.primaryContainer
               : entries.isNotEmpty
-                  ? scheme.secondaryContainer.withValues(alpha: 0.35)
-                  : Colors.transparent,
+              ? scheme.secondaryContainer.withValues(alpha: 0.35)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
           border: isToday && !isSelected
               ? Border.all(color: scheme.primary, width: 1.4)
@@ -335,15 +334,20 @@ class _DayEntries extends StatelessWidget {
               ),
               Text(
                 '${entries.length} 篇',
-                style:
-                    TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(width: 12),
               IconButton(
                 tooltip: '为此日写手账',
                 visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.edit_note_rounded,
-                    color: scheme.primary, size: 24),
+                icon: Icon(
+                  Icons.edit_note_rounded,
+                  color: scheme.primary,
+                  size: 24,
+                ),
                 onPressed: onNewEntry,
               ),
             ],
@@ -361,13 +365,18 @@ class _DayEntries extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  Icon(Icons.edit_calendar_outlined,
-                      size: 34, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.edit_calendar_outlined,
+                    size: 34,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(height: 10),
                   Text(
                     '这一天还是空白的一页',
                     style: TextStyle(
-                        color: scheme.onSurfaceVariant, fontSize: 13.5),
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 13.5,
+                    ),
                   ),
                 ],
               ),

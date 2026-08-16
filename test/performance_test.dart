@@ -44,14 +44,20 @@ void main() {
     provider.monthlyReport(2024, 6);
 
     // 关键词 + 筛选组合搜索。
-    final results =
-        filterEntries(entries, '手账', SearchFilters()..favoritesOnly = false);
+    final results = filterEntries(
+      entries,
+      '手账',
+      SearchFilters()..favoritesOnly = false,
+    );
     expect(results.length, 2000);
 
     sw.stop();
     // 内存计算应在数百毫秒内完成（宽松上限，防止劣化）。
-    expect(sw.elapsed, lessThan(const Duration(seconds: 5)),
-        reason: '2000 条全量派生计算耗时 ${sw.elapsed}');
+    expect(
+      sw.elapsed,
+      lessThan(const Duration(seconds: 5)),
+      reason: '2000 条全量派生计算耗时 ${sw.elapsed}',
+    );
   });
 }
 

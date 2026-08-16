@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import '../data/prompts.dart';
+import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../models/mood.dart';
 import '../providers/journal_provider.dart';
@@ -15,6 +16,7 @@ import '../utils/date_utils.dart';
 import '../widgets/activity_selector.dart';
 import '../widgets/daily_prompt_card.dart';
 import '../widgets/emoji_selector.dart';
+import '../widgets/sticker_layer.dart';
 import '../widgets/tag_editor.dart';
 import '../widgets/template_picker.dart';
 
@@ -36,6 +38,9 @@ class _EditorPageState extends State<EditorPage> {
   late final bool _isEditing;
   bool _saved = false;
 
+  // 装饰排版（REQ-13）：当前选中的贴纸下标,-1 为未选中。
+  int _selectedSticker = -1;
+
   // 每日一问（REQ-04）。
   late String _todayKey;
   int _promptOffset = 0;
@@ -46,7 +51,8 @@ class _EditorPageState extends State<EditorPage> {
   @override
   void initState() {
     super.initState();
-    _draft = widget.entry?.copy() ??
+    _draft =
+        widget.entry?.copy() ??
         JournalEntry(
           id: JournalProvider.newId(),
           date: DateUtils2.dateKey(DateTime.now()),
@@ -77,19 +83,20 @@ class _EditorPageState extends State<EditorPage> {
   bool get _hasContent =>
       _title.text.trim().isNotEmpty || _content.text.trim().isNotEmpty;
 
-  String get _prompt =>
-      promptForDate(_todayKey, _promptOffset);
+  String get _prompt => promptForDate(_todayKey, _promptOffset);
 
   Future<void> _save() async {
     if (!_hasContent) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('写点什么再保存吧 ✏️')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('写点什么再保存吧 ✏️')));
       return;
     }
     _draft
       ..title = _title.text.trim()
       ..content = _content.text.trim()
+      // 整理速记：在编辑页保存即转为正式手账（REQ-16）。
+      ..isQuickNote = false
       ..updatedAt = DateTime.now();
     await context.read<JournalProvider>().saveEntry(_draft);
     _saved = true;
@@ -175,6 +182,138 @@ class _EditorPageState extends State<EditorPage> {
     });
   }
 
+  // ---------------- 装饰排版（REQ-13） ----------------
+
+  Widget _decorationSection(ColorScheme scheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '纸张与贴纸',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurface,
+              ),
+            ),
+            const Spacer(),
+            ActionChip(
+              avatar: Icon(
+                Icons.emoji_emotions_outlined,
+                size: 17,
+                color: scheme.primary,
+              ),
+              label: const Text('加贴纸'),
+              onPressed: _showStickerPalette,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 44,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: paperStyles.length + 1,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, i) {
+              // 首位「无」:恢复主题默认背景。
+              if (i == 0) return _paperSwatch(scheme, null);
+              return _paperSwatch(scheme, paperStyles[i - 1]);
+            },
+          ),
+        ),
+        if (_draft.stickers.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              '已放 ${_draft.stickers.length} 个贴纸 · 点击页面中的贴纸可移动、缩放、旋转',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _paperSwatch(ColorScheme scheme, PaperStyle? paper) {
+    final selected = paper == null
+        ? _draft.paper.isEmpty
+        : _draft.paper == paper.id;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      key: ValueKey('paper-${paper?.id ?? 'none'}'),
+      onTap: () => setState(() => _draft.paper = paper?.id ?? ''),
+      child: Tooltip(
+        message: paper?.name ?? '无',
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+              width: selected ? 2.2 : 1,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: paper == null
+                ? Container(
+                    color: isDark ? const Color(0xFF2A2521) : Colors.white,
+                    alignment: Alignment.center,
+                    child: Text(
+                      '无',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                : CustomPaint(
+                    size: const Size(44, 44),
+                    painter: PaperPainter(paper, dark: isDark),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showStickerPalette() async {
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 360),
+          child: GridView.count(
+            crossAxisCount: 6,
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            children: [
+              for (final e in stickerPalette)
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => Navigator.pop(sheetContext, e),
+                  child: Center(
+                    child: Text(e, style: const TextStyle(fontSize: 26)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (emoji == null || !mounted) return;
+    setState(() {
+      // 新贴纸落在页面上方居中处,便于立刻看到并调整。
+      _draft.stickers.add(Sticker(emoji: emoji, dx: 0.5, dy: 0.16));
+      _selectedSticker = _draft.stickers.length - 1;
+    });
+  }
+
   // ---------------- 模板（REQ-09） ----------------
 
   Future<void> _pickTemplate() async {
@@ -221,21 +360,21 @@ class _EditorPageState extends State<EditorPage> {
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty || !mounted) return;
     await context.read<TemplateProvider>().saveFromEntry(
-          JournalEntry(
-            id: _draft.id,
-            date: _draft.date,
-            title: _title.text.trim(),
-            content: _content.text.trim(),
-            tags: List.from(_draft.tags),
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          ),
-          trimmed,
-        );
+      JournalEntry(
+        id: _draft.id,
+        date: _draft.date,
+        title: _title.text.trim(),
+        content: _content.text.trim(),
+        tags: List.from(_draft.tags),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      trimmed,
+    );
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已保存模板「$trimmed」📔')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已保存模板「$trimmed」📔')));
     }
   }
 
@@ -249,6 +388,26 @@ class _EditorPageState extends State<EditorPage> {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
         _dateSelector(scheme),
+        // 速记整理提示（REQ-16）：编辑未整理速记时说明保存即转正。
+        if (_draft.isQuickNote)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Row(
+              children: [
+                Icon(Icons.bolt_rounded, size: 17, color: scheme.tertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '这是一条速记,补充心情与标签后保存即转为正式手账',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 18),
 
         // 每日一问（REQ-04.3：编辑已有条目默认收起）。
@@ -265,19 +424,28 @@ class _EditorPageState extends State<EditorPage> {
           label: '今日心情',
           items: [
             for (final m in Mood.values)
-              EmojiItem(id: m.id, emoji: m.emoji, label: m.label, color: m.color),
+              EmojiItem(
+                id: m.id,
+                emoji: m.emoji,
+                label: m.label,
+                color: m.color,
+              ),
           ],
           selectedId: _draft.mood?.id,
-          onSelected: (id) => setState(
-            () => _draft.mood = id == null ? null : Mood.fromId(id),
-          ),
+          onSelected: (id) =>
+              setState(() => _draft.mood = id == null ? null : Mood.fromId(id)),
         ),
         const SizedBox(height: 18),
         EmojiSelector(
           label: '今日天气',
           items: [
             for (final w in Weather.values)
-              EmojiItem(id: w.id, emoji: w.emoji, label: w.label, color: w.color),
+              EmojiItem(
+                id: w.id,
+                emoji: w.emoji,
+                label: w.label,
+                color: w.color,
+              ),
           ],
           selectedId: _draft.weather?.id,
           onSelected: (id) => setState(
@@ -287,20 +455,24 @@ class _EditorPageState extends State<EditorPage> {
         const SizedBox(height: 20),
         ActivitySelector(
           selected: _draft.activities,
-          customActivities:
-              context.watch<SettingsProvider>().customActivities,
+          customActivities: context.watch<SettingsProvider>().customActivities,
           onChanged: (activities) =>
               setState(() => _draft.activities = activities),
           onAddCustom: (name) =>
               context.read<SettingsProvider>().addCustomActivity(name),
         ),
         const SizedBox(height: 20),
+        _decorationSection(scheme),
+        const SizedBox(height: 20),
         if (!_isEditing && !_hasContent)
           Padding(
             padding: const EdgeInsets.only(bottom: 18),
             child: ActionChip(
-              avatar: Icon(Icons.description_outlined,
-                  size: 17, color: scheme.primary),
+              avatar: Icon(
+                Icons.description_outlined,
+                size: 17,
+                color: scheme.primary,
+              ),
               label: const Text('从模板开始'),
               onPressed: _pickTemplate,
             ),
@@ -346,14 +518,52 @@ class _EditorPageState extends State<EditorPage> {
       ],
     );
 
+    // 装饰排版（REQ-13）：纸张纹理作正文背景,贴纸浮于整页之上。
+    final paper = paperById(_draft.paper);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final page = Stack(
+      children: [
+        if (paper != null)
+          Positioned.fill(
+            child: CustomPaint(painter: PaperPainter(paper, dark: isDark)),
+          ),
+        form,
+        Positioned.fill(
+          child: StickerOverlay(
+            stickers: _draft.stickers,
+            selectedIndex: _selectedSticker,
+            onChanged: () => setState(() {}),
+            onSelect: (i) => setState(
+              () => _selectedSticker = _selectedSticker == i ? -1 : i,
+            ),
+          ),
+        ),
+        if (_selectedSticker >= 0 && _selectedSticker < _draft.stickers.length)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 18,
+            child: StickerToolbar(
+              sticker: _draft.stickers[_selectedSticker],
+              onChanged: () => setState(() {}),
+              onDelete: () => setState(() {
+                _draft.stickers.removeAt(_selectedSticker);
+                _selectedSticker = -1;
+              }),
+              onDone: () => setState(() => _selectedSticker = -1),
+            ),
+          ),
+      ],
+    );
+
     final body = isWide
         ? Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 820),
-              child: form,
+              child: page,
             ),
           )
-        : form;
+        : page;
 
     return PopScope(
       canPop: false,
@@ -374,10 +584,13 @@ class _EditorPageState extends State<EditorPage> {
           title: Text(_isEditing ? '编辑手账' : '写手账'),
           actions: [
             PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert_rounded,
-                  color: scheme.onSurfaceVariant),
+              icon: Icon(
+                Icons.more_vert_rounded,
+                color: scheme.onSurfaceVariant,
+              ),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+                borderRadius: BorderRadius.circular(14),
+              ),
               itemBuilder: (context) => const [
                 PopupMenuItem(
                   value: 'template',
@@ -432,8 +645,7 @@ class _EditorPageState extends State<EditorPage> {
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today_rounded,
-                size: 19, color: scheme.primary),
+            Icon(Icons.calendar_today_rounded, size: 19, color: scheme.primary),
             const SizedBox(width: 10),
             Text(
               DateUtils2.fullDate(_draft.date),
@@ -444,8 +656,11 @@ class _EditorPageState extends State<EditorPage> {
               ),
             ),
             const Spacer(),
-            Icon(Icons.expand_more_rounded,
-                size: 20, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.expand_more_rounded,
+              size: 20,
+              color: scheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -480,8 +695,7 @@ class _EditorPageState extends State<EditorPage> {
           children: [
             for (var i = 0; i < _draft.images.length; i++)
               _imageTile(_draft.images[i], i, scheme),
-            if (_draft.images.length < 9)
-              _addTile(scheme),
+            if (_draft.images.length < 9) _addTile(scheme),
           ],
         ),
       ],
@@ -501,8 +715,10 @@ class _EditorPageState extends State<EditorPage> {
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => Container(
                 color: scheme.surfaceContainerHighest,
-                child: Icon(Icons.broken_image_outlined,
-                    color: scheme.onSurfaceVariant),
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -544,8 +760,11 @@ class _EditorPageState extends State<EditorPage> {
             color: scheme.outlineVariant.withValues(alpha: 0.8),
           ),
         ),
-        child: Icon(Icons.add_photo_alternate_outlined,
-            size: 30, color: scheme.onSurfaceVariant),
+        child: Icon(
+          Icons.add_photo_alternate_outlined,
+          size: 30,
+          color: scheme.onSurfaceVariant,
+        ),
       ),
     );
   }

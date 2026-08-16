@@ -105,8 +105,11 @@ class TemplateManagerPage extends StatelessWidget {
     );
   }
 
-  Widget _tile(BuildContext context, JournalTemplate template,
-      {required bool canManage}) {
+  Widget _tile(
+    BuildContext context,
+    JournalTemplate template, {
+    required bool canManage,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -114,8 +117,7 @@ class TemplateManagerPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
@@ -126,7 +128,9 @@ class TemplateManagerPage extends StatelessWidget {
                 Text(
                   template.name,
                   style: const TextStyle(
-                      fontSize: 14.5, fontWeight: FontWeight.w700),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 if (template.content.trim().isNotEmpty) ...[
                   const SizedBox(height: 3),
@@ -134,8 +138,10 @@ class TemplateManagerPage extends StatelessWidget {
                     template.content.trim().replaceAll('\n', ' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ],
@@ -145,15 +151,20 @@ class TemplateManagerPage extends StatelessWidget {
             IconButton(
               tooltip: '重命名',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.drive_file_rename_outline_rounded,
-                  size: 20),
+              icon: const Icon(
+                Icons.drive_file_rename_outline_rounded,
+                size: 20,
+              ),
               onPressed: () => _rename(context, template),
             ),
             IconButton(
               tooltip: '删除',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.delete_outline_rounded,
-                  size: 20, color: Color(0xFFE57373)),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: Color(0xFFE57373),
+              ),
               onPressed: () => _delete(context, template),
             ),
           ],

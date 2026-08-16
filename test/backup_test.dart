@@ -18,8 +18,11 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  JournalEntry entry(String id,
-      {DateTime? updatedAt, List<String> images = const []}) {
+  JournalEntry entry(
+    String id, {
+    DateTime? updatedAt,
+    List<String> images = const [],
+  }) {
     final ts = updatedAt ?? DateTime(2026, 8, 16, 10, 0);
     return JournalEntry(
       id: id,
@@ -80,8 +83,12 @@ void main() {
   test('合并导入：按 id 去重、updatedAt 新者胜（REQ-03.2）', () async {
     final db = AppDatabase.inMemory();
     final provider = JournalProvider(database: db);
-    await provider.saveEntry(entry('keep-local', updatedAt: DateTime(2026, 8, 16, 12, 0)));
-    await provider.saveEntry(entry('update-me', updatedAt: DateTime(2026, 8, 1)));
+    await provider.saveEntry(
+      entry('keep-local', updatedAt: DateTime(2026, 8, 16, 12, 0)),
+    );
+    await provider.saveEntry(
+      entry('update-me', updatedAt: DateTime(2026, 8, 1)),
+    );
 
     final data = BackupData(
       entries: [
@@ -124,10 +131,10 @@ void main() {
     final changed = await provider.importBackup(data, overwrite: true);
     expect(changed, 2);
     expect(provider.totalCount, 2);
-    expect(
-      provider.entries.map((e) => e.id).toSet(),
-      {'from-backup-1', 'from-backup-2'},
-    );
+    expect(provider.entries.map((e) => e.id).toSet(), {
+      'from-backup-1',
+      'from-backup-2',
+    });
 
     await db.close();
   });

@@ -11,9 +11,10 @@ class PinHasher {
 
   static String newSalt() {
     final rand = Random.secure();
-    return List.generate(16, (_) => rand.nextInt(256))
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List.generate(
+      16,
+      (_) => rand.nextInt(256),
+    ).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
   static String hash(String pin, String salt) {

@@ -69,9 +69,7 @@ class _StatsPageState extends State<StatsPage> {
         const SizedBox(height: 26),
 
         // 月报入口（REQ-10.2）。
-        _MonthlyReportEntry(
-          report: journal.monthlyReport(now.year, now.month),
-        ),
+        _MonthlyReportEntry(report: journal.monthlyReport(now.year, now.month)),
         const SizedBox(height: 26),
 
         _sectionTitle(context, '心情趋势'),
@@ -80,8 +78,7 @@ class _StatsPageState extends State<StatsPage> {
           days: _trendDays,
           onChanged: (days) => setState(() => _trendDays = days),
           points: [
-            for (final p in journal.moodAverages(_trendDays))
-              (p.date, p.score),
+            for (final p in journal.moodAverages(_trendDays)) (p.date, p.score),
           ],
         ),
         const SizedBox(height: 26),
@@ -125,10 +122,9 @@ class _StatsPageState extends State<StatsPage> {
       padding: EdgeInsets.only(top: top + 8, left: 4),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .titleLarge
-            ?.copyWith(fontWeight: FontWeight.w700),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -170,9 +166,9 @@ class _MonthlyReportEntry extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(20),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const MonthlyReportPage()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const MonthlyReportPage())),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -195,8 +191,11 @@ class _MonthlyReportEntry extends StatelessWidget {
                 color: scheme.tertiary.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: Icon(Icons.workspace_premium_outlined,
-                  size: 22, color: scheme.tertiary),
+              child: Icon(
+                Icons.workspace_premium_outlined,
+                size: 22,
+                color: scheme.tertiary,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -224,8 +223,7 @@ class _MonthlyReportEntry extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded,
-                color: scheme.onSurfaceVariant),
+            Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
           ],
         ),
       ),
@@ -279,9 +277,7 @@ class _TrendCard extends StatelessWidget {
                 selected: {days},
                 onSelectionChanged: (set) => onChanged(set.first),
                 showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                ),
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
               ),
             ],
           ),
@@ -347,8 +343,10 @@ class _ActivityStats extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(emojiOfActivity(ranked[i].key),
-                      style: const TextStyle(fontSize: 16)),
+                  Text(
+                    emojiOfActivity(ranked[i].key),
+                    style: const TextStyle(fontSize: 16),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -385,8 +383,10 @@ class _ActivityStats extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    Text(emojiOfActivity(e.key),
-                        style: const TextStyle(fontSize: 18)),
+                    Text(
+                      emojiOfActivity(e.key),
+                      style: const TextStyle(fontSize: 18),
+                    ),
                     const SizedBox(width: 10),
                     Text(
                       e.key,
@@ -402,11 +402,11 @@ class _ActivityStats extends StatelessWidget {
                         child: LinearProgressIndicator(
                           value: (e.value - 1) / 9,
                           minHeight: 8,
-                          backgroundColor: scheme
-                              .surfaceContainerHighest
+                          backgroundColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.6),
                           valueColor: AlwaysStoppedAnimation(
-                              scheme.primary.withValues(alpha: 0.8)),
+                            scheme.primary.withValues(alpha: 0.8),
+                          ),
                         ),
                       ),
                     ),
@@ -496,10 +496,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
-              color: scheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -557,13 +554,16 @@ class _WeekBarChart extends StatelessWidget {
                             duration: const Duration(milliseconds: 300),
                             height: counts[i] == 0
                                 ? 6
-                                : 14.0 + (counts[i] / (maxCount == 0 ? 1 : maxCount)) * 76,
+                                : 14.0 +
+                                      (counts[i] /
+                                              (maxCount == 0 ? 1 : maxCount)) *
+                                          76,
                             decoration: BoxDecoration(
                               color: counts[i] == 0
                                   ? scheme.surfaceContainerHighest
                                   : (6 - i) == today
-                                      ? scheme.primary
-                                      : scheme.primary.withValues(alpha: 0.45),
+                                  ? scheme.primary
+                                  : scheme.primary.withValues(alpha: 0.45),
                               borderRadius: BorderRadius.circular(7),
                             ),
                           ),
@@ -582,7 +582,9 @@ class _WeekBarChart extends StatelessWidget {
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: (6 - i) == today
                           ? BoxDecoration(
                               color: scheme.primaryContainer,
@@ -660,10 +662,11 @@ class _MoodBars extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: e.value / max,
                         minHeight: 10,
-                        backgroundColor:
-                            scheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                        valueColor:
-                            AlwaysStoppedAnimation(e.key.color.withValues(alpha: 0.85)),
+                        backgroundColor: scheme.surfaceContainerHighest
+                            .withValues(alpha: 0.6),
+                        valueColor: AlwaysStoppedAnimation(
+                          e.key.color.withValues(alpha: 0.85),
+                        ),
                       ),
                     ),
                   ),
@@ -725,9 +728,7 @@ class _TagRanking extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: i < 3
-                            ? scheme.primary
-                            : scheme.onSurfaceVariant,
+                        color: i < 3 ? scheme.primary : scheme.onSurfaceVariant,
                       ),
                     ),
                   ),

@@ -50,7 +50,8 @@ Widget _wrap({
       ChangeNotifierProvider.value(value: journal),
       ChangeNotifierProvider.value(value: settings),
       ChangeNotifierProvider.value(
-          value: templates ?? TemplateProvider(database: AppDatabase.inMemory())),
+        value: templates ?? TemplateProvider(database: AppDatabase.inMemory()),
+      ),
     ],
     child: MaterialApp(
       theme: AppTheme.light(settings.seedColor),
@@ -150,11 +151,9 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
 
-    await tester.pumpWidget(_wrap(
-      child: const RootShell(),
-      journal: journal,
-      settings: settings,
-    ));
+    await tester.pumpWidget(
+      _wrap(child: const RootShell(), journal: journal, settings: settings),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('拾页'), findsWidgets);
@@ -179,11 +178,9 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
 
-    await tester.pumpWidget(_wrap(
-      child: const RootShell(),
-      journal: journal,
-      settings: settings,
-    ));
+    await tester.pumpWidget(
+      _wrap(child: const RootShell(), journal: journal, settings: settings),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('海边散步'), findsOneWidget);
@@ -199,12 +196,14 @@ void main() {
     final templates = TemplateProvider(database: AppDatabase.inMemory());
     await templates.load();
 
-    await tester.pumpWidget(_wrap(
-      child: const RootShell(),
-      journal: journal,
-      settings: settings,
-      templates: templates,
-    ));
+    await tester.pumpWidget(
+      _wrap(
+        child: const RootShell(),
+        journal: journal,
+        settings: settings,
+        templates: templates,
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
@@ -219,11 +218,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     expect(find.text('主题模式'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('v1.1.0 · 拾起生活中的每一页'),
-      200,
-    );
-    expect(find.text('v1.1.0 · 拾起生活中的每一页'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('v1.2.0 · 拾起生活中的每一页'), 200);
+    expect(find.text('v1.2.0 · 拾起生活中的每一页'), findsOneWidget);
   });
 }
 

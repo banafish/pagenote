@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/webdav_service.dart';
+
 /// 强调色种子选项。
 class SeedColorOption {
   const SeedColorOption(this.name, this.color);
@@ -60,6 +62,18 @@ class SettingsProvider extends ChangeNotifier {
   // 自定义活动（REQ-12.1）。
   static const _keyCustomActivities = 'activities.custom';
 
+  // WebDAV 自动备份（REQ-15）。
+  static const _keyWebdavUrl = 'webdav.url';
+  static const _keyWebdavUsername = 'webdav.username';
+  static const _keyWebdavPassword = 'webdav.password';
+  static const _keyWebdavEnabled = 'webdav.enabled';
+  static const _keyWebdavIntervalDays = 'webdav.intervalDays';
+  static const _keyWebdavLastBackupAt = 'webdav.lastBackupAt';
+  static const _keyWebdavLastError = 'webdav.lastError';
+
+  // WebDAV 自动备份间隔选项（REQ-15 定期备份）。
+  static const webdavIntervalChoices = [1, 3, 7];
+
   ThemeMode get themeMode {
     final index = _prefs.getInt(_keyThemeMode) ?? ThemeMode.system.index;
     return ThemeMode.values[index.clamp(0, ThemeMode.values.length - 1)];
@@ -71,8 +85,7 @@ class SettingsProvider extends ChangeNotifier {
   int get _seedIndex => _prefs.getInt(_keySeedIndex) ?? 0;
 
   /// 当前选中的强调色序号（供设置页高亮）。
-  int get seedIndexCache =>
-      _seedIndex.clamp(0, seedColorOptions.length - 1);
+  int get seedIndexCache => _seedIndex.clamp(0, seedColorOptions.length - 1);
 
   /// 正文字号缩放，1.0 为标准。
   double get fontScale {
@@ -168,7 +181,9 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> setLockDelayIndex(int index) async {
     await _prefs.setInt(
-        _keyLockDelayIndex, index.clamp(0, lockDelayOptions.length - 1));
+      _keyLockDelayIndex,
+      index.clamp(0, lockDelayOptions.length - 1),
+    );
     notifyListeners();
   }
 
@@ -213,7 +228,9 @@ class SettingsProvider extends ChangeNotifier {
     final list = customActivities;
     if (list.contains(trimmed)) return;
     await _prefs.setString(
-        _keyCustomActivities, jsonEncode([...list, trimmed]));
+      _keyCustomActivities,
+      jsonEncode([...list, trimmed]),
+    );
     notifyListeners();
   }
 
@@ -222,4 +239,89 @@ class SettingsProvider extends ChangeNotifier {
     await _prefs.setString(_keyCustomActivities, jsonEncode(list));
     notifyListeners();
   }
+
+  // ---------------- WebDAV 自动备份（REQ-15） ----------------
+
+  String get webdavUrl => _prefs.getString(_keyWebdavUrl) ?? '';
+
+  String get webdavUsername => _prefs.getString(_keyWebdavUsername) ?? '';
+
+  /// 应用密码以 base64 混淆存储（仅防明文直读,非加密）。
+  String get webdavPassword {
+    final raw = _prefs.getString(_keyWebdavPassword);
+    if (raw == null || raw.isEmpty) return '';
+    try {
+      return utf8.decode(base64Decode(raw));
+    } on FormatException {
+      return '';
+    }
+  }
+
+  /// 是否已填写完整的服务器配置。
+  bool get webdavConfigured =>
+      webdavUrl.isNotEmpty &&
+      webdavUsername.isNotEmpty &&
+      webdavPassword.isNotEmpty;
+
+  bool get webdavEnabled => _prefs.getBool(_keyWebdavEnabled) ?? false;
+
+  /// 自动备份间隔（天,默认每天）。
+  int get webdavIntervalDays =>
+      _prefs.getInt(_keyWebdavIntervalDays) ?? webdavIntervalChoices.first;
+
+  /// 上次成功自动备份时间;null 表示从未备份。
+  DateTime? get webdavLastBackupAt {
+    final ms = _prefs.getInt(_keyWebdavLastBackupAt);
+    return ms == null || ms <= 0
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  /// 上次自动备份的错误信息（展示在设置页,空串为无错误）。
+  String get webdavLastError => _prefs.getString(_keyWebdavLastError) ?? '';
+
+  Future<void> setWebdavConfig({
+    required String url,
+    required String username,
+    required String password,
+  }) async {
+    await _prefs.setString(_keyWebdavUrl, url.trim());
+    await _prefs.setString(_keyWebdavUsername, username.trim());
+    await _prefs.setString(
+      _keyWebdavPassword,
+      password.isEmpty ? '' : base64Encode(utf8.encode(password)),
+    );
+    notifyListeners();
+  }
+
+  Future<void> setWebdavEnabled(bool enabled) async {
+    await _prefs.setBool(_keyWebdavEnabled, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setWebdavIntervalDays(int days) async {
+    await _prefs.setInt(_keyWebdavIntervalDays, days);
+    notifyListeners();
+  }
+
+  Future<void> setWebdavLastBackupAt(DateTime? time) async {
+    await _prefs.setInt(
+      _keyWebdavLastBackupAt,
+      time?.millisecondsSinceEpoch ?? 0,
+    );
+    notifyListeners();
+  }
+
+  Future<void> setWebdavLastError(String message) async {
+    await _prefs.setString(_keyWebdavLastError, message);
+    notifyListeners();
+  }
+
+  /// 是否到达本次启动应执行自动备份的时间。
+  bool get webdavBackupDue => isBackupDue(
+    enabled: webdavEnabled && webdavConfigured,
+    last: webdavLastBackupAt,
+    intervalDays: webdavIntervalDays,
+    now: DateTime.now(),
+  );
 }

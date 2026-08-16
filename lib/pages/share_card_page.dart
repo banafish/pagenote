@@ -32,8 +32,9 @@ class _ShareCardPageState extends State<ShareCardPage> {
   bool _busy = false;
 
   Future<ui.Image?> _render() async {
-    final boundary = _boundaryKey.currentContext?.findRenderObject()
-        as RenderRepaintBoundary?;
+    final boundary =
+        _boundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     if (boundary == null) return null;
     // 图片加载完成后再截图，避免截到空白占位。
     await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -95,8 +96,12 @@ class _ShareCardPageState extends State<ShareCardPage> {
       final bytes = await _renderPng();
       if (bytes == null) return;
       final dir = await getTemporaryDirectory();
-      final file =
-          File(p.join(dir.path, 'pagenote-share-${DateTime.now().millisecondsSinceEpoch}.png'));
+      final file = File(
+        p.join(
+          dir.path,
+          'pagenote-share-${DateTime.now().millisecondsSinceEpoch}.png',
+        ),
+      );
       await file.writeAsBytes(bytes, flush: true);
       await SharePlus.instance.share(
         ShareParams(files: [XFile(file.path)], text: '来自拾页的手账分享'),
@@ -118,14 +123,13 @@ class _ShareCardPageState extends State<ShareCardPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final showSignature =
-        context.watch<SettingsProvider>().shareSignatureEnabled;
+    final showSignature = context
+        .watch<SettingsProvider>()
+        .shareSignatureEnabled;
 
     return Scaffold(
       backgroundColor: scheme.surfaceContainerLow,
-      appBar: AppBar(
-        title: const Text('分享手账'),
-      ),
+      appBar: AppBar(title: const Text('分享手账')),
       body: SingleChildScrollView(
         child: Center(
           child: Padding(
@@ -146,9 +150,9 @@ class _ShareCardPageState extends State<ShareCardPage> {
                 FilledButton.icon(
                   onPressed: _busy ? null : _save,
                   icon: const Icon(Icons.save_rounded, size: 19),
-                  label: Text(Platform.isAndroid || Platform.isIOS
-                      ? '保存到相册'
-                      : '保存为图片'),
+                  label: Text(
+                    Platform.isAndroid || Platform.isIOS ? '保存到相册' : '保存为图片',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 if (Platform.isAndroid || Platform.isIOS)

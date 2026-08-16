@@ -6,11 +6,7 @@ import '../utils/date_utils.dart';
 /// 那年今天卡片（REQ-01）：展示历史上同月同日写过的手账。
 /// 无历史记录时不渲染（不占位）。
 class OnThisDayCard extends StatelessWidget {
-  const OnThisDayCard({
-    super.key,
-    required this.byYear,
-    required this.onOpen,
-  });
+  const OnThisDayCard({super.key, required this.byYear, required this.onOpen});
 
   /// 年份（新→旧）→ 该年今天的条目。
   final Map<int, List<JournalEntry>> byYear;
@@ -40,8 +36,7 @@ class OnThisDayCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.history_edu_rounded,
-                  size: 20, color: scheme.primary),
+              Icon(Icons.history_edu_rounded, size: 20, color: scheme.primary),
               const SizedBox(width: 8),
               Text(
                 '那年今天',
@@ -66,7 +61,9 @@ class OnThisDayCard extends StatelessWidget {
                     onTap: () => onOpen(entry),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 4),
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
                       child: Row(
                         children: [
                           Text(
@@ -109,8 +106,11 @@ class OnThisDayCard extends StatelessWidget {
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
-                          Icon(Icons.chevron_right_rounded,
-                              size: 20, color: scheme.onSurfaceVariant),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ],
                       ),
                     ),

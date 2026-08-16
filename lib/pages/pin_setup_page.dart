@@ -31,8 +31,9 @@ class _PinSetupPageState extends State<PinSetupPage> {
   void initState() {
     super.initState();
     if (widget.skipRiskNotice) _step = 1;
-    BiometricService.isAvailable
-        .then((v) => mounted ? setState(() => _biometricAvailable = v) : null);
+    BiometricService.isAvailable.then(
+      (v) => mounted ? setState(() => _biometricAvailable = v) : null,
+    );
   }
 
   void _input(String digit) {
@@ -82,9 +83,9 @@ class _PinSetupPageState extends State<PinSetupPage> {
     await settings.setPin(salt, PinHasher.hash(_first, salt));
     await settings.setLockBiometric(enableBiometric && _biometricAvailable);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('应用锁已开启 🔒')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('应用锁已开启 🔒')));
     Navigator.of(context).pop();
   }
 
@@ -102,15 +103,15 @@ class _PinSetupPageState extends State<PinSetupPage> {
               child: _step == 0
                   ? _riskStep(scheme)
                   : _step == 3
-                      ? _biometricStep(scheme)
-                      : PinPad(
-                          length: 4,
-                          digits: _step == 1 ? _first : _second,
-                          onDigit: _input,
-                          onBackspace: _backspace,
-                          errorText: _error,
-                          hint: _step == 1 ? '设置 4 位数字 PIN' : '再次输入以确认',
-                        ),
+                  ? _biometricStep(scheme)
+                  : PinPad(
+                      length: 4,
+                      digits: _step == 1 ? _first : _second,
+                      onDigit: _input,
+                      onBackspace: _backspace,
+                      errorText: _error,
+                      hint: _step == 1 ? '设置 4 位数字 PIN' : '再次输入以确认',
+                    ),
             ),
           ),
         ),
@@ -168,7 +169,10 @@ class _PinSetupPageState extends State<PinSetupPage> {
       children: [
         Icon(Icons.fingerprint_rounded, size: 44, color: scheme.primary),
         const SizedBox(height: 18),
-        const Text('PIN 已设置', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        const Text(
+          'PIN 已设置',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
         const SizedBox(height: 8),
         Text(
           _biometricAvailable ? '要开启指纹 / 面容解锁吗？' : '当前设备不支持生物识别',

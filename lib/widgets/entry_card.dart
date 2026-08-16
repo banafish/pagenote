@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
+import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
 
@@ -31,118 +32,145 @@ class EntryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final date = DateUtils2.parseKey(entry.date);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // 纸张装饰背景（REQ-13）：设置过纸张的条目以纸张纹理为卡片底。
+    final paper = paperById(entry.paper);
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: EdgeInsets.all(compact ? 14 : 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context, scheme, date),
-              if (entry.title.trim().isNotEmpty) ...[
-                SizedBox(height: compact ? 8 : 12),
-                Text(
-                  entry.title.trim(),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+      color: paper == null ? null : resolvePaperBase(paper, dark: isDark),
+      child: Stack(
+        children: [
+          if (paper != null)
+            Positioned.fill(
+              child: CustomPaint(painter: PaperPainter(paper, dark: isDark)),
+            ),
+          InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: EdgeInsets.all(compact ? 14 : 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(context, scheme, date),
+                  if (entry.title.trim().isNotEmpty) ...[
+                    SizedBox(height: compact ? 8 : 12),
+                    Text(
+                      entry.title.trim(),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if (entry.plainContent.isNotEmpty) ...[
-                SizedBox(height: 6),
-                Text(
-                  entry.plainContent,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (entry.plainContent.isNotEmpty) ...[
+                    SizedBox(height: 6),
+                    Text(
+                      entry.plainContent,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                         height: 1.6,
                       ),
-                  maxLines: compact ? 2 : 4,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if (entry.images.isNotEmpty && !compact) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 92,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: entry.images.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) => _ImageThumb(path: entry.images[i]),
-                  ),
-                ),
-              ],
-              if (entry.activities.isNotEmpty) ...[
-                SizedBox(height: compact ? 10 : 14),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final activity in entry.activities.take(6))
-                      Tooltip(
-                        message: activity,
-                        child: Text(
-                          emojiOfActivity(activity),
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                      ),
-                    if (entry.activities.length > 6)
-                      Text(
-                        '+${entry.activities.length - 6}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                      maxLines: compact ? 2 : 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
-                ),
-              ],
-              if (entry.tags.isNotEmpty) ...[
-                SizedBox(height: compact ? 10 : 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    for (final tag in entry.tags.take(4))
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: scheme.primaryContainer.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '#$tag',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onPrimaryContainer,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                  if (entry.images.isNotEmpty && !compact) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 92,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: entry.images.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) =>
+                            _ImageThumb(path: entry.images[i]),
                       ),
-                    if (entry.tags.length > 4)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '+${entry.tags.length - 4}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
+                    ),
                   ],
-                ),
-              ],
-            ],
+                  if (entry.activities.isNotEmpty) ...[
+                    SizedBox(height: compact ? 10 : 14),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        for (final activity in entry.activities.take(6))
+                          Tooltip(
+                            message: activity,
+                            child: Text(
+                              emojiOfActivity(activity),
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                          ),
+                        if (entry.activities.length > 6)
+                          Text(
+                            '+${entry.activities.length - 6}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (entry.stickers.isNotEmpty) ...[
+                    SizedBox(height: compact ? 8 : 10),
+                    Text(
+                      [
+                        for (final s in entry.stickers.take(8)) s.emoji,
+                      ].join(' '),
+                      style: const TextStyle(fontSize: 14, height: 1.2),
+                    ),
+                  ],
+                  if (entry.tags.isNotEmpty) ...[
+                    SizedBox(height: compact ? 10 : 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final tag in entry.tags.take(4))
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer.withValues(
+                                alpha: 0.55,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '#$tag',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        if (entry.tags.length > 4)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '+${entry.tags.length - 4}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -159,7 +187,10 @@ class EntryCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             alignment: Alignment.center,
-            child: Text(entry.mood!.emoji, style: const TextStyle(fontSize: 21)),
+            child: Text(
+              entry.mood!.emoji,
+              style: const TextStyle(fontSize: 21),
+            ),
           )
         else
           Container(
@@ -208,8 +239,29 @@ class EntryCard extends StatelessWidget {
             padding: const EdgeInsets.only(right: 6),
             child: Tooltip(
               message: entry.weather!.label,
-              child: Text(entry.weather!.emoji,
-                  style: const TextStyle(fontSize: 19)),
+              child: Text(
+                entry.weather!.emoji,
+                style: const TextStyle(fontSize: 19),
+              ),
+            ),
+          ),
+        // 快速速记「未整理」标记（REQ-16）。
+        if (entry.isQuickNote)
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: const Color(0x33E6A23C)),
+            ),
+            child: const Text(
+              '未整理',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9C6B1F),
+              ),
             ),
           ),
         _MenuButton(
@@ -248,11 +300,15 @@ class _MenuButton extends StatelessWidget {
         if (isFavorite)
           const Icon(Icons.favorite, size: 18, color: Color(0xFFE57373)),
         PopupMenuButton<String>(
-          icon: Icon(Icons.more_horiz,
-              size: 22, color: scheme.onSurfaceVariant),
+          icon: Icon(
+            Icons.more_horiz,
+            size: 22,
+            color: scheme.onSurfaceVariant,
+          ),
           padding: EdgeInsets.zero,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           itemBuilder: (context) => [
             PopupMenuItem(
               value: 'favorite',
@@ -283,7 +339,11 @@ class _MenuButton extends StatelessWidget {
               value: 'delete',
               child: Row(
                 children: [
-                  Icon(Icons.delete_outline, size: 19, color: Color(0xFFE57373)),
+                  Icon(
+                    Icons.delete_outline,
+                    size: 19,
+                    color: Color(0xFFE57373),
+                  ),
                   SizedBox(width: 10),
                   Text('删除', style: TextStyle(color: Color(0xFFE57373))),
                 ],
@@ -335,8 +395,11 @@ class _ImageThumb extends StatelessWidget {
       width: 118,
       height: 92,
       color: scheme.surfaceContainerHighest,
-      child: Icon(Icons.image_outlined,
-          size: 30, color: scheme.onSurfaceVariant),
+      child: Icon(
+        Icons.image_outlined,
+        size: 30,
+        color: scheme.onSurfaceVariant,
+      ),
     );
   }
 }

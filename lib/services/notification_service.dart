@@ -66,11 +66,9 @@ class NotificationService {
     _initialized = true;
 
     // 冷启动：检查是否由通知点击拉起。
-    final launchDetails =
-        await _plugin.getNotificationAppLaunchDetails();
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
     if (launchDetails?.didNotificationLaunchApp ?? false) {
-      final payload =
-          launchDetails?.notificationResponse?.payload;
+      final payload = launchDetails?.notificationResponse?.payload;
       if (payload == 'write') pendingAction = 'write';
     }
   }
@@ -94,8 +92,10 @@ class NotificationService {
   /// 请求通知权限，返回是否授予。
   Future<bool> requestPermission() async {
     if (!supported) return false;
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (android == null) return false;
     return await android.requestNotificationsPermission() ?? false;
   }
@@ -108,8 +108,10 @@ class NotificationService {
     if (!supported) return ReminderScheduleResult.denied;
     await cancelDaily();
 
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     final granted = await android?.requestNotificationsPermission();
     if (granted == false) return ReminderScheduleResult.denied;
 
@@ -123,7 +125,14 @@ class NotificationService {
     }
 
     final now = tz.TZDateTime.now(tz.local);
-    var when = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+    var when = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
     if (!when.isAfter(now)) {
       when = when.add(const Duration(days: 1));
     }

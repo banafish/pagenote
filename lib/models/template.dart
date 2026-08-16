@@ -11,9 +11,9 @@ class JournalTemplate {
     this.builtin = false,
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : tags = tags ?? [],
-        createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : tags = tags ?? [],
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   final String id;
 
@@ -33,30 +33,28 @@ class JournalTemplate {
   DateTime updatedAt;
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'name': name,
-        'title': title,
-        'content': content,
-        'tags': tags.join('\u001F'),
-        'builtin': builtin ? 1 : 0,
-        'createdAt': createdAt.millisecondsSinceEpoch,
-        'updatedAt': updatedAt.millisecondsSinceEpoch,
-      };
+    'id': id,
+    'name': name,
+    'title': title,
+    'content': content,
+    'tags': tags.join('\u001F'),
+    'builtin': builtin ? 1 : 0,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'updatedAt': updatedAt.millisecondsSinceEpoch,
+  };
 
   static JournalTemplate fromMap(Map<String, Object?> map) => JournalTemplate(
-        id: map['id']! as String,
-        name: map['name']! as String,
-        title: (map['title'] ?? '') as String,
-        content: (map['content'] ?? '') as String,
-        tags: (map['tags'] == null || (map['tags'] as String).isEmpty)
-            ? []
-            : (map['tags'] as String).split('\u001F'),
-        builtin: (map['builtin'] ?? 0) as int == 1,
-        createdAt:
-            DateTime.fromMillisecondsSinceEpoch(map['createdAt']! as int),
-        updatedAt:
-            DateTime.fromMillisecondsSinceEpoch(map['updatedAt']! as int),
-      );
+    id: map['id']! as String,
+    name: map['name']! as String,
+    title: (map['title'] ?? '') as String,
+    content: (map['content'] ?? '') as String,
+    tags: (map['tags'] == null || (map['tags'] as String).isEmpty)
+        ? []
+        : (map['tags'] as String).split('\u001F'),
+    builtin: (map['builtin'] ?? 0) as int == 1,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']! as int),
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt']! as int),
+  );
 
   JournalTemplate copy() => JournalTemplate.fromMap(toMap());
 }

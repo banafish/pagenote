@@ -66,8 +66,7 @@ class _TagEditorState extends State<TagEditor> {
             const SizedBox(width: 8),
             Text(
               '${widget.tags.length} 个',
-              style:
-                  TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -82,11 +81,13 @@ class _TagEditorState extends State<TagEditor> {
                   label: Text('#$tag'),
                   onDeleted: () {
                     widget.onChanged(
-                        widget.tags.where((t) => t != tag).toList());
+                      widget.tags.where((t) => t != tag).toList(),
+                    );
                     setState(() {});
                   },
-                  backgroundColor:
-                      scheme.primaryContainer.withValues(alpha: 0.5),
+                  backgroundColor: scheme.primaryContainer.withValues(
+                    alpha: 0.5,
+                  ),
                 ),
             ],
           ),

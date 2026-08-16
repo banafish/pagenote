@@ -76,8 +76,12 @@ class BackupService {
       'templates': [for (final t in templates) t.toMap()],
     };
     final json = const JsonEncoder.withIndent('  ').convert(manifest);
-    archive.addFile(ArchiveFile.bytes(
-        _entriesFileName, Uint8List.fromList(utf8.encode(json))));
+    archive.addFile(
+      ArchiveFile.bytes(
+        _entriesFileName,
+        Uint8List.fromList(utf8.encode(json)),
+      ),
+    );
     attachmentBytes.forEach((name, bytes) {
       archive.addFile(ArchiveFile.bytes('attachments/$name', bytes));
     });
@@ -103,10 +107,7 @@ class BackupService {
       final file = File(p.join(dir.path, name));
       await file.writeAsBytes(bytes);
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          fileNameOverrides: [name],
-        ),
+        ShareParams(files: [XFile(file.path)], fileNameOverrides: [name]),
       );
       return file.path;
     }
@@ -167,8 +168,9 @@ class BackupService {
     List<JournalEntry> entries;
     try {
       entries = (manifest['entries'] as List)
-          .map((raw) => JournalEntry.fromMap(
-              (raw as Map).cast<String, Object?>()))
+          .map(
+            (raw) => JournalEntry.fromMap((raw as Map).cast<String, Object?>()),
+          )
           .toList();
     } catch (_) {
       throw BackupFormatException('备份中的手账数据格式不正确');
@@ -177,8 +179,10 @@ class BackupService {
     List<JournalTemplate> templates;
     try {
       templates = (manifest['templates'] as List? ?? [])
-          .map((raw) => JournalTemplate.fromMap(
-              (raw as Map).cast<String, Object?>()))
+          .map(
+            (raw) =>
+                JournalTemplate.fromMap((raw as Map).cast<String, Object?>()),
+          )
           .toList();
     } catch (_) {
       throw BackupFormatException('备份中的模板数据格式不正确');

@@ -3,10 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
+import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
+import 'sticker_layer.dart';
 
-/// 分享长图卡面（REQ-11）：固定浅色纸质风格，深色模式下导出同样用浅色模板。
+/// 分享长图卡面（REQ-11）：固定浅色纸质风格,深色模式下导出同样用浅色模板。
+/// 装饰（纸张纹理 + 贴纸,REQ-13）随条目一并渲染进长图。
 class ShareCard extends StatelessWidget {
   const ShareCard({super.key, required this.entry, this.showSignature = true});
 
@@ -15,7 +18,7 @@ class ShareCard extends StatelessWidget {
   /// 底部 app 署名（可在设置中关闭）。
   final bool showSignature;
 
-  // 纸质暖色调（与深浅色主题无关，导出恒为浅色）。
+  // 纸质暖色调（与深浅色主题无关,导出恒为浅色）。
   static const paper = Color(0xFFF9F3E8);
   static const ink = Color(0xFF4A3F35);
   static const subInk = Color(0xFF8A7B6C);
@@ -25,148 +28,164 @@ class ShareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final images = entry.images.take(3).toList();
+    final entryPaper = paperById(entry.paper);
 
     return Container(
       width: 400,
-      padding: const EdgeInsets.fromLTRB(26, 26, 26, 20),
-      color: paper,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+      color: entryPaper == null ? paper : resolvePaperBase(entryPaper),
+      child: Stack(
         children: [
-          // 头部：日期 + 天气 + 心情。
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      DateUtils2.fullDate(entry.date),
-                      style: const TextStyle(
-                        color: ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (entry.mood != null || entry.weather != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        [
-                          if (entry.mood != null)
-                            '${entry.mood!.emoji} ${entry.mood!.label}',
-                          if (entry.weather != null)
-                            '${entry.weather!.emoji} ${entry.weather!.label}',
-                        ].join('  '),
-                        style: const TextStyle(color: subInk, fontSize: 12.5),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                alignment: Alignment.center,
-                child: Text(entry.mood?.emoji ?? '📔',
-                    style: const TextStyle(fontSize: 17)),
-              ),
-            ],
+          if (entryPaper != null)
+            Positioned.fill(
+              child: CustomPaint(painter: PaperPainter(entryPaper)),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(26, 26, 26, 20),
+            child: _buildContent(context, images),
           ),
-          const SizedBox(height: 14),
-          const _Divider(),
-          const SizedBox(height: 16),
+          // 贴纸装饰层:与编辑页坐标映射一致（REQ-13 导出包含装饰）。
+          Positioned.fill(child: StickerOverlay(stickers: entry.stickers)),
+        ],
+      ),
+    );
+  }
 
-          // 标题与正文。
-          if (entry.title.trim().isNotEmpty) ...[
-            Text(
-              entry.title.trim(),
-              style: const TextStyle(
-                color: ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                height: 1.5,
+  Widget _buildContent(BuildContext context, List<String> images) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 头部：日期 + 天气 + 心情。
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    DateUtils2.fullDate(entry.date),
+                    style: const TextStyle(
+                      color: ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (entry.mood != null || entry.weather != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (entry.mood != null)
+                          '${entry.mood!.emoji} ${entry.mood!.label}',
+                        if (entry.weather != null)
+                          '${entry.weather!.emoji} ${entry.weather!.label}',
+                      ].join('  '),
+                      style: const TextStyle(color: subInk, fontSize: 12.5),
+                    ),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 10),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                entry.mood?.emoji ?? '📔',
+                style: const TextStyle(fontSize: 17),
+              ),
+            ),
           ],
+        ),
+        const SizedBox(height: 14),
+        const _Divider(),
+        const SizedBox(height: 16),
+
+        // 标题与正文。
+        if (entry.title.trim().isNotEmpty) ...[
           Text(
-            entry.plainContent,
+            entry.title.trim(),
             style: const TextStyle(
               color: ink,
-              fontSize: 14.5,
-              height: 1.85,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              height: 1.5,
             ),
           ),
+          const SizedBox(height: 10),
+        ],
+        Text(
+          entry.plainContent,
+          style: const TextStyle(color: ink, fontSize: 14.5, height: 1.85),
+        ),
 
-          // 图片（最多 3 张，REQ-11.2）。
-          if (images.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                height: 150,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < images.length; i++)
-                      Expanded(
-                        child: Padding(
-                          padding:
-                              EdgeInsets.only(right: i == images.length - 1 ? 0 : 6),
-                          child: _ShareImage(path: images[i]),
+        // 图片（最多 3 张，REQ-11.2）。
+        if (images.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 150,
+              child: Row(
+                children: [
+                  for (var i = 0; i < images.length; i++)
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          right: i == images.length - 1 ? 0 : 6,
                         ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-
-          // 活动与标签。
-          if (entry.activities.isNotEmpty || entry.tags.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final a in entry.activities)
-                  _Chip('${emojiOfActivity(a)} $a'),
-                for (final t in entry.tags) _Chip('#$t'),
-              ],
-            ),
-          ],
-
-          const SizedBox(height: 18),
-          const _Divider(),
-          const SizedBox(height: 12),
-
-          // 底部署名（REQ-11.3：可在设置中关闭）。
-          Row(
-            children: [
-              const Spacer(),
-              if (showSignature)
-                const Row(
-                  children: [
-                    Text('📖', style: TextStyle(fontSize: 13)),
-                    SizedBox(width: 4),
-                    Text(
-                      '拾页 PageNote',
-                      style: TextStyle(
-                        color: accent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                        child: _ShareImage(path: images[i]),
                       ),
                     ),
-                  ],
-                ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        // 活动与标签。
+        if (entry.activities.isNotEmpty || entry.tags.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final a in entry.activities)
+                _Chip('${emojiOfActivity(a)} $a'),
+              for (final t in entry.tags) _Chip('#$t'),
             ],
           ),
         ],
-      ),
+
+        const SizedBox(height: 18),
+        const _Divider(),
+        const SizedBox(height: 12),
+
+        // 底部署名（REQ-11.3：可在设置中关闭）。
+        Row(
+          children: [
+            const Spacer(),
+            if (showSignature)
+              const Row(
+                children: [
+                  Text('📖', style: TextStyle(fontSize: 13)),
+                  SizedBox(width: 4),
+                  Text(
+                    '拾页 PageNote',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -221,9 +240,7 @@ class _ShareImage extends StatelessWidget {
       fit: BoxFit.cover,
       errorBuilder: (_, _, _) => Container(
         color: const Color(0xFFEFE4D2),
-        child: const Center(
-          child: Text('🖼️', style: TextStyle(fontSize: 20)),
-        ),
+        child: const Center(child: Text('🖼️', style: TextStyle(fontSize: 20))),
       ),
     );
   }

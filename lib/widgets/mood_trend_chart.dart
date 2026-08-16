@@ -186,8 +186,10 @@ class _TrendPainterDelegate extends CustomPainter {
 
     if (points.length == 1) {
       // 单点：只画点。
-      final c = Offset(leftPad + chartWidth / 2,
-          _yOf(points.first.$2, chartHeight));
+      final c = Offset(
+        leftPad + chartWidth / 2,
+        _yOf(points.first.$2, chartHeight),
+      );
       canvas.drawCircle(c, 4.5, Paint()..color = dotColor);
       _drawDateLabel(canvas, points.first.$1, leftPad, size, chartHeight);
       return;
@@ -202,10 +204,9 @@ class _TrendPainterDelegate extends CustomPainter {
         : lastDay.difference(firstDay).inDays;
 
     Offset offsetOf(int i) => Offset(
-          leftPad +
-              dates[i].difference(firstDay).inDays / spanDays * chartWidth,
-          _yOf(points[i].$2, chartHeight),
-        );
+      leftPad + dates[i].difference(firstDay).inDays / spanDays * chartWidth,
+      _yOf(points[i].$2, chartHeight),
+    );
 
     // 平均线（虚线）。
     final avgY = _yOf(avgValue, chartHeight);
@@ -214,8 +215,7 @@ class _TrendPainterDelegate extends CustomPainter {
       ..strokeWidth = 1.2;
     var dashX = leftPad;
     while (dashX < size.width) {
-      canvas.drawLine(
-          Offset(dashX, avgY), Offset(dashX + 5, avgY), dashPaint);
+      canvas.drawLine(Offset(dashX, avgY), Offset(dashX + 5, avgY), dashPaint);
       dashX += 10;
     }
 
@@ -231,15 +231,11 @@ class _TrendPainterDelegate extends CustomPainter {
 
     // 数据点。
     final dotPaint = Paint()..color = dotColor;
-    final maxScore = points
-        .reduce((a, b) => a.$2 >= b.$2 ? a : b);
-    final minScore = points
-        .reduce((a, b) => a.$2 <= b.$2 ? a : b);
+    final maxScore = points.reduce((a, b) => a.$2 >= b.$2 ? a : b);
+    final minScore = points.reduce((a, b) => a.$2 <= b.$2 ? a : b);
     for (var i = 0; i < points.length; i++) {
-      final isExtreme =
-          points[i] == maxScore || points[i] == minScore;
-      canvas.drawCircle(
-          offsetOf(i), isExtreme ? 5 : 3.2, dotPaint);
+      final isExtreme = points[i] == maxScore || points[i] == minScore;
+      canvas.drawCircle(offsetOf(i), isExtreme ? 5 : 3.2, dotPaint);
     }
 
     // 首末日期横轴标签。
@@ -248,7 +244,12 @@ class _TrendPainterDelegate extends CustomPainter {
   }
 
   void _drawDateLabel(
-      Canvas canvas, String key, double x, Size size, double chartHeight) {
+    Canvas canvas,
+    String key,
+    double x,
+    Size size,
+    double chartHeight,
+  ) {
     _text(
       canvas,
       DateUtils2.monthDay(key),

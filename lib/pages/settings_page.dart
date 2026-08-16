@@ -10,6 +10,7 @@ import '../widgets/lock_gate.dart';
 import 'pin_setup_page.dart';
 import 'template_manager_page.dart';
 import 'trash_page.dart';
+import 'webdav_page.dart';
 
 /// 设置页：外观、写作、数据、隐私与关于。
 class SettingsPage extends StatelessWidget {
@@ -106,10 +107,16 @@ class SettingsPage extends StatelessWidget {
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: _iconBox(context, Icons.description_outlined,
-                  scheme.primaryContainer, scheme.onPrimaryContainer),
-              title: const Text('手账模板',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              leading: _iconBox(
+                context,
+                Icons.description_outlined,
+                scheme.primaryContainer,
+                scheme.onPrimaryContainer,
+              ),
+              title: const Text(
+                '手账模板',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               subtitle: Text(
                 '内置 ${templates.builtinTemplates.length} 套 · 自建 ${templates.userTemplates.length} 套',
                 style: const TextStyle(fontSize: 12.5),
@@ -129,10 +136,16 @@ class SettingsPage extends StatelessWidget {
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: _iconBox(context, Icons.auto_stories_rounded,
-                  scheme.primaryContainer, scheme.onPrimaryContainer),
-              title: const Text('手账篇数',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              leading: _iconBox(
+                context,
+                Icons.auto_stories_rounded,
+                scheme.primaryContainer,
+                scheme.onPrimaryContainer,
+              ),
+              title: const Text(
+                '手账篇数',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               trailing: Text(
                 '${journal.totalCount} 篇',
                 style: TextStyle(
@@ -143,10 +156,16 @@ class SettingsPage extends StatelessWidget {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: _iconBox(context, Icons.sell_rounded,
-                  scheme.secondaryContainer, scheme.onSecondaryContainer),
-              title: const Text('标签个数',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              leading: _iconBox(
+                context,
+                Icons.sell_rounded,
+                scheme.secondaryContainer,
+                scheme.onSecondaryContainer,
+              ),
+              title: const Text(
+                '标签个数',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               trailing: Text(
                 '${journal.allTags.length} 个',
                 style: TextStyle(
@@ -158,10 +177,16 @@ class SettingsPage extends StatelessWidget {
             const Divider(height: 24),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: _iconBox(context, Icons.delete_outline_rounded,
-                  scheme.errorContainer, scheme.onErrorContainer),
-              title: const Text('回收站',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              leading: _iconBox(
+                context,
+                Icons.delete_outline_rounded,
+                scheme.errorContainer,
+                scheme.onErrorContainer,
+              ),
+              title: const Text(
+                '回收站',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               subtitle: Text(
                 journal.trashedEntries.isEmpty
                     ? '删除的手账保留 30 天'
@@ -169,40 +194,88 @@ class SettingsPage extends StatelessWidget {
                 style: const TextStyle(fontSize: 12.5),
               ),
               trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TrashPage()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const TrashPage())),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: _iconBox(context, Icons.archive_outlined,
-                  scheme.secondaryContainer, scheme.onSecondaryContainer),
-              title: const Text('导出备份',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('全部手账、模板与图片打包为 zip',
-                  style: TextStyle(fontSize: 12.5)),
+              leading: _iconBox(
+                context,
+                Icons.archive_outlined,
+                scheme.secondaryContainer,
+                scheme.onSecondaryContainer,
+              ),
+              title: const Text(
+                '导出备份',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                '全部手账、模板与图片打包为 zip',
+                style: TextStyle(fontSize: 12.5),
+              ),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => _exportBackup(context),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: _iconBox(context, Icons.restore_outlined,
-                  scheme.secondaryContainer, scheme.onSecondaryContainer),
-              title: const Text('导入备份',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('从 zip 备份合并或覆盖恢复',
-                  style: TextStyle(fontSize: 12.5)),
+              leading: _iconBox(
+                context,
+                Icons.restore_outlined,
+                scheme.secondaryContainer,
+                scheme.onSecondaryContainer,
+              ),
+              title: const Text(
+                '导入备份',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                '从 zip 备份合并或覆盖恢复',
+                style: TextStyle(fontSize: 12.5),
+              ),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => _importBackup(context),
             ),
+            // WebDAV 自动备份（REQ-15）。
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _iconBox(
+                context,
+                Icons.cloud_outlined,
+                scheme.tertiaryContainer,
+                scheme.onTertiaryContainer,
+              ),
+              title: const Text(
+                'WebDAV 自动备份',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                settings.webdavEnabled
+                    ? '已开启 · 定期备份到你的网盘'
+                    : '定期备份到坚果云等 WebDAV 网盘',
+                style: const TextStyle(fontSize: 12.5),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const WebDavPage())),
+            ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              secondary: _iconBox(context, Icons.image_outlined,
-                  scheme.primaryContainer, scheme.onPrimaryContainer),
-              title: const Text('分享图显示署名',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('导出长图底部附「拾页」标记',
-                  style: TextStyle(fontSize: 12.5)),
+              secondary: _iconBox(
+                context,
+                Icons.image_outlined,
+                scheme.primaryContainer,
+                scheme.onPrimaryContainer,
+              ),
+              title: const Text(
+                '分享图显示署名',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                '导出长图底部附「拾页」标记',
+                style: TextStyle(fontSize: 12.5),
+              ),
               value: settings.shareSignatureEnabled,
               onChanged: (v) => settings.setShareSignature(v),
             ),
@@ -226,17 +299,17 @@ class SettingsPage extends StatelessWidget {
                     height: 52,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          scheme.primary,
-                          scheme.tertiary,
-                        ],
+                        colors: [scheme.primary, scheme.tertiary],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(15),
                     ),
-                    child:
-                        const Icon(Icons.auto_stories, color: Colors.white, size: 27),
+                    child: const Icon(
+                      Icons.auto_stories,
+                      color: Colors.white,
+                      size: 27,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Column(
@@ -246,9 +319,7 @@ class SettingsPage extends StatelessWidget {
                         children: [
                           Text(
                             '拾页',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(width: 8),
@@ -263,7 +334,7 @@ class SettingsPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'v1.1.0 · 拾起生活中的每一页',
+                        'v1.2.0 · 拾起生活中的每一页',
                         style: TextStyle(
                           fontSize: 12.5,
                           color: scheme.onSurfaceVariant,
@@ -289,8 +360,7 @@ class SettingsPage extends StatelessWidget {
           );
   }
 
-  Widget _iconBox(
-      BuildContext context, IconData icon, Color bg, Color fg) {
+  Widget _iconBox(BuildContext context, IconData icon, Color bg, Color fg) {
     return Container(
       width: 38,
       height: 38,
@@ -318,15 +388,15 @@ class SettingsPage extends StatelessWidget {
       );
       if (!context.mounted) return;
       if (path != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('备份已导出：$path')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('备份已导出：$path')));
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('导出失败，请重试')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('导出失败，请重试')));
       }
     }
   }
@@ -335,7 +405,8 @@ class SettingsPage extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     BackupData data;
     try {
-      data = await BackupService.instance.pickAndReadBackup() ??
+      data =
+          await BackupService.instance.pickAndReadBackup() ??
           (throw const _BackupCanceled());
     } on _BackupCanceled {
       return;
@@ -410,16 +481,22 @@ class SettingsPage extends StatelessWidget {
 
     final journal = context.read<JournalProvider>();
     final templates = context.read<TemplateProvider>();
-    final changed =
-        await journal.importBackup(data, overwrite: mode == 'overwrite');
-    await templates.importTemplates(data.templates,
-        overwrite: mode == 'overwrite');
+    final changed = await journal.importBackup(
+      data,
+      overwrite: mode == 'overwrite',
+    );
+    await templates.importTemplates(
+      data.templates,
+      overwrite: mode == 'overwrite',
+    );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(mode == 'overwrite'
-            ? '已覆盖导入 ${data.entries.length} 篇手账'
-            : '合并导入完成，更新 $changed 篇'),
+        content: Text(
+          mode == 'overwrite'
+              ? '已覆盖导入 ${data.entries.length} 篇手账'
+              : '合并导入完成，更新 $changed 篇',
+        ),
       ),
     );
   }
@@ -430,10 +507,9 @@ class SettingsPage extends StatelessWidget {
       padding: EdgeInsets.only(top: top + 8, left: 4),
       child: Text(
         '设置',
-        style: Theme.of(context)
-            .textTheme
-            .titleLarge
-            ?.copyWith(fontWeight: FontWeight.w700),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -480,12 +556,20 @@ class _ReminderTile extends StatelessWidget {
     if (!NotificationService.instance.supported) {
       return ListTile(
         contentPadding: EdgeInsets.zero,
-        leading: _iconBox(context, Icons.notifications_off_outlined,
-            scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
-        title: const Text('写作提醒',
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: const Text('仅 Android 端支持本地提醒',
-            style: TextStyle(fontSize: 12.5)),
+        leading: _iconBox(
+          context,
+          Icons.notifications_off_outlined,
+          scheme.surfaceContainerHighest,
+          scheme.onSurfaceVariant,
+        ),
+        title: const Text(
+          '写作提醒',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: const Text(
+          '仅 Android 端支持本地提醒',
+          style: TextStyle(fontSize: 12.5),
+        ),
         enabled: false,
       );
     }
@@ -496,12 +580,17 @@ class _ReminderTile extends StatelessWidget {
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: _iconBox(context, Icons.notifications_active_outlined,
-          scheme.primaryContainer, scheme.onPrimaryContainer),
-      title: const Text('写作提醒',
-          style: TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text('每天 $timeLabel 提醒写手账',
-          style: const TextStyle(fontSize: 12.5)),
+      leading: _iconBox(
+        context,
+        Icons.notifications_active_outlined,
+        scheme.primaryContainer,
+        scheme.onPrimaryContainer,
+      ),
+      title: const Text('写作提醒', style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(
+        '每天 $timeLabel 提醒写手账',
+        style: const TextStyle(fontSize: 12.5),
+      ),
       trailing: Switch(
         value: settings.reminderEnabled,
         onChanged: (v) => _onToggle(context, v),
@@ -532,18 +621,16 @@ class _ReminderTile extends StatelessWidget {
     }
     final granted = await NotificationService.instance.requestPermission();
     if (!granted) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('未获得通知权限，无法开启提醒')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('未获得通知权限，无法开启提醒')));
       return;
     }
-    final result = await NotificationService.instance
-        .scheduleDaily(
-            settings.reminderMinutes ~/ 60, settings.reminderMinutes % 60);
+    final result = await NotificationService.instance.scheduleDaily(
+      settings.reminderMinutes ~/ 60,
+      settings.reminderMinutes % 60,
+    );
     if (!context.mounted) return;
     if (result == ReminderScheduleResult.denied) {
-      messenger
-          .showSnackBar(const SnackBar(content: Text('提醒调度失败，未开启')));
+      messenger.showSnackBar(const SnackBar(content: Text('提醒调度失败，未开启')));
       return;
     }
     await settings.setReminder(true, settings.reminderMinutes);
@@ -563,8 +650,10 @@ class _ReminderTile extends StatelessWidget {
     final minutes = picked.hour * 60 + picked.minute;
     await settings.setReminder(settings.reminderEnabled, minutes);
     if (settings.reminderEnabled) {
-      await NotificationService.instance
-          .scheduleDaily(picked.hour, picked.minute);
+      await NotificationService.instance.scheduleDaily(
+        picked.hour,
+        picked.minute,
+      );
     }
   }
 
@@ -599,9 +688,9 @@ class _AppLockCard extends StatelessWidget {
     if (!ok || !context.mounted) return;
     await context.read<SettingsProvider>().disableLock();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('应用锁已关闭')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('应用锁已关闭')));
     }
   }
 
@@ -609,7 +698,9 @@ class _AppLockCard extends StatelessWidget {
     final ok = await verifyAppLock(context, reason: '修改 PIN 前需验证身份');
     if (!ok || !context.mounted) return;
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PinSetupPage(skipRiskNotice: true)),
+      MaterialPageRoute(
+        builder: (_) => const PinSetupPage(skipRiskNotice: true),
+      ),
     );
   }
 
@@ -654,12 +745,15 @@ class _AppLockCard extends StatelessWidget {
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: _iconBox(
-              context,
-              enabled ? Icons.lock_rounded : Icons.lock_open_rounded,
-              scheme.primaryContainer,
-              scheme.onPrimaryContainer),
-          title: const Text('应用锁',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+            context,
+            enabled ? Icons.lock_rounded : Icons.lock_open_rounded,
+            scheme.primaryContainer,
+            scheme.onPrimaryContainer,
+          ),
+          title: const Text(
+            '应用锁',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           subtitle: Text(
             enabled
                 ? '已开启 · ${settings.lockBiometric ? 'PIN + 生物识别' : 'PIN'}'
@@ -688,14 +782,11 @@ class _AppLockCard extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
             dense: true,
             title: const Text('解锁时机', style: TextStyle(fontSize: 14)),
-            subtitle: Text(
-              switch (settings.lockDelayIndex) {
-                0 => '从后台返回立即锁定',
-                1 => '从后台返回超过 1 分钟锁定',
-                _ => '从后台返回超过 5 分钟锁定',
-              },
-              style: const TextStyle(fontSize: 12.5),
-            ),
+            subtitle: Text(switch (settings.lockDelayIndex) {
+              0 => '从后台返回立即锁定',
+              1 => '从后台返回超过 1 分钟锁定',
+              _ => '从后台返回超过 5 分钟锁定',
+            }, style: const TextStyle(fontSize: 12.5)),
             trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => _pickDelay(context),
           ),
@@ -738,8 +829,7 @@ class _SettingsCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),

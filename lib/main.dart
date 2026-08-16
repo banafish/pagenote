@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -11,7 +12,10 @@ import 'pages/editor_page.dart';
 import 'providers/journal_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/template_provider.dart';
+import 'services/backup_service.dart';
 import 'services/notification_service.dart';
+import 'services/widget_service.dart';
+import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/lock_gate.dart';
 
@@ -26,20 +30,36 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
 
+  final settings = SettingsProvider(prefs);
+
   final journal = JournalProvider();
   await journal.load();
 
   final templates = TemplateProvider();
   await templates.load();
 
-  // 写作提醒（仅 Android；Windows 自动降级）。
+  // 写作提醒（仅 Android;Windows 自动降级）。
   await NotificationService.instance.init();
 
-  runApp(PageNoteApp(
-    settings: SettingsProvider(prefs),
-    journal: journal,
-    templates: templates,
-  ));
+  // 桌面小组件数据（REQ-14,仅 Android;数据变化时刷新）。
+  await WidgetService.instance.init();
+  journal.addListener(() => WidgetService.instance.updateFrom(journal));
+  await WidgetService.instance.updateFrom(journal);
+
+  runApp(
+    PageNoteApp(settings: settings, journal: journal, templates: templates),
+  );
+
+  // WebDAV 定期自动备份（REQ-15）:到期则后台执行,不阻塞首帧。
+  unawaited(
+    WebDavBackupRunner().maybeRunAutoBackup(
+      settings: settings,
+      buildZip: () => BackupService.instance.buildZip(
+        entries: journal.entries,
+        templates: templates.templates,
+      ),
+    ),
+  );
 }
 
 class PageNoteApp extends StatelessWidget {
@@ -73,10 +93,7 @@ class PageNoteApp extends StatelessWidget {
             darkTheme: AppTheme.dark(settings.seedColor),
             themeMode: settings.themeMode,
             locale: const Locale('zh'),
-            supportedLocales: const [
-              Locale('zh'),
-              Locale('en'),
-            ],
+            supportedLocales: const [Locale('zh'), Locale('en')],
             localizationsDelegates: const [
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
@@ -84,9 +101,9 @@ class PageNoteApp extends StatelessWidget {
             ],
             builder: (context, child) {
               return MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  textScaler: TextScaler.linear(settings.fontScale),
-                ),
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(settings.fontScale)),
                 child: child!,
               );
             },

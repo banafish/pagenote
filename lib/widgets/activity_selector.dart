@@ -34,8 +34,7 @@ class _ActivitySelectorState extends State<ActivitySelector> {
 
   void _toggle(String name) {
     if (widget.selected.contains(name)) {
-      widget
-          .onChanged(widget.selected.where((a) => a != name).toList());
+      widget.onChanged(widget.selected.where((a) => a != name).toList());
     } else {
       widget.onChanged([...widget.selected, name]);
     }
@@ -92,8 +91,7 @@ class _ActivitySelectorState extends State<ActivitySelector> {
             const SizedBox(width: 8),
             Text(
               '做了什么？',
-              style:
-                  TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -102,8 +100,7 @@ class _ActivitySelectorState extends State<ActivitySelector> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final activity in all)
-              _activityChip(context, activity),
+            for (final activity in all) _activityChip(context, activity),
             ActionChip(
               avatar: Icon(Icons.add, size: 16, color: scheme.primary),
               label: Text(
@@ -146,8 +143,7 @@ class _ActivitySelectorState extends State<ActivitySelector> {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color:
-                    selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
               ),
             ),
           ],

@@ -22,7 +22,10 @@ class TrashPage extends StatelessWidget {
           if (trashed.isNotEmpty)
             TextButton(
               onPressed: () => _confirmEmptyAll(context),
-              child: const Text('清空', style: TextStyle(color: Color(0xFFE57373))),
+              child: const Text(
+                '清空',
+                style: TextStyle(color: Color(0xFFE57373)),
+              ),
             ),
         ],
       ),
@@ -31,8 +34,11 @@ class TrashPage extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.delete_outline_rounded,
-                      size: 52, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    size: 52,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     '回收站是空的',
@@ -41,8 +47,10 @@ class TrashPage extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     '删除的手账会在这里保留 30 天',
-                    style:
-                        TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12.5,
+                    ),
                   ),
                 ],
               ),
@@ -50,8 +58,7 @@ class TrashPage extends StatelessWidget {
           : ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               itemCount: trashed.length,
-              itemBuilder: (context, i) =>
-                  _TrashItem(entry: trashed[i]),
+              itemBuilder: (context, i) => _TrashItem(entry: trashed[i]),
             ),
     );
   }
@@ -94,7 +101,7 @@ class _TrashItem extends StatelessWidget {
     final daysLeft = entry.deletedAt == null
         ? JournalProvider.trashRetentionDays
         : JournalProvider.trashRetentionDays -
-            DateTime.now().difference(entry.deletedAt!).inDays;
+              DateTime.now().difference(entry.deletedAt!).inDays;
     final preview = entry.title.trim().isNotEmpty
         ? entry.title.trim()
         : entry.plainContent;
@@ -143,8 +150,10 @@ class _TrashItem extends StatelessWidget {
           ),
           IconButton(
             tooltip: '彻底删除',
-            icon: const Icon(Icons.delete_forever_rounded,
-                color: Color(0xFFE57373)),
+            icon: const Icon(
+              Icons.delete_forever_rounded,
+              color: Color(0xFFE57373),
+            ),
             onPressed: () => _confirmDeleteForever(context),
           ),
         ],
