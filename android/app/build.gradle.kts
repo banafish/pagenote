@@ -35,6 +35,10 @@ android {
 
     buildTypes {
         release {
+            // 关闭 R8 压缩：Room/WorkManager 等依赖反射加载的类（如 WorkDatabase_Impl）
+            // 会被误删导致启动即崩溃（2026-08 排查结论）。
+            isMinifyEnabled = false
+            isShrinkResources = false
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
