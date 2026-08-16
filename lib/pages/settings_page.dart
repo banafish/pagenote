@@ -294,21 +294,13 @@ class SettingsPage extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
                 children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [scheme.primary, scheme.tertiary],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: const Icon(
-                      Icons.auto_stories,
-                      color: Colors.white,
-                      size: 27,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Image.asset(
+                      'assets/icon/app_icon.png',
+                      width: 52,
+                      height: 52,
+                      fit: BoxFit.cover,
                     ),
                   ),
                   const SizedBox(width: 14),
