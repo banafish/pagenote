@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,7 +19,14 @@ const seedColorOptions = [
   SeedColorOption('琥珀', Color(0xFFB07D2B)),
 ];
 
-/// 应用设置：主题模式、强调色、正文字号缩放。
+/// 应用锁触发延时时长（REQ-08.2）。
+const lockDelayOptions = [
+  Duration.zero,
+  Duration(minutes: 1),
+  Duration(minutes: 5),
+];
+
+/// 应用设置：主题模式、强调色、正文字号缩放、提醒、应用锁等。
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider(this._prefs);
 
@@ -26,6 +35,30 @@ class SettingsProvider extends ChangeNotifier {
   static const _keyThemeMode = 'themeMode';
   static const _keySeedIndex = 'seedColorIndex';
   static const _keyFontScale = 'fontScale';
+
+  // 每日一问「换一条」（REQ-04.2）。
+  static const _keyPromptDate = 'prompt.refreshDate';
+  static const _keyPromptCount = 'prompt.refreshCount';
+  static const _keyPromptOffset = 'prompt.offset';
+
+  // 写作提醒（REQ-07）。
+  static const _keyReminderEnabled = 'reminder.enabled';
+  static const _keyReminderMinutes = 'reminder.minutes';
+
+  // 应用锁（REQ-08）。
+  static const _keyLockSalt = 'lock.salt';
+  static const _keyPinHash = 'lock.pinHash';
+  static const _keyLockBiometric = 'lock.biometric';
+  static const _keyLockDelayIndex = 'lock.delayIndex';
+
+  // 分享图署名（REQ-11.3）。
+  static const _keyShareSignature = 'share.signature';
+
+  // 月报引导卡片已展示到的月份（REQ-10.3）。
+  static const _keyReportPromptMonth = 'report.promptMonth';
+
+  // 自定义活动（REQ-12.1）。
+  static const _keyCustomActivities = 'activities.custom';
 
   ThemeMode get themeMode {
     final index = _prefs.getInt(_keyThemeMode) ?? ThemeMode.system.index;
@@ -59,6 +92,134 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> setFontScale(double scale) async {
     await _prefs.setDouble(_keyFontScale, scale.clamp(0.85, 1.3));
+    notifyListeners();
+  }
+
+  // ---------------- 每日一问 ----------------
+
+  /// 今日已「换一条」的次数（跨天自动清零）。
+  int promptRefreshUsedToday(String todayKey) {
+    final date = _prefs.getString(_keyPromptDate);
+    if (date != todayKey) return 0;
+    return _prefs.getInt(_keyPromptCount) ?? 0;
+  }
+
+  /// 当日的累计偏移量：换一条后 +1，同一天内保持稳定。
+  int promptOffsetFor(String todayKey) {
+    final date = _prefs.getString(_keyPromptDate);
+    if (date != todayKey) return 0;
+    return _prefs.getInt(_keyPromptOffset) ?? 0;
+  }
+
+  /// 记录一次「换一条」，返回是否还有额度（每日 3 次）。
+  Future<bool> usePromptRefresh(String todayKey) async {
+    if (promptRefreshUsedToday(todayKey) >= 3) return false;
+    final used = promptRefreshUsedToday(todayKey);
+    final offset = promptOffsetFor(todayKey);
+    await _prefs.setString(_keyPromptDate, todayKey);
+    await _prefs.setInt(_keyPromptCount, used + 1);
+    await _prefs.setInt(_keyPromptOffset, offset + 1);
+    notifyListeners();
+    return true;
+  }
+
+  // ---------------- 写作提醒 ----------------
+
+  bool get reminderEnabled => _prefs.getBool(_keyReminderEnabled) ?? false;
+
+  /// 提醒时间，距 0 点的分钟数（默认 21:30）。
+  int get reminderMinutes => _prefs.getInt(_keyReminderMinutes) ?? 21 * 60 + 30;
+
+  Future<void> setReminder(bool enabled, int minutes) async {
+    await _prefs.setBool(_keyReminderEnabled, enabled);
+    await _prefs.setInt(_keyReminderMinutes, minutes);
+    notifyListeners();
+  }
+
+  // ---------------- 应用锁 ----------------
+
+  /// 应用锁是否开启（设置了 PIN 即开启）。
+  bool get lockEnabled => (_prefs.getString(_keyPinHash) ?? '').isNotEmpty;
+
+  String get lockSalt => _prefs.getString(_keyLockSalt) ?? '';
+
+  String get pinHash => _prefs.getString(_keyPinHash) ?? '';
+
+  bool get lockBiometric => _prefs.getBool(_keyLockBiometric) ?? false;
+
+  /// 后台返回多久后需要重新解锁（见 lockDelayOptions）。
+  int get lockDelayIndex {
+    final v = _prefs.getInt(_keyLockDelayIndex) ?? 0;
+    return v.clamp(0, lockDelayOptions.length - 1);
+  }
+
+  Duration get lockDelay => lockDelayOptions[lockDelayIndex];
+
+  Future<void> setPin(String salt, String hash) async {
+    await _prefs.setString(_keyLockSalt, salt);
+    await _prefs.setString(_keyPinHash, hash);
+    notifyListeners();
+  }
+
+  Future<void> setLockBiometric(bool enabled) async {
+    await _prefs.setBool(_keyLockBiometric, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setLockDelayIndex(int index) async {
+    await _prefs.setInt(
+        _keyLockDelayIndex, index.clamp(0, lockDelayOptions.length - 1));
+    notifyListeners();
+  }
+
+  /// 关闭应用锁（需先验证身份）。
+  Future<void> disableLock() async {
+    await _prefs.remove(_keyPinHash);
+    await _prefs.remove(_keyLockSalt);
+    await _prefs.setBool(_keyLockBiometric, false);
+    notifyListeners();
+  }
+
+  // ---------------- 分享图 ----------------
+
+  bool get shareSignatureEnabled => _prefs.getBool(_keyShareSignature) ?? true;
+
+  Future<void> setShareSignature(bool enabled) async {
+    await _prefs.setBool(_keyShareSignature, enabled);
+    notifyListeners();
+  }
+
+  // ---------------- 月报引导 ----------------
+
+  /// 已展示过「上月月报」引导卡片的月份（yyyy-MM）。
+  String get reportPromptMonth => _prefs.getString(_keyReportPromptMonth) ?? '';
+
+  Future<void> setReportPromptMonth(String ym) async {
+    await _prefs.setString(_keyReportPromptMonth, ym);
+    notifyListeners();
+  }
+
+  // ---------------- 自定义活动 ----------------
+
+  List<String> get customActivities {
+    final raw = _prefs.getString(_keyCustomActivities);
+    if (raw == null || raw.isEmpty) return [];
+    return (jsonDecode(raw) as List).cast<String>();
+  }
+
+  Future<void> addCustomActivity(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final list = customActivities;
+    if (list.contains(trimmed)) return;
+    await _prefs.setString(
+        _keyCustomActivities, jsonEncode([...list, trimmed]));
+    notifyListeners();
+  }
+
+  Future<void> removeCustomActivity(String name) async {
+    final list = customActivities..remove(name);
+    await _prefs.setString(_keyCustomActivities, jsonEncode(list));
     notifyListeners();
   }
 }

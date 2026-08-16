@@ -55,6 +55,26 @@ dependencies:
   # File picking (images) across Android & Windows
   file_selector: ^1.0.3
 
+  # Backup zip packaging (REQ-03)
+  archive: ^4.0.7
+
+  # PIN salted hash (REQ-08)
+  crypto: ^3.0.6
+
+  # Daily writing reminder notifications on Android (REQ-07).
+  # 19.x 起附带 Windows 实现需要 VS ATL 组件，且需求本就仅要求 Android；
+  # 使用 18.x（无 Windows 插件），Windows 端在设置页展示降级说明。
+  flutter_local_notifications: ^18.0.1
+  flutter_timezone: ^4.1.1
+  timezone: ^0.10.1
+
+  # Biometric unlock on Android (REQ-08)
+  local_auth: ^2.3.0
+
+  # Share card export (REQ-11)
+  share_plus: ^11.0.0
+  gal: ^2.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

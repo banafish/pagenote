@@ -4,13 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
+import '../data/prompts.dart';
 import '../models/journal_entry.dart';
 import '../models/mood.dart';
 import '../providers/journal_provider.dart';
+import '../providers/settings_provider.dart';
+import '../providers/template_provider.dart';
 import '../utils/attachments.dart';
 import '../utils/date_utils.dart';
+import '../widgets/activity_selector.dart';
+import '../widgets/daily_prompt_card.dart';
 import '../widgets/emoji_selector.dart';
 import '../widgets/tag_editor.dart';
+import '../widgets/template_picker.dart';
 
 /// 手账编辑器：新建或编辑一条手账。
 class EditorPage extends StatefulWidget {
@@ -30,6 +36,11 @@ class _EditorPageState extends State<EditorPage> {
   late final bool _isEditing;
   bool _saved = false;
 
+  // 每日一问（REQ-04）。
+  late String _todayKey;
+  int _promptOffset = 0;
+  int _promptRemaining = 3;
+
   static final _mediaQueryKey = GlobalKey();
 
   @override
@@ -47,6 +58,13 @@ class _EditorPageState extends State<EditorPage> {
     _isEditing = widget.entry != null;
     _title = TextEditingController(text: _draft.title);
     _content = TextEditingController(text: _draft.content);
+
+    final settings = context.read<SettingsProvider>();
+    // 每日一问按「今天」展示（REQ-04.1），与补写日期无关。
+    _todayKey = DateUtils2.dateKey(DateTime.now());
+    _promptOffset = settings.promptOffsetFor(_todayKey);
+    _promptRemaining =
+        3 - settings.promptRefreshUsedToday(_todayKey).clamp(0, 3);
   }
 
   @override
@@ -58,6 +76,9 @@ class _EditorPageState extends State<EditorPage> {
 
   bool get _hasContent =>
       _title.text.trim().isNotEmpty || _content.text.trim().isNotEmpty;
+
+  String get _prompt =>
+      promptForDate(_todayKey, _promptOffset);
 
   Future<void> _save() async {
     if (!_hasContent) {
@@ -133,6 +154,91 @@ class _EditorPageState extends State<EditorPage> {
     if (paths.isNotEmpty) setState(() => _draft.images.addAll(paths));
   }
 
+  // ---------------- 每日一问（REQ-04） ----------------
+
+  void _insertPrompt() {
+    final text = _content.text;
+    _content.text = text.isEmpty ? '$_prompt\n' : '$_prompt\n\n$text';
+    _content.selection = TextSelection.fromPosition(
+      TextPosition(offset: _content.text.length),
+    );
+    setState(() {});
+  }
+
+  Future<void> _refreshPrompt() async {
+    final settings = context.read<SettingsProvider>();
+    final ok = await settings.usePromptRefresh(_todayKey);
+    if (!ok || !mounted) return;
+    setState(() {
+      _promptOffset = settings.promptOffsetFor(_todayKey);
+      _promptRemaining = 3 - settings.promptRefreshUsedToday(_todayKey);
+    });
+  }
+
+  // ---------------- 模板（REQ-09） ----------------
+
+  Future<void> _pickTemplate() async {
+    final template = await showTemplatePicker(context);
+    if (template == null) return;
+    setState(() {
+      if (_title.text.trim().isEmpty) {
+        _title.text = template.title;
+      }
+      if (_content.text.trim().isEmpty) {
+        _content.text = template.content;
+      } else {
+        _content.text = '${template.content}\n\n${_content.text}';
+      }
+      for (final tag in template.tags) {
+        if (!_draft.tags.contains(tag)) _draft.tags.add(tag);
+      }
+    });
+  }
+
+  Future<void> _saveAsTemplate() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('另存为模板'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '给模板起个名字'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty || !mounted) return;
+    await context.read<TemplateProvider>().saveFromEntry(
+          JournalEntry(
+            id: _draft.id,
+            date: _draft.date,
+            title: _title.text.trim(),
+            content: _content.text.trim(),
+            tags: List.from(_draft.tags),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ),
+          trimmed,
+        );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已保存模板「$trimmed」📔')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -144,6 +250,17 @@ class _EditorPageState extends State<EditorPage> {
       children: [
         _dateSelector(scheme),
         const SizedBox(height: 18),
+
+        // 每日一问（REQ-04.3：编辑已有条目默认收起）。
+        DailyPromptCard(
+          prompt: _prompt,
+          initiallyExpanded: !_isEditing,
+          onInsert: _insertPrompt,
+          onRefresh: _refreshPrompt,
+          refreshRemaining: _promptRemaining,
+        ),
+        const SizedBox(height: 18),
+
         EmojiSelector(
           label: '今日心情',
           items: [
@@ -168,6 +285,26 @@ class _EditorPageState extends State<EditorPage> {
           ),
         ),
         const SizedBox(height: 20),
+        ActivitySelector(
+          selected: _draft.activities,
+          customActivities:
+              context.watch<SettingsProvider>().customActivities,
+          onChanged: (activities) =>
+              setState(() => _draft.activities = activities),
+          onAddCustom: (name) =>
+              context.read<SettingsProvider>().addCustomActivity(name),
+        ),
+        const SizedBox(height: 20),
+        if (!_isEditing && !_hasContent)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: ActionChip(
+              avatar: Icon(Icons.description_outlined,
+                  size: 17, color: scheme.primary),
+              label: const Text('从模板开始'),
+              onPressed: _pickTemplate,
+            ),
+          ),
         TextField(
           controller: _title,
           style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
@@ -236,6 +373,38 @@ class _EditorPageState extends State<EditorPage> {
           ),
           title: Text(_isEditing ? '编辑手账' : '写手账'),
           actions: [
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert_rounded,
+                  color: scheme.onSurfaceVariant),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'template',
+                  child: Row(
+                    children: [
+                      Icon(Icons.description_outlined, size: 19),
+                      SizedBox(width: 10),
+                      Text('套用模板'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'save_template',
+                  child: Row(
+                    children: [
+                      Icon(Icons.bookmark_add_outlined, size: 19),
+                      SizedBox(width: 10),
+                      Text('另存为模板'),
+                    ],
+                  ),
+                ),
+              ],
+              onSelected: (value) {
+                if (value == 'template') _pickTemplate();
+                if (value == 'save_template') _saveAsTemplate();
+              },
+            ),
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: FilledButton.icon(

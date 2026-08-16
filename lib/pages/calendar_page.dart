@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../models/journal_entry.dart';
 import '../providers/journal_provider.dart';
 import '../utils/date_utils.dart';
+import '../utils/delete_flow.dart';
 import '../widgets/entry_card.dart';
+import 'share_card_page.dart';
 
 /// 日历页：按月浏览手账记录。
 class CalendarPage extends StatefulWidget {
@@ -57,7 +59,10 @@ class _CalendarPageState extends State<CalendarPage> {
       onOpen: (entry) => widget.onOpenEditor(context, entry),
       onToggleFavorite: (id) =>
           context.read<JournalProvider>().toggleFavorite(id),
-      onDelete: (id) => _confirmDelete(context, id),
+      onDelete: (id) => deleteWithUndo(context, id),
+      onShare: (entry) => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry)),
+      ),
       onNewEntry: () => widget.onOpenEditor(
         context,
         JournalEntry(
@@ -158,32 +163,6 @@ class _CalendarPageState extends State<CalendarPage> {
               _month = DateTime(_month.year, _month.month + 1);
               _selectedDay = null;
             }),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context, String id) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('删除这篇手账？'),
-        content: const Text('删除后无法恢复，确定要删除吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFE57373),
-            ),
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              context.read<JournalProvider>().deleteEntry(id);
-            },
-            child: const Text('删除'),
           ),
         ],
       ),
@@ -322,6 +301,7 @@ class _DayEntries extends StatelessWidget {
     required this.onOpen,
     required this.onToggleFavorite,
     required this.onDelete,
+    required this.onShare,
     required this.onNewEntry,
   });
 
@@ -330,6 +310,7 @@ class _DayEntries extends StatelessWidget {
   final void Function(JournalEntry) onOpen;
   final ValueChanged<String> onToggleFavorite;
   final ValueChanged<String> onDelete;
+  final ValueChanged<JournalEntry> onShare;
   final VoidCallback onNewEntry;
 
   @override
@@ -400,6 +381,7 @@ class _DayEntries extends StatelessWidget {
                   onTap: () => onOpen(entry),
                   onToggleFavorite: onToggleFavorite,
                   onDelete: onDelete,
+                  onShare: (_) => onShare(entry),
                   compact: true,
                 ),
               ),

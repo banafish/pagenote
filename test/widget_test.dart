@@ -3,12 +3,15 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pagenote/app.dart';
+import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/models/mood.dart';
 import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
+import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
 
 JournalEntry _entry({
@@ -18,6 +21,7 @@ JournalEntry _entry({
   String content = '测试内容',
   Mood? mood,
   List<String> tags = const [],
+  List<String> activities = const [],
   bool favorite = false,
 }) {
   final now = DateTime.now();
@@ -28,6 +32,7 @@ JournalEntry _entry({
     content: content,
     mood: mood,
     tags: tags,
+    activities: activities,
     isFavorite: favorite,
     createdAt: now,
     updatedAt: now,
@@ -38,11 +43,14 @@ Widget _wrap({
   required Widget child,
   required JournalProvider journal,
   required SettingsProvider settings,
+  TemplateProvider? templates,
 }) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider.value(value: journal),
       ChangeNotifierProvider.value(value: settings),
+      ChangeNotifierProvider.value(
+          value: templates ?? TemplateProvider(database: AppDatabase.inMemory())),
     ],
     child: MaterialApp(
       theme: AppTheme.light(settings.seedColor),
@@ -59,6 +67,13 @@ Widget _wrap({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    sqfliteFfiInit();
+    // Widget 测试运行在 fake-async 环境，跨 isolate 的 ffi 结果无法送达，
+    // 必须使用同 isolate 的 ffi 工厂。
+    databaseFactory = databaseFactoryFfiNoIsolate;
+  });
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -108,28 +123,35 @@ void main() {
     });
   });
 
-  test('JournalEntry 序列化往返', () {
+  test('JournalEntry 序列化往返（含活动与删除时间）', () {
     final entry = _entry(
       id: 'a1',
       mood: Mood.calm,
       tags: ['生活', '随笔'],
+      activities: ['运动', '阅读'],
       favorite: true,
     );
-    final restored = JournalEntry.fromMap(entry.toMap());
+    final map = entry.toMap();
+    expect(map['activities'], '运动\u001F阅读');
+    expect(map['deletedAt'], isNull);
+
+    final restored = JournalEntry.fromMap(map);
     expect(restored.id, entry.id);
     expect(restored.date, entry.date);
     expect(restored.mood, Mood.calm);
     expect(restored.tags, ['生活', '随笔']);
+    expect(restored.activities, ['运动', '阅读']);
     expect(restored.isFavorite, true);
+    expect(restored.deletedAt, isNull);
   });
 
-  testWidgets('首页展示空状态与写手账入口', (tester) async {
+  testWidgets('首页展示空状态、今日一问与写作入口（REQ-04.4）', (tester) async {
     final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
 
     await tester.pumpWidget(_wrap(
-      child: RootShell(),
+      child: const RootShell(),
       journal: journal,
       settings: settings,
     ));
@@ -138,6 +160,9 @@ void main() {
     expect(find.text('拾页'), findsWidgets);
     expect(find.text('写下你的第一页'), findsOneWidget);
     expect(find.text('写手账'), findsOneWidget);
+    // 空状态展示今日一问（REQ-04.4）。
+    expect(find.text('今日一问'), findsOneWidget);
+    expect(find.text('以此开始写作'), findsOneWidget);
   });
 
   testWidgets('首页时间轴渲染条目卡片', (tester) async {
@@ -155,7 +180,7 @@ void main() {
     final settings = SettingsProvider(prefs);
 
     await tester.pumpWidget(_wrap(
-      child: RootShell(),
+      child: const RootShell(),
       journal: journal,
       settings: settings,
     ));
@@ -171,11 +196,14 @@ void main() {
     final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
+    final templates = TemplateProvider(database: AppDatabase.inMemory());
+    await templates.load();
 
     await tester.pumpWidget(_wrap(
-      child: RootShell(),
+      child: const RootShell(),
       journal: journal,
       settings: settings,
+      templates: templates,
     ));
     await tester.pumpAndSettle();
 
@@ -186,15 +214,16 @@ void main() {
     await tester.tap(find.byIcon(Icons.insights_outlined));
     await tester.pumpAndSettle();
     expect(find.text('总篇数'), findsOneWidget);
+    expect(find.text('心情趋势'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     expect(find.text('主题模式'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('v1.0.0 · 拾起生活中的每一页'),
+      find.text('v1.1.0 · 拾起生活中的每一页'),
       200,
     );
-    expect(find.text('v1.0.0 · 拾起生活中的每一页'), findsOneWidget);
+    expect(find.text('v1.1.0 · 拾起生活中的每一页'), findsOneWidget);
   });
 }
 
@@ -205,8 +234,12 @@ String _key(DateTime d) =>
 class JournalProviderForTest extends JournalProvider {
   final List<JournalEntry> _seeded = [];
 
+  JournalProviderForTest() : super(database: AppDatabase.inMemory());
+
   @override
   List<JournalEntry> get entries => List.unmodifiable(_seeded);
+
+  List<JournalEntry> get backing => _seeded;
 
   @override
   bool get loaded => true;

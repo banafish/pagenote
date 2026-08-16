@@ -1,5 +1,6 @@
 package com.pagenote.pagenote
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+// FlutterFragmentActivity：local_auth 生物识别需要 Fragment 支持（REQ-08）。
+class MainActivity : FlutterFragmentActivity()

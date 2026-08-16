@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/activity.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
 
@@ -13,6 +14,7 @@ class EntryCard extends StatelessWidget {
     required this.onTap,
     required this.onToggleFavorite,
     required this.onDelete,
+    this.onShare,
     this.compact = false,
   });
 
@@ -20,6 +22,9 @@ class EntryCard extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<String> onToggleFavorite;
   final ValueChanged<String> onDelete;
+
+  /// 生成分享图（REQ-11.1），为空时隐藏菜单项。
+  final ValueChanged<String>? onShare;
   final bool compact;
 
   @override
@@ -70,6 +75,32 @@ class EntryCard extends StatelessWidget {
                     separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, i) => _ImageThumb(path: entry.images[i]),
                   ),
+                ),
+              ],
+              if (entry.activities.isNotEmpty) ...[
+                SizedBox(height: compact ? 10 : 14),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final activity in entry.activities.take(6))
+                      Tooltip(
+                        message: activity,
+                        child: Text(
+                          emojiOfActivity(activity),
+                          style: const TextStyle(fontSize: 15),
+                        ),
+                      ),
+                    if (entry.activities.length > 6)
+                      Text(
+                        '+${entry.activities.length - 6}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
               ],
               if (entry.tags.isNotEmpty) ...[
@@ -183,8 +214,10 @@ class EntryCard extends StatelessWidget {
           ),
         _MenuButton(
           isFavorite: entry.isFavorite,
+          canShare: onShare != null,
           onToggleFavorite: () => onToggleFavorite(entry.id),
           onDelete: () => onDelete(entry.id),
+          onShare: onShare == null ? null : () => onShare!(entry.id),
         ),
       ],
     );
@@ -194,13 +227,17 @@ class EntryCard extends StatelessWidget {
 class _MenuButton extends StatelessWidget {
   const _MenuButton({
     required this.isFavorite,
+    required this.canShare,
     required this.onToggleFavorite,
     required this.onDelete,
+    this.onShare,
   });
 
   final bool isFavorite;
+  final bool canShare;
   final VoidCallback onToggleFavorite;
   final VoidCallback onDelete;
+  final VoidCallback? onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +268,17 @@ class _MenuButton extends StatelessWidget {
                 ],
               ),
             ),
+            if (canShare)
+              const PopupMenuItem(
+                value: 'share',
+                child: Row(
+                  children: [
+                    Icon(Icons.image_outlined, size: 19),
+                    SizedBox(width: 10),
+                    Text('生成分享图'),
+                  ],
+                ),
+              ),
             const PopupMenuItem(
               value: 'delete',
               child: Row(
@@ -245,6 +293,7 @@ class _MenuButton extends StatelessWidget {
           onSelected: (value) {
             if (value == 'favorite') onToggleFavorite();
             if (value == 'delete') onDelete();
+            if (value == 'share') onShare?.call();
           },
         ),
       ],
