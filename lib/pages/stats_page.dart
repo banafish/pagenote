@@ -32,39 +32,59 @@ class _StatsPageState extends State<StatsPage> {
         const SizedBox(height: 14),
         _sectionTitle(context, '记录足迹'),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _StatCard(
-              icon: Icons.menu_book_rounded,
-              label: '总篇数',
-              value: '${journal.totalCount}',
-              unit: '篇',
-              color: scheme.primary,
-            ),
-            _StatCard(
-              icon: Icons.local_fire_department_rounded,
-              label: '连续记录',
-              value: '${journal.streakDays}',
-              unit: '天',
-              color: const Color(0xFFE8734A),
-            ),
-            _StatCard(
-              icon: Icons.calendar_month_rounded,
-              label: '本月',
-              value: '${journal.monthCount}',
-              unit: '篇',
-              color: const Color(0xFF3F6C9C),
-            ),
-            _StatCard(
-              icon: Icons.font_download_rounded,
-              label: '累计字数',
-              value: '${journal.totalWords}',
-              unit: '字',
-              color: const Color(0xFF3E8468),
-            ),
-          ],
+        // 卡片按可用宽度自适应：窄屏 2 列，宽屏 4 列，避免固定宽度导致单列堆叠。
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 700 ? 4 : 2;
+            final cardWidth =
+                (constraints.maxWidth - 12 * (columns - 1)) / columns;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                SizedBox(
+                  width: cardWidth,
+                  child: _StatCard(
+                    icon: Icons.menu_book_rounded,
+                    label: '总篇数',
+                    value: '${journal.totalCount}',
+                    unit: '篇',
+                    color: scheme.primary,
+                  ),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: _StatCard(
+                    icon: Icons.local_fire_department_rounded,
+                    label: '连续记录',
+                    value: '${journal.streakDays}',
+                    unit: '天',
+                    color: const Color(0xFFE8734A),
+                  ),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: _StatCard(
+                    icon: Icons.calendar_month_rounded,
+                    label: '本月',
+                    value: '${journal.monthCount}',
+                    unit: '篇',
+                    color: const Color(0xFF3F6C9C),
+                  ),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: _StatCard(
+                    icon: Icons.font_download_rounded,
+                    label: '累计字数',
+                    value: '${journal.totalWords}',
+                    unit: '字',
+                    color: const Color(0xFF3E8468),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 26),
 
@@ -451,7 +471,6 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      width: 160,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.surface,
