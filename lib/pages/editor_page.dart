@@ -14,6 +14,7 @@ import '../utils/attachments.dart';
 import '../utils/date_utils.dart';
 import '../widgets/activity_selector.dart';
 import '../widgets/canvas/canvas_editor.dart';
+import '../widgets/canvas/canvas_view.dart';
 import '../widgets/canvas/canvas_tool_sheets.dart';
 import '../widgets/daily_prompt_card.dart';
 import '../widgets/emoji_selector.dart';
@@ -39,6 +40,9 @@ class _EditorPageState extends State<EditorPage> {
   late final bool _isEditing;
   bool _saved = false;
   bool _dirty = false;
+
+  /// 查看态：打开已有手账先进只读浏览,点右上角编辑图标后才可改动。
+  bool _viewMode = false;
 
   late JournalCanvas _canvas;
   final _editorKey = GlobalKey<CanvasEditorState>();
@@ -66,6 +70,7 @@ class _EditorPageState extends State<EditorPage> {
           updatedAt: DateTime.now(),
         );
     _isEditing = widget.entry != null;
+    _viewMode = _isEditing;
     // 旧数据无画布 → 自动合成等价元素（文本框 + 图片 + 组件 + 旧贴纸）。
     _canvas = _draft.canvas ?? synthesizeCanvas(_draft);
     _draft.canvas = _canvas;
@@ -760,8 +765,38 @@ class _EditorPageState extends State<EditorPage> {
     final showTemplateChips =
         !_isEditing && !_dirty && !_hasText && _canvas.images.isEmpty;
 
+    final canvasChild = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child:
+                _viewMode
+                    // 查看态：静态渲染,只读浏览。
+                    ? SingleChildScrollView(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: CanvasView(canvas: _canvas, entry: _draft),
+                    )
+                    // 画布编辑器自带纵向滚动与选中操作条;底部工具栏悬浮其上。
+                    : CanvasEditor(
+                      key: _editorKey,
+                      canvas: _canvas,
+                      entry: _draft,
+                      onCommit: _commit,
+                      onEditText: _editText,
+                      onEditImage: _editImage,
+                      onEditComponent: _editComponent,
+                    ),
+          ),
+        ),
+      ),
+    );
+
     final page = Column(
       children: [
+        if (showTemplateChips)
         if (showTemplateChips)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -795,32 +830,10 @@ class _EditorPageState extends State<EditorPage> {
             ),
           ),
         Expanded(
-          // 画布编辑器自带纵向滚动与选中操作条;底部工具栏悬浮其上。
           child: Stack(
             children: [
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: CanvasEditor(
-                          key: _editorKey,
-                          canvas: _canvas,
-                          entry: _draft,
-                          onCommit: _commit,
-                          onEditText: _editText,
-                          onEditImage: _editImage,
-                          onEditComponent: _editComponent,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              _bottomToolbar(scheme),
+              Positioned.fill(child: canvasChild),
+              if (!_viewMode) _bottomToolbar(scheme),
             ],
           ),
         ),
@@ -852,58 +865,66 @@ class _EditorPageState extends State<EditorPage> {
               if (shouldPop && context.mounted) Navigator.of(context).pop();
             },
           ),
-          title: Text(_isEditing ? '编辑手账' : '写手账'),
+          title: Text(_viewMode ? '手账' : (_isEditing ? '编辑手账' : '写手账')),
           actions: [
-            IconButton(
-              tooltip: '撤销',
-              icon: const Icon(Icons.undo_rounded),
-              onPressed: _canUndo ? _undo : null,
-            ),
-            IconButton(
-              tooltip: '重做',
-              icon: const Icon(Icons.redo_rounded),
-              onPressed: _canRedo ? _redo : null,
-            ),
-            PopupMenuButton<String>(
-              icon: Icon(
-                Icons.more_vert_rounded,
-                color: scheme.onSurfaceVariant,
+            if (_viewMode)
+              IconButton(
+                tooltip: '编辑',
+                icon: const Icon(Icons.edit_rounded),
+                onPressed: () => setState(() => _viewMode = false),
+              )
+            else ...[
+              IconButton(
+                tooltip: '撤销',
+                icon: const Icon(Icons.undo_rounded),
+                onPressed: _canUndo ? _undo : null,
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+              IconButton(
+                tooltip: '重做',
+                icon: const Icon(Icons.redo_rounded),
+                onPressed: _canRedo ? _redo : null,
               ),
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'template',
-                  child: Row(
-                    children: [
-                      Icon(Icons.description_outlined, size: 19),
-                      SizedBox(width: 10),
-                      Text('套用模板'),
-                    ],
-                  ),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  color: scheme.onSurfaceVariant,
                 ),
-                PopupMenuItem(
-                  value: 'save_template',
-                  child: Row(
-                    children: [
-                      Icon(Icons.bookmark_add_outlined, size: 19),
-                      SizedBox(width: 10),
-                      Text('另存为模板'),
-                    ],
-                  ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
-              ],
-              onSelected: (value) {
-                if (value == 'template') _pickTemplate();
-                if (value == 'save_template') _saveAsTemplate();
-              },
-            ),
-            IconButton(
-              tooltip: '保存',
-              icon: const Icon(Icons.save_rounded),
-              onPressed: _save,
-            ),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: 'template',
+                    child: Row(
+                      children: [
+                        Icon(Icons.description_outlined, size: 19),
+                        SizedBox(width: 10),
+                        Text('套用模板'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'save_template',
+                    child: Row(
+                      children: [
+                        Icon(Icons.bookmark_add_outlined, size: 19),
+                        SizedBox(width: 10),
+                        Text('另存为模板'),
+                      ],
+                    ),
+                  ),
+                ],
+                onSelected: (value) {
+                  if (value == 'template') _pickTemplate();
+                  if (value == 'save_template') _saveAsTemplate();
+                },
+              ),
+              IconButton(
+                tooltip: '保存',
+                icon: const Icon(Icons.save_rounded),
+                onPressed: _save,
+              ),
+            ],
             const SizedBox(width: 12),
           ],
         ),
