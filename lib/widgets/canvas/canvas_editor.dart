@@ -53,16 +53,12 @@ class CanvasEditorState extends State<CanvasEditor> {
   void clearSelection() => setState(() => _selectedId = null);
 
   // 手势起始基线（onScaleUpdate 的 scale/rotation 是相对起点的累计值）。
-  double _baseX = 0,
-      _baseY = 0,
-      _baseW = 0,
+  double _baseW = 0,
       _baseH = 0,
       _baseRot = 0,
       _baseFont = 0;
 
   void _scaleStart(CanvasElement e) {
-    _baseX = e.x;
-    _baseY = e.y;
     _baseW = e.w;
     _baseH = e.h;
     _baseRot = e.rotation;
@@ -70,13 +66,15 @@ class CanvasEditorState extends State<CanvasEditor> {
   }
 
   void _scaleUpdate(CanvasElement e, Size pageSize, ScaleUpdateDetails d) {
+    // focalPointDelta 是「本帧」增量,须累加到当前位置（基线仅用于
+    // 双指缩放的 scale/rotation 等相对起点的累计值）。
     final dx = d.focalPointDelta.dx / pageSize.width;
     final dy = d.focalPointDelta.dy / pageSize.width;
     // clamp 上限不得低于下限（超宽元素拉满时 1.05 - w 可为负）。
     final maxX = math.max(-0.1, 1.05 - e.w);
     final maxY = math.max(-0.05, widget.canvas.effectiveHeight - e.h + 0.1);
-    e.x = (_baseX + dx).clamp(-0.1, maxX);
-    e.y = (_baseY + dy).clamp(-0.05, maxY);
+    e.x = (e.x + dx).clamp(-0.1, maxX);
+    e.y = (e.y + dy).clamp(-0.05, maxY);
 
     if (d.pointerCount >= 2) {
       final s = d.scale.clamp(0.2, 5.0);
