@@ -26,10 +26,13 @@ import '../widgets/template_picker.dart';
 /// 缩放、旋转的图层元素；正文不再是文档流,而是画布上的文本元素。
 /// 心情/天气/活动保留为结构化字段（「信息」面板编辑）,统计照常可用。
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key, this.entry});
+  const EditorPage({super.key, this.entry, this.isNew = false});
 
-  /// 传入则为编辑模式，否则为新建。
+  /// 传入则为编辑已有手账（先进查看态），否则为新建。
   final JournalEntry? entry;
+
+  /// 新建入口（右下角按钮、每日一问引导）：即使带预填草稿也直接进编辑态。
+  final bool isNew;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -69,7 +72,7 @@ class _EditorPageState extends State<EditorPage> {
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
-    _isEditing = widget.entry != null;
+    _isEditing = widget.entry != null && !widget.isNew;
     _viewMode = _isEditing;
     // 旧数据无画布 → 自动合成等价元素（文本框 + 图片 + 组件 + 旧贴纸）。
     _canvas = _draft.canvas ?? synthesizeCanvas(_draft);
@@ -230,7 +233,8 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   Future<bool> _confirmDiscard() async {
-    if (_saved || (!_dirty && _draft.images.isEmpty)) return true;
+    // 查看态 / 无改动时直接返回，不弹放弃确认（含打开已有手账未编辑的情况）。
+    if (_saved || !_dirty) return true;
     final result = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(

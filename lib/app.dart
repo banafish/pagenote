@@ -38,15 +38,19 @@ class _RootShellState extends State<RootShell> {
 
   void _newEntry(BuildContext context) {
     final now = DateTime.now();
-    _openEditor(
-      context,
-      JournalEntry(
-        id: JournalProvider.newId(),
-        date: DateUtils2.dateKey(now),
-        title: '',
-        content: '',
-        createdAt: now,
-        updatedAt: now,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditorPage(
+          entry: JournalEntry(
+            id: JournalProvider.newId(),
+            date: DateUtils2.dateKey(now),
+            title: '',
+            content: '',
+            createdAt: now,
+            updatedAt: now,
+          ),
+          isNew: true,
+        ),
       ),
     );
   }

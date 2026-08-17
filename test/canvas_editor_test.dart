@@ -70,7 +70,7 @@ void main() {
 
     // 添加两枚贴纸（列表顺序即 z 序,后加的在上）。
     for (final _ in [1, 2]) {
-      await tester.tap(find.text('贴纸'));
+      await tester.tap(find.byTooltip('贴纸'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('表情'));
       await tester.pumpAndSettle();
@@ -103,7 +103,7 @@ void main() {
     await tester.tap(find.text('确定'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.byTooltip('保存'));
     await tester.pumpAndSettle();
 
     final journal = tester
@@ -135,7 +135,7 @@ void main() {
     final journal = tester
         .element(find.byType(EditorPage))
         .read<JournalProvider>();
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.byTooltip('保存'));
     await tester.pumpAndSettle();
     expect(journal.entries.single.content, contains(prompt));
   });
@@ -144,7 +144,7 @@ void main() {
     await tester.pumpWidget(await wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('文字'));
+    await tester.tap(find.byTooltip('文字'));
     await tester.pumpAndSettle();
 
     // 编辑面板弹出：内容输入 + 花样字体选项（调研一阶段）。
@@ -194,12 +194,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 打开已有条目先进查看态,点右上角编辑图标进入编辑。
+    expect(find.byType(CanvasView), findsOneWidget);
+    await tester.tap(find.byTooltip('编辑'));
+    await tester.pumpAndSettle();
+
     // 标题与正文渲染在画布上,且是可选中元素。
     expect(find.text('旧式手账'), findsOneWidget);
     expect(find.text('纯文本流时代的正文'), findsOneWidget);
 
     // 保存后 canvas 列持久化,旧字段同步一致。
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.byTooltip('保存'));
     await tester.pumpAndSettle();
     final saved = journal.entries.single;
     expect(saved.canvas, isNotNull);

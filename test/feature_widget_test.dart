@@ -19,6 +19,7 @@ import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
 import 'package:pagenote/utils/date_utils.dart';
+import 'package:pagenote/widgets/canvas/canvas_editor.dart';
 import 'package:pagenote/widgets/canvas/canvas_view.dart';
 
 void main() {
@@ -295,9 +296,9 @@ void main() {
     // 新建：一问收纳在底部工具栏,点开即展示并可插入。
     await tester.pumpWidget(await wrap(tester, child: const EditorPage()));
     await tester.pumpAndSettle();
-    expect(find.text('一问'), findsOneWidget, reason: '工具栏提供每日一问入口');
+    expect(find.byTooltip('一问'), findsOneWidget, reason: '工具栏提供每日一问入口');
 
-    await tester.tap(find.text('一问'));
+    await tester.tap(find.byTooltip('一问'));
     await tester.pumpAndSettle();
     expect(find.text('今日一问'), findsOneWidget);
     expect(find.text(prompt), findsOneWidget);
@@ -311,7 +312,7 @@ void main() {
     final journal = tester
         .element(find.byType(EditorPage))
         .read<JournalProvider>();
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.byTooltip('保存'));
     await tester.pumpAndSettle();
     expect(
       journal.entries.first.content,
@@ -334,5 +335,59 @@ void main() {
     // 画布只显示旧内容,不自动带入一问（REQ-04.3）。
     expect(find.text('旧手账'), findsOneWidget);
     expect(find.text(prompt), findsNothing, reason: '编辑模式不自动插入一问');
+  });
+
+  testWidgets('已有手账：先进查看态，返回不弹放弃确认', (tester) async {
+    // 与 app.dart 一致的打开方式：首页点卡片 → EditorPage(entry: ...)。
+    await tester.pumpWidget(
+      await wrap(
+        tester,
+        child: HomePage(
+          onOpenEditor: (context, e) => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => EditorPage(entry: e))),
+        ),
+        seed: [entry('view-me', title: '查看这篇', content: '已有正文')],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('查看这篇'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorPage), findsOneWidget);
+    expect(find.byType(CanvasEditor), findsNothing, reason: '打开已有手账先进只读查看态');
+    expect(find.byTooltip('编辑'), findsOneWidget);
+
+    // 查看态无改动直接返回：不弹「放弃这篇手账？」确认框。
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.text('放弃这篇手账？'), findsNothing);
+    expect(find.byType(EditorPage), findsNothing, reason: '直接返回时间轴');
+  });
+
+  testWidgets('新建手账：带预填草稿也直接进编辑态（右下角按钮流程）', (tester) async {
+    final now = DateTime.now();
+    await tester.pumpWidget(
+      await wrap(
+        tester,
+        child: EditorPage(
+          entry: JournalEntry(
+            id: 'new',
+            date: DateUtils2.dateKey(now),
+            title: '',
+            content: '',
+            createdAt: now,
+            updatedAt: now,
+          ),
+          isNew: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CanvasEditor), findsOneWidget, reason: '新建直接进编辑态');
+    expect(find.byTooltip('编辑'), findsNothing, reason: '不在查看态');
+    expect(find.byTooltip('贴纸'), findsOneWidget, reason: '底部工具栏可用');
+    expect(find.text('写手账'), findsOneWidget);
   });
 }

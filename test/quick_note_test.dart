@@ -164,7 +164,10 @@ void main() {
     // 画布上可见速记内容（旧数据自动合成为正文文本框）。
     expect(find.textContaining('地铁上想到的一个点子'), findsOneWidget);
 
-    await tester.tap(find.text('保存'));
+    // 打开已有速记先进查看态,点编辑进入编辑态后保存转正。
+    await tester.tap(find.byTooltip('编辑'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('保存'));
     await tester.pumpAndSettle();
 
     expect(journal.entries.single.isQuickNote, false, reason: '编辑页保存即转为正式手账');

@@ -158,7 +158,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 底部工具栏打开贴纸面板,切到「表情」页签添加一枚 emoji 贴纸。
-    await tester.tap(find.text('贴纸'));
+    await tester.tap(find.byTooltip('贴纸'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('表情'));
     await tester.pumpAndSettle();
@@ -166,7 +166,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 选择「方格」纸张。
-    await tester.tap(find.text('纸张'));
+    await tester.tap(find.byTooltip('纸张'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('方格'));
     await tester.pumpAndSettle();
@@ -182,7 +182,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 保存。
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.byTooltip('保存'));
     await tester.pumpAndSettle();
 
     final saved = journal.entries.single;

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../data/prompts.dart';
 import '../models/journal_entry.dart';
+import '../pages/editor_page.dart';
 import '../pages/monthly_report_page.dart';
 import '../pages/quick_note_page.dart';
 import '../pages/share_card_page.dart';
@@ -145,15 +146,19 @@ class _HomePageState extends State<HomePage> {
   void _startWithPrompt() {
     final now = DateTime.now();
     final prompt = promptForDate(DateUtils2.dateKey(now));
-    widget.onOpenEditor(
-      context,
-      JournalEntry(
-        id: JournalProvider.newId(),
-        date: DateUtils2.dateKey(now),
-        title: '',
-        content: '$prompt\n',
-        createdAt: now,
-        updatedAt: now,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditorPage(
+          entry: JournalEntry(
+            id: JournalProvider.newId(),
+            date: DateUtils2.dateKey(now),
+            title: '',
+            content: '$prompt\n',
+            createdAt: now,
+            updatedAt: now,
+          ),
+          isNew: true,
+        ),
       ),
     );
   }
