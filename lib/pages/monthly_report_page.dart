@@ -87,45 +87,66 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
               ),
             )
           else ...[
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _ReportStat(
-                  icon: Icons.menu_book_rounded,
-                  label: '篇数',
-                  value: '${report.count}',
-                  unit: '篇',
-                  color: scheme.primary,
-                ),
-                _ReportStat(
-                  icon: Icons.font_download_rounded,
-                  label: '总字数',
-                  value: '${report.words}',
-                  unit: '字',
-                  color: const Color(0xFF3E8468),
-                ),
-                _ReportStat(
-                  icon: Icons.emoji_emotions_rounded,
-                  label: '心情均值',
-                  value: report.avgMood == null
-                      ? '—'
-                      : report.avgMood!.toStringAsFixed(1),
-                  unit: '/10',
-                  color: const Color(0xFFE8734A),
-                ),
-                _ReportStat(
-                  icon: Icons.compare_arrows_rounded,
-                  label: '对比上月',
-                  value: report.delta > 0
-                      ? '+${report.delta}'
-                      : '${report.delta}',
-                  unit: '篇',
-                  color: report.delta >= 0
-                      ? const Color(0xFF3E8468)
-                      : const Color(0xFFE57373),
-                ),
-              ],
+            // 卡片按可用宽度自适应排列，始终保持一行显示。
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 12.0;
+                final count = 4;
+                final cardWidth =
+                    (constraints.maxWidth - spacing * (count - 1)) / count;
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    SizedBox(
+                      width: cardWidth,
+                      child: _ReportStat(
+                        icon: Icons.menu_book_rounded,
+                        label: '篇数',
+                        value: '${report.count}',
+                        unit: '篇',
+                        color: scheme.primary,
+                      ),
+                    ),
+                    SizedBox(
+                      width: cardWidth,
+                      child: _ReportStat(
+                        icon: Icons.font_download_rounded,
+                        label: '总字数',
+                        value: '${report.words}',
+                        unit: '字',
+                        color: const Color(0xFF3E8468),
+                      ),
+                    ),
+                    SizedBox(
+                      width: cardWidth,
+                      child: _ReportStat(
+                        icon: Icons.emoji_emotions_rounded,
+                        label: '心情均值',
+                        value: report.avgMood == null
+                            ? '—'
+                            : report.avgMood!.toStringAsFixed(1),
+                        unit: '/10',
+                        color: const Color(0xFFE8734A),
+                      ),
+                    ),
+                    SizedBox(
+                      width: cardWidth,
+                      child: _ReportStat(
+                        icon: Icons.compare_arrows_rounded,
+                        label: '对比上月',
+                        value: report.delta > 0
+                            ? '+${report.delta}'
+                            : '${report.delta}',
+                        unit: '篇',
+                        color: report.delta >= 0
+                            ? const Color(0xFF3E8468)
+                            : const Color(0xFFE57373),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
             _ReportCard(
@@ -220,7 +241,6 @@ class _ReportStat extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      width: 160,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.surface,
