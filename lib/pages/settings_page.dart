@@ -14,9 +14,9 @@ import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import '../services/share_pack_service.dart';
 import '../widgets/lock_gate.dart';
+import 'library_page.dart';
 import 'pin_setup_page.dart';
 import 'share_pack_import_page.dart';
-import 'sticker_manager_page.dart';
 import 'template_manager_page.dart';
 import 'trash_page.dart';
 import 'webdav_page.dart';
@@ -112,54 +112,9 @@ class SettingsPage extends StatelessWidget {
         const SizedBox(height: 26),
         _sectionTitle(context, '写作'),
         const SizedBox(height: 10),
-        _SettingsCard(
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: _iconBox(
-                context,
-                Icons.description_outlined,
-                scheme.primaryContainer,
-                scheme.onPrimaryContainer,
-              ),
-              title: const Text(
-                '手账模板',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                '内置 ${templates.builtinTemplates.length} 套 · 自建 ${templates.userTemplates.length} 套',
-                style: const TextStyle(fontSize: 12.5),
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TemplateManagerPage()),
-              ),
-            ),
-            // 自定义素材的统一入口（REQ-21.2）：导入 / 改名 / 分组 / 打包分享。
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: _iconBox(
-                context,
-                Icons.emoji_emotions_outlined,
-                scheme.primaryContainer,
-                scheme.onPrimaryContainer,
-              ),
-              title: const Text(
-                '我的素材',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                '从相册导入图片做成贴纸，也能打包分享',
-                style: TextStyle(fontSize: 12.5),
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const StickerManagerPage()),
-              ),
-            ),
-            const _ReminderTile(),
-          ],
-        ),
+        // 模板与素材两行已提为「素材」一级入口（REQ-23 / REQ-25），
+        // 本段只留写作提醒；计数信息移到「数据」段的只读行。
+        const _SettingsCard(children: [_ReminderTile()]),
         const SizedBox(height: 26),
         _sectionTitle(context, '数据'),
         const SizedBox(height: 10),
@@ -199,6 +154,28 @@ class SettingsPage extends StatelessWidget {
               ),
               trailing: Text(
                 '${journal.allTags.length} 个',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 13.5,
+                ),
+              ),
+            ),
+            // 原「写作」段模板入口携带的计数，改为只读行（REQ-25.3）：
+            // 逛模板与素材去「素材」一级入口，这里只报个数、不带跳转。
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _iconBox(
+                context,
+                Icons.description_outlined,
+                scheme.primaryContainer,
+                scheme.onPrimaryContainer,
+              ),
+              title: const Text(
+                '模板套数',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              trailing: Text(
+                '内置 ${templates.builtinTemplates.length} 套 · 自建 ${templates.userTemplates.length} 套',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
                   fontSize: 13.5,

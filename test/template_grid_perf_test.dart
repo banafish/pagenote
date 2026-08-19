@@ -8,7 +8,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/models/template.dart';
-import 'package:pagenote/pages/template_manager_page.dart';
+import 'package:pagenote/pages/library_page.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';

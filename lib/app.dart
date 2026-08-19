@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'models/journal_entry.dart';
 import 'pages/editor_page.dart';
 import 'pages/home_page.dart';
-import 'pages/calendar_page.dart';
+import 'pages/library_page.dart';
+import 'pages/review_page.dart';
 import 'pages/settings_page.dart';
-import 'pages/stats_page.dart';
 import 'providers/journal_provider.dart';
 import 'services/notification_service.dart';
 import 'services/widget_service.dart';
@@ -61,6 +61,8 @@ class _RootShellState extends State<RootShell> {
     final wide = MediaQuery.sizeOf(context).width >= 700;
 
     return AdaptiveScaffold(
+      // 一级入口维持 4 个的一进一出置换（REQ-23 / REQ-24）：
+      // 素材顶替日历+统计腾出的位置，节奏为「写（FAB）→ 存 → 看 → 设」。
       destinations: const [
         AdaptiveDestination(
           label: '时光',
@@ -68,14 +70,14 @@ class _RootShellState extends State<RootShell> {
           selectedIcon: Icons.auto_stories,
         ),
         AdaptiveDestination(
-          label: '日历',
-          icon: Icons.calendar_today_outlined,
-          selectedIcon: Icons.calendar_today_rounded,
+          label: '素材',
+          icon: Icons.palette_outlined,
+          selectedIcon: Icons.palette,
         ),
         AdaptiveDestination(
-          label: '统计',
-          icon: Icons.insights_outlined,
-          selectedIcon: Icons.insights_rounded,
+          label: '回顾',
+          icon: Icons.calendar_today_outlined,
+          selectedIcon: Icons.calendar_today_rounded,
         ),
         AdaptiveDestination(
           label: '设置',
@@ -85,8 +87,8 @@ class _RootShellState extends State<RootShell> {
       ],
       bodyBuilder: (index) => switch (index) {
         0 => HomePage(onOpenEditor: _openEditor),
-        1 => CalendarPage(onOpenEditor: _openEditor),
-        2 => const StatsPage(),
+        1 => const LibraryPage(),
+        2 => ReviewPage(onOpenEditor: _openEditor),
         _ => const SettingsPage(),
       },
       floatingActionButton: wide

@@ -5,7 +5,6 @@ import '../models/journal_entry.dart';
 import '../models/mood.dart';
 import '../models/sticker_assets.dart' show stickerKeyImage;
 import '../models/template.dart';
-import '../providers/custom_sticker_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/template_provider.dart';
 import '../services/share_pack_service.dart';
@@ -112,22 +111,39 @@ Future<bool?> askIncludeTemplatePhotos(
   );
 }
 
-/// 模板管理页（REQ-09.3 + REQ-18）：网格缩略图、更多菜单、排序与空态引导。
-class TemplateManagerPage extends StatefulWidget {
-  const TemplateManagerPage({super.key, this.highlightIds = const []});
+/// 模板管理的纯 body（REQ-09.3 + REQ-18，REQ-23 拆分）：网格缩略图、
+/// 排序、单卡片操作与空态引导。顶栏（含多选态）由宿主 [LibraryPage]
+/// 统一渲染，「素材」一级入口的子页签与独立整页形态共用这一份实现。
+class TemplateManagerBody extends StatefulWidget {
+  const TemplateManagerBody({
+    super.key,
+    required this.selecting,
+    required this.selectedIds,
+    this.highlightIds = const [],
+    required this.onToggleSelect,
+    required this.onExport,
+  });
+
+  /// 多选态（REQ-21.1）由宿主持有：卡片勾选只是其中一个触发点。
+  final bool selecting;
+
+  /// 已勾选的模板 id，与宿主共享同一份集合。
+  final Set<String> selectedIds;
 
   /// 刚从分享包装进来的模板 id，卡片上做高亮标记（REQ-21.9）。
   final List<String> highlightIds;
 
+  /// 多选态下点卡片：勾选 / 取消勾选。
+  final ValueChanged<JournalTemplate> onToggleSelect;
+
+  /// 导出为素材包（REQ-21.1）：卡片菜单的单个导出也走这里。
+  final void Function(List<JournalTemplate> targets) onExport;
+
   @override
-  State<TemplateManagerPage> createState() => _TemplateManagerPageState();
+  State<TemplateManagerBody> createState() => _TemplateManagerBodyState();
 }
 
-class _TemplateManagerPageState extends State<TemplateManagerPage> {
-  /// 多选态（REQ-21.1）：从顶栏按钮进入，与手动排序的长按拖拽错开手势。
-  bool _selecting = false;
-  final Set<String> _selectedIds = {};
-
+class _TemplateManagerBodyState extends State<TemplateManagerBody> {
   @override
   void initState() {
     super.initState();
@@ -157,7 +173,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
       case 'duplicate':
         await _duplicate(template);
       case 'export':
-        await _exportPack([template]);
+        widget.onExport([template]);
       case 'delete':
         await _delete(template);
     }
@@ -201,119 +217,6 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text('已复制为「${copy.name}」,可自由改名编辑 ✨')));
-  }
-
-  /// 导出分享（REQ-18.2 / REQ-21.1）：单个模板走更多菜单，多个走多选态。
-  /// 只带被模板引用的自定义贴纸，接收方无需再找素材（REQ-21.3）。
-  /// 画布带照片时先问一次「包含照片」（FIX-01.2），默认不带。
-  Future<void> _exportPack(List<JournalTemplate> targets) async {
-    if (targets.isEmpty) return;
-    final withPhotos = targets
-        .where((t) => t.canvas?.hasImagePaths ?? false)
-        .toList();
-    var includePhotos = false;
-    if (withPhotos.isNotEmpty) {
-      final choice = await askIncludeTemplatePhotos(context, withPhotos);
-      if (choice == null || !mounted) return;
-      includePhotos = choice;
-    }
-    final meta = await _askPackMeta(
-      targets.length == 1 ? targets.first.name : '我的模板包',
-    );
-    if (meta == null || !mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    final stickers = context.read<CustomStickerProvider>();
-    // 带照片时把原始模板交给 buildPack（照片入包 + 路径改写为纯文件名），
-    // 不带时先在这里清干净；两条路都不会把本机绝对路径带进包（REQ-21.4）。
-    final packed = includePhotos
-        ? targets
-        : [for (final t in targets) templateWithoutPhotos(t)];
-    final ids = referencedStickerIds(packed);
-    try {
-      final path = await SharePackService.instance.exportPack(
-        packName: meta.name,
-        author: meta.author,
-        templates: packed,
-        stickers: [
-          for (final s in stickers.stickers)
-            if (ids.contains(s.id)) s,
-        ],
-        stickerBytes: await stickers.exportBytes(ids: ids),
-        includePhotos: includePhotos,
-      );
-      // 用户在系统对话框里取消时返回 null，不打扰。
-      if (path != null) {
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('素材包已导出：$path')));
-      }
-    } catch (_) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('导出失败，请重试')));
-    }
-    if (mounted && _selecting) _exitSelection();
-  }
-
-  /// 包名与署名（附录 pack.json 的 name / author）；署名可留空。
-  Future<({String name, String author})?> _askPackMeta(
-    String defaultName,
-  ) async {
-    final nameController = TextEditingController(text: defaultName);
-    final authorController = TextEditingController();
-    final meta = await showDialog<({String name, String author})>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('导出为素材包'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '包名',
-                hintText: '如：秋日旅行模板集',
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: authorController,
-              decoration: const InputDecoration(labelText: '署名（可留空）'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, (
-              name: nameController.text.trim(),
-              author: authorController.text.trim(),
-            )),
-            child: const Text('导出'),
-          ),
-        ],
-      ),
-    );
-    if (meta == null) return null;
-    return meta.name.isEmpty ? (name: defaultName, author: meta.author) : meta;
-  }
-
-  void _toggleSelect(JournalTemplate template) {
-    setState(() {
-      if (!_selectedIds.remove(template.id)) _selectedIds.add(template.id);
-    });
-  }
-
-  void _exitSelection() {
-    setState(() {
-      _selecting = false;
-      _selectedIds.clear();
-    });
   }
 
   Future<void> _delete(JournalTemplate template) async {
@@ -428,80 +331,30 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
     final users = provider.userTemplates;
     // 多选态下让出长按手势，拖拽排序不受影响（两者不同时生效）。
     final draggable =
-        !_selecting && provider.sort == TemplateSort.manual && users.length > 1;
+        !widget.selecting && provider.sort == TemplateSort.manual && users.length > 1;
     final cell = _cellSize(context);
 
-    return Scaffold(
-      appBar: _selecting
-          ? _selectionBar(provider.templates)
-          : AppBar(
-              title: const Text('手账模板'),
-              actions: [
-                IconButton(
-                  tooltip: '多选导出',
-                  icon: const Icon(Icons.checklist_rounded),
-                  onPressed: provider.templates.isEmpty
-                      ? null
-                      : () => setState(() => _selecting = true),
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(child: _sortBar(provider.sort, draggable)),
-          if (builtin.isNotEmpty) ...[
-            _sectionLabel('内置模板', '可复制为我的模板后自由修改'),
-            _grid(
-              itemCount: builtin.length,
-              builder: (context, i) => _card(builtin[i]),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 18)),
-          ],
-          _sectionLabel('我的模板', users.isEmpty ? null : '共 ${users.length} 套'),
-          if (users.isEmpty)
-            SliverToBoxAdapter(child: _emptyGuide())
-          else
-            _grid(
-              itemCount: users.length,
-              builder: (context, i) =>
-                  draggable ? _draggableCell(users, i, cell) : _card(users[i]),
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 28)),
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _sortBar(provider.sort, draggable)),
+        if (builtin.isNotEmpty) ...[
+          _sectionLabel('内置模板', '可复制为我的模板后自由修改'),
+          _grid(
+            itemCount: builtin.length,
+            builder: (context, i) => _card(builtin[i]),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 18)),
         ],
-      ),
-    );
-  }
-
-  /// 多选态顶栏（REQ-21.1）：已选计数 + 全选 + 明确的退出入口。
-  PreferredSizeWidget _selectionBar(List<JournalTemplate> all) {
-    final allSelected = all.isNotEmpty && _selectedIds.length == all.length;
-    return AppBar(
-      leading: IconButton(
-        tooltip: '退出多选',
-        icon: const Icon(Icons.close_rounded),
-        onPressed: _exitSelection,
-      ),
-      title: Text('已选 ${_selectedIds.length} 套'),
-      actions: [
-        TextButton(
-          onPressed: () => setState(() {
-            _selectedIds.clear();
-            if (!allSelected) _selectedIds.addAll(all.map((t) => t.id));
-          }),
-          child: Text(allSelected ? '取消全选' : '全选'),
-        ),
-        IconButton(
-          tooltip: '导出为素材包',
-          icon: const Icon(Icons.ios_share_rounded),
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => _exportPack([
-                  for (final t in all)
-                    if (_selectedIds.contains(t.id)) t,
-                ]),
-        ),
-        const SizedBox(width: 4),
+        _sectionLabel('我的模板', users.isEmpty ? null : '共 ${users.length} 套'),
+        if (users.isEmpty)
+          SliverToBoxAdapter(child: _emptyGuide())
+        else
+          _grid(
+            itemCount: users.length,
+            builder: (context, i) =>
+                draggable ? _draggableCell(users, i, cell) : _card(users[i]),
+          ),
+        const SliverToBoxAdapter(child: SizedBox(height: 28)),
       ],
     );
   }
@@ -531,7 +384,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
               onSelectionChanged: (values) => _setSort(values.first),
             ),
           ),
-          if (_selecting) ...[
+          if (widget.selecting) ...[
             const SizedBox(height: 8),
             Text(
               '点卡片勾选，内置模板也能打包；选好后点右上角导出',
@@ -612,12 +465,12 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
 
   Widget _card(JournalTemplate template) => _TemplateCard(
     template: template,
-    selecting: _selecting,
-    selected: _selectedIds.contains(template.id),
+    selecting: widget.selecting,
+    selected: widget.selectedIds.contains(template.id),
     highlighted: widget.highlightIds.contains(template.id),
     onTap: () {
-      if (_selecting) {
-        _toggleSelect(template);
+      if (widget.selecting) {
+        widget.onToggleSelect(template);
       } else {
         _preview(template);
       }

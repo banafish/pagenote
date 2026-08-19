@@ -35,7 +35,15 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final body = widget.bodyBuilder(_index);
+    // 四个一级入口同时挂载、只切换显示层（NFR-09）：滚动位置、选中日期、
+    // 当前子页签与排序方式在切换后原样保留，切换本身也不触发任何 provider 重载。
+    final body = IndexedStack(
+      index: _index,
+      children: [
+        for (var i = 0; i < widget.destinations.length; i++)
+          widget.bodyBuilder(i),
+      ],
+    );
 
     if (width >= 700) {
       final extended = width >= 1050;

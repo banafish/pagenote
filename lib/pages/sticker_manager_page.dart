@@ -1,17 +1,12 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
-import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/sticker_assets.dart';
-import '../models/template.dart' show JournalTemplate;
 import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
 import '../providers/template_provider.dart';
-import '../services/share_pack_service.dart';
 import '../utils/sticker_store.dart';
 
 /// 素材格子的目标宽度与比例（图 + 一行名字），窄屏自动减列。
@@ -24,27 +19,55 @@ const _gridPadding = 16.0;
 /// 不做成常驻标记，否则下次进页面还带着「新」字反而误导。
 const _highlightDuration = Duration(seconds: 4);
 
-/// 我的素材管理页（REQ-20.4 + REQ-21.2 / 21.9）。
+/// 我的素材管理的纯 body（REQ-20.4 + REQ-21.2 / 21.9，REQ-23 拆分）。
 ///
 /// 素材面板的「我的」页签在编辑器底部弹层里，空间只够单个素材的角标菜单；
 /// 打包导出要多选、导入后要跳转高亮，都得有一个能从根 Navigator push 的
-/// 独立页面来承载，因此把这两件事收在这里，与模板管理页一一对应。
-class StickerManagerPage extends StatefulWidget {
-  const StickerManagerPage({super.key, this.highlightStickerIds = const []});
+/// 独立页面来承载——这个页面（[StickerManagerPage]）与「素材」一级入口的
+/// 子页签共用本 body，顶栏（含多选态与导入按钮）由宿主 [LibraryPage] 统一渲染。
+class StickerManagerBody extends StatefulWidget {
+  const StickerManagerBody({
+    super.key,
+    required this.selecting,
+    required this.selectedIds,
+    this.highlightStickerIds = const [],
+    required this.onToggleSelect,
+    required this.onLongPressSelect,
+    required this.onSelectionChanged,
+    required this.onImport,
+    required this.onExport,
+  });
+
+  /// 多选态（REQ-21.2）由宿主持有：点卡片勾选、长按进入都只是触发点。
+  final bool selecting;
+
+  /// 已勾选的素材 id，与宿主共享同一份集合。
+  final Set<String> selectedIds;
 
   /// 刚从分享包装进来的素材 sha1，进页后高亮并滚到第一个（REQ-21.9）。
   final List<String> highlightStickerIds;
 
+  /// 多选态下点素材：勾选 / 取消勾选。
+  final ValueChanged<CustomSticker> onToggleSelect;
+
+  /// 非多选态下长按素材：进入多选并带上这一张。
+  final ValueChanged<CustomSticker> onLongPressSelect;
+
+  /// 勾选集合被 body 侧改动（如删除了选中素材）时通知宿主刷新顶栏计数。
+  final VoidCallback onSelectionChanged;
+
+  /// 从相册导入图片作为贴纸（宿主顶栏与空态引导共用）。
+  final Future<void> Function() onImport;
+
+  /// 导出为素材包（REQ-21.2）：素材菜单的单个导出也走这里。
+  final void Function(List<CustomSticker> targets) onExport;
+
   @override
-  State<StickerManagerPage> createState() => _StickerManagerPageState();
+  State<StickerManagerBody> createState() => _StickerManagerBodyState();
 }
 
-class _StickerManagerPageState extends State<StickerManagerPage>
+class _StickerManagerBodyState extends State<StickerManagerBody>
     with SingleTickerProviderStateMixin {
-  /// 多选态（REQ-21.2）：顶栏按钮或长按素材进入，与单个素材的菜单错开。
-  bool _selecting = false;
-  final Set<String> _selectedIds = {};
-
   /// 仍在高亮中的素材 id；到点清空，卡片随即回到常态。
   final Set<String> _highlightIds = {};
 
@@ -115,140 +138,6 @@ class _StickerManagerPageState extends State<StickerManagerPage>
     });
   }
 
-  // ---------------- 导入（REQ-20.1/20.3/20.5） ----------------
-
-  /// 从相册导入图片作为贴纸：先问一句要不要去白底（REQ-20.3），
-  /// 超限的图片由仓库自动压缩，提示里如实报出压缩张数与压缩后尺寸（REQ-20.5）。
-  Future<void> _importStickers() async {
-    final files = await StickerStore.pickImages();
-    if (!mounted || files.isEmpty) return;
-    final cutWhite = await _askImportOptions(files.length);
-    if (!mounted || cutWhite == null) return;
-    final provider = context.read<CustomStickerProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    var done = 0;
-    var failed = 0;
-    final shrunk = <String>[];
-    for (final file in files) {
-      final result = await _importOne(provider, file, cutWhite: cutWhite);
-      if (!result.ok) {
-        failed++;
-        continue;
-      }
-      done++;
-      if (result.shrunk != null) shrunk.add(result.shrunk!);
-    }
-    if (!mounted) return;
-    final parts = <String>[
-      if (done > 0) '已导入 $done 张素材',
-      if (failed > 0) '$failed 张图片无法识别，已跳过',
-      if (shrunk.length == 1) '1 张超出上限，已压缩为 ${shrunk.first}',
-      if (shrunk.length > 1)
-        '${shrunk.length} 张超出上限，已压缩到 ${StickerStore.maxEdge} 像素内',
-    ];
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(parts.join('；'))));
-  }
-
-  /// 导入前的选项（REQ-20.3）；返回 null 表示放弃导入。
-  Future<bool?> _askImportOptions(int count) {
-    var cutWhite = false;
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (builderContext, setLocal) => AlertDialog(
-          title: const Text('导入为贴纸'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '已选择 $count 张图片，长边超过 ${StickerStore.maxEdge} 像素的会自动压缩。',
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              CheckboxListTile(
-                value: cutWhite,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('去除白色背景', style: TextStyle(fontSize: 14)),
-                subtitle: const Text(
-                  '适合白底的手绘与印章；透明 PNG 不必勾选',
-                  style: TextStyle(fontSize: 11.5),
-                ),
-                onChanged: (value) => setLocal(() => cutWhite = value ?? false),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, cutWhite),
-              child: const Text('导入'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 导入单张：按需先去白底，再交给仓库统一压缩落盘。
-  /// [ok] 为 false 表示图片无法识别；[shrunk] 非空表示触发了压缩，值为压缩后尺寸。
-  Future<({bool ok, String? shrunk})> _importOne(
-    CustomStickerProvider provider,
-    XFile file, {
-    required bool cutWhite,
-  }) async {
-    final Uint8List source;
-    try {
-      final raw = await file.readAsBytes();
-      source = cutWhite ? await StickerStore.removeWhiteBackground(raw) : raw;
-    } on IOException {
-      return (ok: false, shrunk: null);
-    }
-    final sticker = await provider.importFromFile(
-      cutWhite
-          ? XFile.fromData(source, path: file.name, mimeType: 'image/png')
-          : file,
-    );
-    if (sticker == null) return (ok: false, shrunk: null);
-    final before = await _pixelSize(source);
-    final oversize =
-        source.length > StickerStore.maxBytes ||
-        (before != null && before.longestSide > StickerStore.maxEdge);
-    if (!oversize) return (ok: true, shrunk: null);
-    final saved = await StickerStore.readBytes(sticker.id, sticker.ext);
-    final after = saved == null ? null : await _pixelSize(saved);
-    return (
-      ok: true,
-      shrunk: after == null
-          ? '${StickerStore.maxEdge} 像素内'
-          : '${after.width.round()}×${after.height.round()}',
-    );
-  }
-
-  /// 只读图片头拿像素尺寸（不整张解码），用于如实提示压缩结果（REQ-20.5）；
-  /// 格式不受支持时返回 null。
-  Future<Size?> _pixelSize(Uint8List bytes) async {
-    ui.ImmutableBuffer? buffer;
-    ui.ImageDescriptor? descriptor;
-    try {
-      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      descriptor = await ui.ImageDescriptor.encoded(buffer);
-      return Size(descriptor.width.toDouble(), descriptor.height.toDouble());
-    } on Exception {
-      return null;
-    } finally {
-      descriptor?.dispose();
-      buffer?.dispose();
-    }
-  }
-
   // ---------------- 单个素材的操作（REQ-20.4） ----------------
 
   /// 素材操作菜单：重命名 / 分组 / 导出 / 删除。
@@ -307,7 +196,7 @@ class _StickerManagerPageState extends State<StickerManagerPage>
           group,
         );
       case 'export':
-        await _exportPack([sticker]);
+        widget.onExport([sticker]);
       case 'delete':
         await _delete(sticker);
     }
@@ -376,106 +265,8 @@ class _StickerManagerPageState extends State<StickerManagerPage>
     if (ok != true || !mounted) return;
     await provider.delete(sticker.id);
     if (!mounted) return;
-    setState(() => _selectedIds.remove(sticker.id));
-  }
-
-  // ---------------- 导出素材包（REQ-21.2） ----------------
-
-  /// 把选中的素材打成 kind = sticker 的分享包（REQ-21.2）：
-  /// 只带素材文件，不带任何模板，接收方装完即可在「我的」页签里用。
-  Future<void> _exportPack(List<CustomSticker> targets) async {
-    if (targets.isEmpty) return;
-    final meta = await _askPackMeta(
-      targets.length == 1 ? targets.first.name : '我的素材包',
-    );
-    if (meta == null || !mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    final provider = context.read<CustomStickerProvider>();
-    try {
-      final path = await SharePackService.instance.exportPack(
-        packName: meta.name,
-        author: meta.author,
-        templates: const <JournalTemplate>[],
-        stickers: targets,
-        stickerBytes: await provider.exportBytes(
-          ids: [for (final s in targets) s.id],
-        ),
-      );
-      // 用户在系统对话框里取消时返回 null，不打扰。
-      if (path != null) {
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('素材包已导出：$path')));
-      }
-    } catch (_) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('导出失败，请重试')));
-    }
-    if (mounted && _selecting) _exitSelection();
-  }
-
-  /// 包名与署名（附录 pack.json 的 name / author）；署名可留空。
-  Future<({String name, String author})?> _askPackMeta(
-    String defaultName,
-  ) async {
-    final nameController = TextEditingController(text: defaultName);
-    final authorController = TextEditingController();
-    final meta = await showDialog<({String name, String author})>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('导出为素材包'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '包名',
-                hintText: '如：手绘小花贴纸',
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: authorController,
-              decoration: const InputDecoration(labelText: '署名（可留空）'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, (
-              name: nameController.text.trim(),
-              author: authorController.text.trim(),
-            )),
-            child: const Text('导出'),
-          ),
-        ],
-      ),
-    );
-    nameController.dispose();
-    authorController.dispose();
-    if (meta == null) return null;
-    return meta.name.isEmpty ? (name: defaultName, author: meta.author) : meta;
-  }
-
-  void _toggleSelect(CustomSticker sticker) {
-    setState(() {
-      if (!_selectedIds.remove(sticker.id)) _selectedIds.add(sticker.id);
-    });
-  }
-
-  void _exitSelection() {
-    setState(() {
-      _selecting = false;
-      _selectedIds.clear();
-    });
+    // 勾选集合由宿主持有，这里清掉被删项后请宿主刷新顶栏计数。
+    if (widget.selectedIds.remove(sticker.id)) widget.onSelectionChanged();
   }
 
   // ---------------- 布局 ----------------
@@ -500,73 +291,18 @@ class _StickerManagerPageState extends State<StickerManagerPage>
   @override
   Widget build(BuildContext context) {
     final stickers = context.watch<CustomStickerProvider>().stickers;
-    return Scaffold(
-      appBar: _selecting
-          ? _selectionBar(stickers)
-          : AppBar(
-              title: const Text('我的素材'),
-              actions: [
-                IconButton(
-                  tooltip: '导入图片',
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  onPressed: _importStickers,
-                ),
-                IconButton(
-                  tooltip: '多选导出',
-                  icon: const Icon(Icons.checklist_rounded),
-                  onPressed: stickers.isEmpty
-                      ? null
-                      : () => setState(() => _selecting = true),
-                ),
-                const SizedBox(width: 4),
+    return stickers.isEmpty
+        ? _emptyGuide()
+        : CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: _hintBar()),
+              for (final group in _grouped(stickers)) ...[
+                _sectionLabel(group.category, '共 ${group.items.length} 张'),
+                _grid(group.items),
               ],
-            ),
-      body: stickers.isEmpty
-          ? _emptyGuide()
-          : CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(child: _hintBar()),
-                for (final group in _grouped(stickers)) ...[
-                  _sectionLabel(group.category, '共 ${group.items.length} 张'),
-                  _grid(group.items),
-                ],
-                const SliverToBoxAdapter(child: SizedBox(height: 28)),
-              ],
-            ),
-    );
-  }
-
-  /// 多选态顶栏（REQ-21.2）：已选计数 + 全选 + 明确的退出入口。
-  PreferredSizeWidget _selectionBar(List<CustomSticker> all) {
-    final allSelected = all.isNotEmpty && _selectedIds.length == all.length;
-    return AppBar(
-      leading: IconButton(
-        tooltip: '退出多选',
-        icon: const Icon(Icons.close_rounded),
-        onPressed: _exitSelection,
-      ),
-      title: Text('已选 ${_selectedIds.length} 张'),
-      actions: [
-        TextButton(
-          onPressed: () => setState(() {
-            _selectedIds.clear();
-            if (!allSelected) _selectedIds.addAll(all.map((s) => s.id));
-          }),
-          child: Text(allSelected ? '取消全选' : '全选'),
-        ),
-        IconButton(
-          tooltip: '导出为素材包',
-          icon: const Icon(Icons.ios_share_rounded),
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => _exportPack([
-                  for (final s in all)
-                    if (_selectedIds.contains(s.id)) s,
-                ]),
-        ),
-        const SizedBox(width: 4),
-      ],
-    );
+              const SliverToBoxAdapter(child: SizedBox(height: 28)),
+            ],
+          );
   }
 
   Widget _hintBar() {
@@ -574,7 +310,9 @@ class _StickerManagerPageState extends State<StickerManagerPage>
     return Padding(
       padding: const EdgeInsets.fromLTRB(_gridPadding + 4, 12, _gridPadding, 2),
       child: Text(
-        _selecting ? '点素材勾选，选好后点右上角导出为素材包' : '点素材可重命名 / 分组 / 删除，长按进入多选',
+        widget.selecting
+            ? '点素材勾选，选好后点右上角导出为素材包'
+            : '点素材可重命名 / 分组 / 删除，长按进入多选',
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
       ),
     );
@@ -594,7 +332,7 @@ class _StickerManagerPageState extends State<StickerManagerPage>
           children: [
             Text(
               text,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -639,7 +377,7 @@ class _StickerManagerPageState extends State<StickerManagerPage>
 
   Widget _cellBody(CustomSticker sticker, {required double glow}) {
     final scheme = Theme.of(context).colorScheme;
-    final selected = _selectedIds.contains(sticker.id);
+    final selected = widget.selectedIds.contains(sticker.id);
     final highlighted = _highlightIds.contains(sticker.id);
     final Color border;
     if (selected) {
@@ -662,18 +400,13 @@ class _StickerManagerPageState extends State<StickerManagerPage>
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
-          if (_selecting) {
-            _toggleSelect(sticker);
+          if (widget.selecting) {
+            widget.onToggleSelect(sticker);
           } else {
             _stickerMenu(sticker);
           }
         },
-        onLongPress: _selecting
-            ? null
-            : () => setState(() {
-                _selecting = true;
-                _selectedIds.add(sticker.id);
-              }),
+        onLongPress: widget.selecting ? null : () => widget.onLongPressSelect(sticker),
         child: Stack(
           children: [
             Column(
@@ -709,7 +442,7 @@ class _StickerManagerPageState extends State<StickerManagerPage>
             ),
             if (highlighted)
               const Positioned(left: 5, top: 5, child: _NewBadge()),
-            if (_selecting)
+            if (widget.selecting)
               Positioned(
                 right: 4,
                 top: 4,
@@ -758,7 +491,7 @@ class _StickerManagerPageState extends State<StickerManagerPage>
             ),
             const SizedBox(height: 18),
             FilledButton.tonalIcon(
-              onPressed: _importStickers,
+              onPressed: widget.onImport,
               icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
               label: const Text('导入图片'),
             ),

@@ -27,10 +27,9 @@ class _StatsPageState extends State<StatsPage> {
     final now = DateTime.now();
 
     final content = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
       children: [
-        _pageTitle(context, '统计'),
-        const SizedBox(height: 14),
+        // 页面标题由宿主「回顾」的 AppBar 承担（REQ-24），页内不再重复。
         _sectionTitle(context, '记录足迹'),
         const SizedBox(height: 10),
         StatCardGrid(
@@ -113,19 +112,6 @@ class _StatsPageState extends State<StatsPage> {
               child: content,
             ),
           );
-  }
-
-  Widget _pageTitle(BuildContext context, String text) {
-    final top = MediaQuery.paddingOf(context).top;
-    return Padding(
-      padding: EdgeInsets.only(top: top + 8, left: 4),
-      child: Text(
-        text,
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-      ),
-    );
   }
 
   Widget _sectionTitle(BuildContext context, String text) {

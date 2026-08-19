@@ -10,9 +10,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'app.dart';
 import 'pages/editor_page.dart';
+import 'pages/library_page.dart';
 import 'pages/share_pack_import_page.dart';
-import 'pages/sticker_manager_page.dart';
-import 'pages/template_manager_page.dart';
 import 'providers/custom_sticker_provider.dart';
 import 'providers/journal_provider.dart';
 import 'providers/settings_provider.dart';

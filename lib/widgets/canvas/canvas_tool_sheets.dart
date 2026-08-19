@@ -10,7 +10,7 @@ import '../../models/app_fonts.dart';
 import '../../models/canvas_page.dart';
 import '../../models/decoration.dart';
 import '../../models/sticker_assets.dart';
-import '../../pages/sticker_manager_page.dart';
+import '../../pages/library_page.dart';
 import '../../providers/custom_sticker_provider.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/settings_provider.dart';
