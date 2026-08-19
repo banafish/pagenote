@@ -34,6 +34,21 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- 分享包（REQ-21.11）：文件管理器直接打开 zip，或微信 / QQ 里
+                 「用其他应用打开」时出现拾页。扩展名沿用 .zip，类型判断在
+                 pack.json 内部完成；部分渠道把 zip 报成 x-zip-compressed，一并接收。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content" android:mimeType="application/zip"/>
+                <data android:scheme="file" android:mimeType="application/x-zip-compressed"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="application/zip"/>
+                <data android:mimeType="application/x-zip-compressed"/>
+            </intent-filter>
         </activity>
         <!-- 写作提醒通知：定时回调与开机恢复（flutter_local_notifications） -->
         <receiver android:exported="false"

@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -13,6 +15,7 @@ import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/models/sticker_assets.dart';
 import 'package:pagenote/models/template.dart';
 import 'package:pagenote/providers/custom_sticker_provider.dart';
+import 'package:pagenote/services/backup_service.dart';
 import 'package:pagenote/utils/sticker_store.dart';
 
 void main() {
@@ -68,6 +71,40 @@ void main() {
 
   XFile fileOf(Uint8List bytes, String name) =>
       XFile.fromData(bytes, path: p.join(Directory.systemTemp.path, name));
+
+  /// 白底 + 中心色块的 PNG，用于去白底断言（REQ-20.3）。
+  Uint8List whiteBlockPng(int size) {
+    final image = img.Image(width: size, height: size, numChannels: 4);
+    img.fill(image, color: img.ColorRgba8(255, 255, 255, 255));
+    img.fillRect(
+      image,
+      x1: size ~/ 4,
+      y1: size ~/ 4,
+      x2: size - size ~/ 4 - 1,
+      y2: size - size ~/ 4 - 1,
+      color: img.ColorRgba8(220, 90, 90, 255),
+    );
+    return img.encodePng(image);
+  }
+
+  /// 噪点 PNG：长边不超限但体积超 2MB，用来打中按体积压缩那条分支。
+  Uint8List noisePng(int size) {
+    final random = math.Random(7);
+    final image = img.Image(width: size, height: size, numChannels: 4);
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        image.setPixelRgba(
+          x,
+          y,
+          random.nextInt(256),
+          random.nextInt(256),
+          random.nextInt(256),
+          255,
+        );
+      }
+    }
+    return img.encodePng(image);
+  }
 
   Future<List<File>> storedFiles() async {
     final dir = await StickerStore.ensureDir();
@@ -145,7 +182,9 @@ void main() {
 
   test('被手账或模板引用的素材判定为占用（REQ-20.4 删除二次确认）', () async {
     final provider = await newProvider();
-    final used = (await provider.importFromFile(fileOf(pngOf(40, 40), '在用.png')))!;
+    final used = (await provider.importFromFile(
+      fileOf(pngOf(40, 40), '在用.png'),
+    ))!;
     final free = (await provider.importFromFile(
       fileOf(pngOf(40, 40, seed: 3), '闲置.png'),
     ))!;
@@ -201,5 +240,150 @@ void main() {
     await provider.delete(sticker.id);
     expect(CustomStickerIndex.instance.pathOf(sticker.id), isNull);
     expect(isKnownStickerKey(sticker.stickerKey), isFalse);
+  });
+
+  test('备份包带上自定义贴纸清单与位图，解析回程可还原（REQ-20.6）', () async {
+    final provider = await newProvider();
+    final sticker = (await provider.importFromFile(
+      fileOf(pngOf(72, 72), '备份素材.png'),
+    ))!;
+    await provider.setCategory(sticker.id, '手绘');
+    final saved = (await StickerStore.readBytes(sticker.id, sticker.ext))!;
+
+    final entry = JournalEntry(
+      id: 'e-backup',
+      date: '2026-08-19',
+      title: '带自定义贴纸',
+      content: '正文',
+      canvas: JournalCanvas(
+        elements: [StickerElement(key: sticker.stickerKey)],
+      ),
+      createdAt: DateTime(2026, 8, 19),
+      updatedAt: DateTime(2026, 8, 19),
+    );
+
+    // 自动备份与手动导出走的是同一个 buildZip，取值必须带上这两个参数。
+    final zip = await BackupService.instance.buildZip(
+      entries: [entry],
+      templates: const [],
+      customStickers: provider.stickers,
+      stickerBytes: await provider.exportBytes(),
+    );
+
+    final archive = ZipDecoder().decodeBytes(zip);
+    expect(archive.findFile('stickers.json'), isNotNull, reason: '清单入包');
+    expect(
+      archive.findFile('stickers/${sticker.fileName}'),
+      isNotNull,
+      reason: '位图放在 stickers/ 下，文件名即 <sha1><ext>',
+    );
+
+    final data = BackupService.instance.parseBackup(zip);
+    expect(data.customStickers.single.id, sticker.id);
+    expect(data.customStickers.single.name, '备份素材');
+    expect(data.customStickers.single.category, '手绘');
+    expect(data.stickerBytes[sticker.fileName], saved, reason: '字节原样回程');
+    expect(
+      data.entries.single.canvas!.stickerKeys,
+      contains(sticker.stickerKey),
+      reason: '引用与素材同包，导入后不成占位框',
+    );
+
+    // 漏传这两个参数就是 REQ-20.6 那个 bug 的形态：包里没有贴纸，
+    // 解析端降级为空（旧备份同此路径，不得抛异常）。
+    final without = await BackupService.instance.buildZip(
+      entries: [entry],
+      templates: const [],
+    );
+    expect(ZipDecoder().decodeBytes(without).findFile('stickers.json'), isNull);
+    final bare = BackupService.instance.parseBackup(without);
+    expect(bare.customStickers, isEmpty);
+    expect(bare.stickerBytes, isEmpty);
+  });
+
+  test('去白底导入：白底透明、色块保留，与原图各成一份素材（REQ-20.3）', () async {
+    final provider = await newProvider();
+    final raw = whiteBlockPng(64);
+
+    // 面板侧的真实链路：先抠白，再包成内存 XFile 走同一条压缩落盘。
+    final cut = await StickerStore.removeWhiteBackground(raw);
+    final cutSticker = (await provider.importFromFile(
+      XFile.fromData(cut, path: '印章去白.png', mimeType: 'image/png'),
+    ))!;
+    final plain = (await provider.importFromFile(fileOf(raw, '印章.png')))!;
+
+    expect(cutSticker.id, isNot(plain.id), reason: '抠白改了内容，是另一份素材');
+    expect(provider.stickers.length, 2);
+    expect((await storedFiles()).length, 2);
+
+    final decoded = img.decodeImage(
+      (await StickerStore.readBytes(cutSticker.id, cutSticker.ext))!,
+    )!;
+    for (final xy in const [
+      [0, 0],
+      [63, 0],
+      [0, 63],
+      [63, 63],
+    ]) {
+      expect(decoded.getPixel(xy[0], xy[1]).a, 0, reason: '四角白底抠成全透明');
+    }
+    final center = decoded.getPixel(32, 32);
+    expect(center.a, 255, reason: '中心色块保持不透明');
+    expect(center.r, 220);
+    expect(center.g, 90);
+
+    // 未勾选去白底的那份四角仍是不透明白，两条链路互不干扰。
+    final origin = img.decodeImage(
+      (await StickerStore.readBytes(plain.id, plain.ext))!,
+    )!;
+    expect(origin.getPixel(0, 0).a, 255);
+    expect(origin.getPixel(0, 0).r, 255);
+  });
+
+  test('压缩判定：超限图被压到上限内，小图原样落盘（REQ-20.5）', () async {
+    final provider = await newProvider();
+
+    /// 面板提示「已压缩为 W×H」所依据的信息：数据层未回传结构体，
+    /// 只能比对源字节与落盘结果反推，此处按同一口径断言。
+    Future<({bool shrunk, int width, int height, int bytes})> receiptOf(
+      Uint8List source,
+      String name,
+    ) async {
+      final sticker = await provider.importFromFile(fileOf(source, name));
+      expect(sticker, isNotNull, reason: '$name 应能解码');
+      final saved = (await StickerStore.readBytes(sticker!.id, sticker.ext))!;
+      final after = img.decodeImage(saved)!;
+      final before = img.decodeImage(source)!;
+      return (
+        shrunk: after.width != before.width || after.height != before.height,
+        width: after.width,
+        height: after.height,
+        bytes: saved.length,
+      );
+    }
+
+    final long = await receiptOf(pngOf(2000, 1200), '超长边.png');
+    expect(long.shrunk, isTrue);
+    expect(long.width, lessThanOrEqualTo(StickerStore.maxEdge));
+    expect(long.height, lessThanOrEqualTo(StickerStore.maxEdge));
+    expect(long.bytes, lessThanOrEqualTo(StickerStore.maxBytes));
+
+    // 长边没超但体积超 2MB，也要压（噪点图压缩率低，正好打中这条分支）。
+    final source = noisePng(900);
+    expect(
+      source.length,
+      greaterThan(StickerStore.maxBytes),
+      reason: '用例前提：这张噪点图本身超 2MB',
+    );
+    final heavy = await receiptOf(source, '噪点.png');
+    expect(heavy.shrunk, isTrue);
+    expect(heavy.width, lessThan(900));
+    expect(heavy.bytes, lessThanOrEqualTo(StickerStore.maxBytes));
+
+    final small = await receiptOf(pngOf(200, 120, seed: 5), '小图.png');
+    expect(small.shrunk, isFalse, reason: '未超限不动尺寸');
+    expect(small.width, 200);
+    expect(small.height, 120);
+    expect(small.bytes, lessThanOrEqualTo(StickerStore.maxBytes));
   });
 }

@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -46,24 +49,71 @@ String _tapeKey(String style, int color) => '$_tapeKeyPrefix$style:$color';
 /// REQ-17.3：改为可连续插入的常驻抽屉 —— 选中素材后面板不关闭,
 /// 每选中一次回调一次 [onPick]。元素用默认落点构造,
 /// 递增偏移由画布端负责,面板不参与坐标计算。
+/// REQ-17.5：长按素材可直接拖到画布指定位置,落点由画布端的 DragTarget 结算。
 Future<void> showStickerPalette(
   BuildContext context, {
   required void Function(CanvasElement element) onPick,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    // 连续插入期间画布需保持可见,故不压重遮罩（REQ-17.3）。
-    barrierColor: Colors.black.withValues(alpha: 0.06),
-    builder: (sheetContext) => _StickerPaletteSheet(onPick: onPick),
+  final navigator = Navigator.of(context);
+  final localizations = MaterialLocalizations.of(context);
+  late final _StickerPaletteRoute route;
+  route = _StickerPaletteRoute(
+    capturedThemes: InheritedTheme.capture(
+      from: context,
+      to: navigator.context,
+    ),
+    barrierLabel: localizations.scrimLabel,
+    barrierOnTapHint: localizations.scrimOnTapHint(
+      localizations.bottomSheetLabel,
+    ),
+    builder: (sheetContext) =>
+        _StickerPaletteSheet(onPick: onPick, dragging: route.dragging),
   );
+  return navigator.push(route);
+}
+
+/// 面板专用的模态路由：拖拽期间放行遮罩的命中测试（REQ-17.5）。
+/// 底部弹层的遮罩对命中测试不透明,画布上的落区（DragTarget）被它整块挡住,
+/// 拖出面板就再也收不到落点；这里在拖拽开始后临时让遮罩不接收指针,
+/// 松手判定即可穿到画布。返回键 / Navigator.pop 等模态语义保持不变。
+class _StickerPaletteRoute extends ModalBottomSheetRoute<void> {
+  _StickerPaletteRoute({
+    required super.builder,
+    super.capturedThemes,
+    super.barrierLabel,
+    super.barrierOnTapHint,
+  }) : super(
+         isScrollControlled: true,
+         showDragHandle: true,
+         // 连续插入期间画布需保持可见,故不压重遮罩（REQ-17.3）。
+         modalBarrierColor: Colors.black.withValues(alpha: 0.06),
+       );
+
+  /// 面板内是否正有素材在拖拽中。
+  final ValueNotifier<bool> dragging = ValueNotifier(false);
+
+  @override
+  Widget buildModalBarrier() => ValueListenableBuilder<bool>(
+    valueListenable: dragging,
+    child: super.buildModalBarrier(),
+    builder: (context, value, child) =>
+        IgnorePointer(ignoring: value, child: child),
+  );
+
+  @override
+  void dispose() {
+    dragging.dispose();
+    super.dispose();
+  }
 }
 
 class _StickerPaletteSheet extends StatefulWidget {
-  const _StickerPaletteSheet({required this.onPick});
+  const _StickerPaletteSheet({required this.onPick, required this.dragging});
 
   final void Function(CanvasElement element) onPick;
+
+  /// 拖拽状态回传给路由,用于放行遮罩（见 [_StickerPaletteRoute]）。
+  final ValueNotifier<bool> dragging;
 
   @override
   State<_StickerPaletteSheet> createState() => _StickerPaletteSheetState();
@@ -106,7 +156,12 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     if (key.startsWith(_tapeKeyPrefix)) {
       final tape = _decodeTapeKey(key);
       if (tape == null) return null;
-      return TapeElement(style: tape.style, color: tape.color, x: 0.35, y: 0.46);
+      return TapeElement(
+        style: tape.style,
+        color: tape.color,
+        x: 0.35,
+        y: 0.46,
+      );
     }
     if (!isKnownStickerKey(key)) return null;
     return StickerElement(
@@ -200,15 +255,14 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
         children: [
           Text(
             '素材',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '可连续点选，长按可收藏',
+              '可连续点选，长按拖到画布指定位置',
               style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
               overflow: TextOverflow.ellipsis,
             ),
@@ -255,9 +309,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
                   },
                 ),
           contentPadding: const EdgeInsets.symmetric(vertical: 10),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
         ),
         onChanged: (value) => setState(() => _query = value.trim()),
       ),
@@ -267,7 +319,11 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
   // ---------------- 最近使用与收藏（REQ-17.1 / 17.2） ----------------
 
   /// 一条横滑素材带；[reorderable] 为收藏区,长按可拖拽排序并持久化。
-  Widget _keyStrip(String title, List<String> keys, {bool reorderable = false}) {
+  Widget _keyStrip(
+    String title,
+    List<String> keys, {
+    bool reorderable = false,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,12 +347,14 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
                   buildDefaultDragHandles: false,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   itemCount: keys.length,
-                  itemBuilder: (context, i) => ReorderableDelayedDragStartListener(
-                    key: ValueKey(keys[i]),
-                    index: i,
-                    // 收藏区的长按已被拖拽排序占用,取消收藏回各页签长按。
-                    child: _stripCell(keys[i], canFavorite: false),
-                  ),
+                  itemBuilder: (context, i) =>
+                      ReorderableDelayedDragStartListener(
+                        key: ValueKey(keys[i]),
+                        index: i,
+                        // 收藏区的长按归拖拽排序,取消收藏点右上角星标；
+                        // 拖到画布从下方页签发起（REQ-17.5）。
+                        child: _stripCell(keys[i], draggable: false),
+                      ),
                   onReorderItem: (from, to) {
                     final next = [...keys];
                     next.insert(to, next.removeAt(from));
@@ -315,18 +373,21 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     );
   }
 
-  Widget _stripCell(String key, {bool canFavorite = true}) {
+  Widget _stripCell(String key, {bool draggable = true}) {
+    final element = _elementForKey(key);
+    if (element == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: SizedBox(
         width: 48,
         child: _pickable(
           favoriteKey: key,
-          canFavorite: canFavorite,
+          // 画布端落点时会克隆一份,这里复用同一实例即可。
+          dragElement: draggable ? () => element : null,
           tooltip: _keyLabel(key),
           onTap: () {
-            final element = _elementForKey(key);
-            if (element != null) _pick(element, key);
+            final fresh = _elementForKey(key);
+            if (fresh != null) _pick(fresh, key);
           },
           child: _keyThumb(key, size: 34),
         ),
@@ -387,44 +448,89 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     return stickerKeyLabel(key);
   }
 
-  /// 素材格子的统一交互：点选插入,长按收藏 / 取消收藏（REQ-17.2）。
-  /// [canFavorite] 为 false 时只保留点选,把长按让给外层的拖拽排序。
+  /// 素材格子的统一交互：点选插入,长按拖到画布指定位置（REQ-17.5）,
+  /// 右上角角标默认为收藏星标（REQ-17.2,点按切换 —— 长按已让给拖拽）。
+  /// [dragElement] 为空时不发起拖拽（收藏条的长按归排序）；
+  /// [badge] 可替换角标（「我的」页签放素材管理菜单）。
   Widget _pickable({
     required String favoriteKey,
     required VoidCallback onTap,
     required Widget child,
+    CanvasElement Function()? dragElement,
     bool canFavorite = true,
+    Widget? badge,
     String? tooltip,
   }) {
-    final scheme = Theme.of(context).colorScheme;
-    final favorite = context.watch<SettingsProvider>().isFavoriteSticker(
-      favoriteKey,
-    );
-    final cell = InkWell(
+    final body = InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
-      onLongPress: canFavorite
-          ? () => context.read<SettingsProvider>().toggleFavoriteSticker(
-              favoriteKey,
-            )
-          : null,
-      child: Stack(
-        children: [
-          Positioned.fill(child: Center(child: child)),
-          if (favorite)
-            Positioned(
-              right: 1,
-              top: 1,
-              child: Icon(
-                Icons.star_rounded,
-                size: 12,
-                color: scheme.primary,
-              ),
-            ),
-        ],
-      ),
+      child: Center(child: child),
+    );
+    final corner = badge ?? (canFavorite ? _favoriteStar(favoriteKey) : null);
+    final cell = Stack(
+      children: [
+        Positioned.fill(
+          child: dragElement == null
+              ? body
+              : LongPressDraggable<CanvasElement>(
+                  data: dragElement(),
+                  // 画布端把落点 offset 当作元素中心,故锚点取指针本身;
+                  // 触摸与鼠标长按走同一条路径,双端一致（NFR-04）。
+                  dragAnchorStrategy: pointerDragAnchorStrategy,
+                  feedback: _dragFeedback(favoriteKey),
+                  childWhenDragging: Opacity(opacity: 0.25, child: body),
+                  onDragStarted: () => widget.dragging.value = true,
+                  onDragEnd: (_) => widget.dragging.value = false,
+                  onDragCompleted: () => context
+                      .read<SettingsProvider>()
+                      .pushRecentSticker(favoriteKey),
+                  child: body,
+                ),
+        ),
+        if (corner != null) Positioned(right: 0, top: 0, child: corner),
+      ],
     );
     return tooltip == null ? cell : Tooltip(message: tooltip, child: cell);
+  }
+
+  /// 收藏角标（REQ-17.2）：点按切换收藏,未收藏时留一颗淡描边星做入口提示。
+  Widget _favoriteStar(String key) {
+    final scheme = Theme.of(context).colorScheme;
+    final favorite = context.watch<SettingsProvider>().isFavoriteSticker(key);
+    return Tooltip(
+      message: favorite ? '取消收藏' : '收藏',
+      child: InkResponse(
+        radius: 16,
+        onTap: () =>
+            context.read<SettingsProvider>().toggleFavoriteSticker(key),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            favorite ? Icons.star_rounded : Icons.star_border_rounded,
+            size: 15,
+            color: favorite
+                ? scheme.primary
+                : scheme.onSurfaceVariant.withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 拖拽跟手预览（REQ-17.5）：半透明缩略图,并以指针为中心对齐,
+  /// 与画布端「落点 offset 即元素中心」的约定吻合。
+  Widget _dragFeedback(String key) {
+    final tape = key.startsWith(_tapeKeyPrefix);
+    return FractionalTranslation(
+      translation: const Offset(-0.5, -0.5),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Opacity(
+          opacity: 0.75,
+          child: _keyThumb(key, size: tape ? 100 : 56),
+        ),
+      ),
+    );
   }
 
   // ---------------- 贴纸页签（含 REQ-19 换色） ----------------
@@ -463,26 +569,23 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
       childAspectRatio: 0.9,
-      children: [
-        for (final sticker in stickers)
-          _pickable(
-            favoriteKey: '$stickerKeyVector${sticker.id}',
-            tooltip: sticker.name,
-            onTap: () => _pick(
-              StickerElement(
-                key: '$stickerKeyVector${sticker.id}',
-                x: 0.42,
-                y: 0.46,
-                tint: _tint,
-              ),
-              '$stickerKeyVector${sticker.id}',
-            ),
-            child: CustomPaint(
-              size: const Size(44, 44),
-              painter: StickerPainter(sticker.id, tint: _tint),
-            ),
-          ),
-      ],
+      children: [for (final sticker in stickers) _vectorCell(sticker)],
+    );
+  }
+
+  Widget _vectorCell(StickerAsset sticker) {
+    final key = '$stickerKeyVector${sticker.id}';
+    StickerElement make() =>
+        StickerElement(key: key, x: 0.42, y: 0.46, tint: _tint);
+    return _pickable(
+      favoriteKey: key,
+      tooltip: sticker.name,
+      dragElement: make,
+      onTap: () => _pick(make(), key),
+      child: CustomPaint(
+        size: const Size(44, 44),
+        painter: StickerPainter(sticker.id, tint: _tint),
+      ),
     );
   }
 
@@ -527,7 +630,9 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
             height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: value == null ? scheme.surfaceContainerHighest : Color(value),
+              color: value == null
+                  ? scheme.surfaceContainerHighest
+                  : Color(value),
               shape: BoxShape.circle,
               border: Border.all(
                 color: selected ? scheme.primary : Colors.transparent,
@@ -582,19 +687,18 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               itemBuilder: (context, i) {
                 final color = tapePalette[i];
                 final key = _tapeKey(style.id, color);
+                TapeElement make() => TapeElement(
+                  style: style.id,
+                  color: color,
+                  x: 0.35,
+                  y: 0.46,
+                );
                 return SizedBox(
                   width: 96,
                   child: _pickable(
                     favoriteKey: key,
-                    onTap: () => _pick(
-                      TapeElement(
-                        style: style.id,
-                        color: color,
-                        x: 0.35,
-                        y: 0.46,
-                      ),
-                      key,
-                    ),
+                    dragElement: make,
+                    onTap: () => _pick(make(), key),
                     child: ClipRect(
                       child: SizedBox(
                         width: 96,
@@ -652,21 +756,18 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-      children: [
-        for (final emoji in items)
-          _pickable(
-            favoriteKey: '$stickerKeyEmoji${emoji.char}',
-            onTap: () => _pick(
-              StickerElement(
-                key: '$stickerKeyEmoji${emoji.char}',
-                x: 0.42,
-                y: 0.46,
-              ),
-              '$stickerKeyEmoji${emoji.char}',
-            ),
-            child: Text(emoji.char, style: const TextStyle(fontSize: 26)),
-          ),
-      ],
+      children: [for (final emoji in items) _emojiCell(emoji)],
+    );
+  }
+
+  Widget _emojiCell(EmojiAsset emoji) {
+    final key = '$stickerKeyEmoji${emoji.char}';
+    StickerElement make() => StickerElement(key: key, x: 0.42, y: 0.46);
+    return _pickable(
+      favoriteKey: key,
+      dragElement: make,
+      onTap: () => _pick(make(), key),
+      child: Text(emoji.char, style: const TextStyle(fontSize: 26)),
     );
   }
 
@@ -690,7 +791,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '长按素材可重命名 / 分组 / 删除',
+                  '点右上角管理素材，长按可拖到画布',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: scheme.onSurfaceVariant,
@@ -701,9 +802,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
           ),
         ),
         Expanded(
-          child: stickers.isEmpty
-              ? _mineEmpty(scheme)
-              : _customGrid(stickers),
+          child: stickers.isEmpty ? _mineEmpty(scheme) : _customGrid(stickers),
         ),
       ],
     );
@@ -750,57 +849,183 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
-      children: [
-        for (final sticker in stickers)
-          Tooltip(
-            message: sticker.name,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => _pick(
-                StickerElement(key: sticker.stickerKey, x: 0.42, y: 0.46),
-                sticker.stickerKey,
-              ),
-              onLongPress: () => _customStickerMenu(sticker),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Image.file(
-                  File(StickerStore.pathOf(sticker.id, sticker.ext)),
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.broken_image_outlined,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
+      children: [for (final sticker in stickers) _customCell(sticker)],
     );
   }
 
-  /// 从相册导入图片作为贴纸（REQ-20.1）；解码失败的图片跳过并提示。
-  Future<void> _importCustomStickers() async {
-    final provider = context.read<CustomStickerProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    final files = await StickerStore.pickImages();
-    if (files.isEmpty) return;
-    var failed = 0;
-    for (final file in files) {
-      if (await provider.importFromFile(file) == null) failed++;
-    }
-    if (!mounted) return;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          failed == 0
-              ? '已导入 ${files.length} 张素材'
-              : '$failed 张图片无法识别，已跳过',
+  Widget _customCell(CustomSticker sticker) {
+    final key = sticker.stickerKey;
+    StickerElement make() => StickerElement(key: key, x: 0.42, y: 0.46);
+    return _pickable(
+      favoriteKey: key,
+      tooltip: sticker.name,
+      dragElement: make,
+      // 长按让给拖拽（REQ-17.5）,重命名 / 分组 / 删除移到角标菜单。
+      badge: _customMenuBadge(sticker),
+      onTap: () => _pick(make(), key),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Image.file(
+          File(StickerStore.pathOf(sticker.id, sticker.ext)),
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) =>
+              const Icon(Icons.broken_image_outlined, size: 20),
         ),
       ),
     );
   }
 
-  /// 自定义素材长按菜单：重命名 / 分组 / 删除（REQ-20.4）。
+  Widget _customMenuBadge(CustomSticker sticker) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: '管理素材',
+      child: InkResponse(
+        radius: 16,
+        onTap: () => _customStickerMenu(sticker),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            Icons.more_horiz_rounded,
+            size: 15,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 从相册导入图片作为贴纸（REQ-20.1）：先问一句要不要去白底（REQ-20.3）,
+  /// 超限的图片由仓库自动压缩,提示里如实报出压缩张数与压缩后尺寸（REQ-20.5）。
+  Future<void> _importCustomStickers() async {
+    final files = await StickerStore.pickImages();
+    if (!mounted || files.isEmpty) return;
+    final cutWhite = await _askImportOptions(files.length);
+    if (!mounted || cutWhite == null) return;
+    final provider = context.read<CustomStickerProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    var done = 0;
+    var failed = 0;
+    final shrunk = <String>[];
+    for (final file in files) {
+      final result = await _importOne(provider, file, cutWhite: cutWhite);
+      if (!result.ok) {
+        failed++;
+        continue;
+      }
+      done++;
+      if (result.shrunk != null) shrunk.add(result.shrunk!);
+    }
+    if (!mounted) return;
+    final parts = <String>[
+      if (done > 0) '已导入 $done 张素材',
+      if (failed > 0) '$failed 张图片无法识别，已跳过',
+      if (shrunk.length == 1) '1 张超出上限，已压缩为 ${shrunk.first}',
+      if (shrunk.length > 1)
+        '${shrunk.length} 张超出上限，已压缩到 ${StickerStore.maxEdge} 像素内',
+    ];
+    messenger.showSnackBar(SnackBar(content: Text(parts.join('；'))));
+  }
+
+  /// 导入前的选项（REQ-20.3）；返回 null 表示放弃导入。
+  Future<bool?> _askImportOptions(int count) {
+    var cutWhite = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (builderContext, setLocal) => AlertDialog(
+          title: const Text('导入为贴纸'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '已选择 $count 张图片，长边超过 ${StickerStore.maxEdge} 像素的会自动压缩。',
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              CheckboxListTile(
+                value: cutWhite,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('去除白色背景', style: TextStyle(fontSize: 14)),
+                subtitle: const Text(
+                  '适合白底的手绘与印章；透明 PNG 不必勾选',
+                  style: TextStyle(fontSize: 11.5),
+                ),
+                onChanged: (value) => setLocal(() => cutWhite = value ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, cutWhite),
+              child: const Text('导入'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 导入单张：按需先去白底,再交给仓库统一压缩落盘。
+  /// [ok] 为 false 表示图片无法识别；[shrunk] 非空表示触发了压缩,值为压缩后尺寸。
+  Future<({bool ok, String? shrunk})> _importOne(
+    CustomStickerProvider provider,
+    XFile file, {
+    required bool cutWhite,
+  }) async {
+    final Uint8List source;
+    try {
+      final raw = await file.readAsBytes();
+      source = cutWhite ? await StickerStore.removeWhiteBackground(raw) : raw;
+    } on IOException {
+      return (ok: false, shrunk: null);
+    }
+    final sticker = await provider.importFromFile(
+      // 去白底后的字节没有落盘路径,包一层内存 XFile 交给同一条导入链路。
+      cutWhite
+          ? XFile.fromData(source, path: file.name, mimeType: 'image/png')
+          : file,
+    );
+    if (sticker == null) return (ok: false, shrunk: null);
+    final before = await _pixelSize(source);
+    final oversize =
+        source.length > StickerStore.maxBytes ||
+        (before != null && before.longestSide > StickerStore.maxEdge);
+    if (!oversize) return (ok: true, shrunk: null);
+    final saved = await StickerStore.readBytes(sticker.id, sticker.ext);
+    final after = saved == null ? null : await _pixelSize(saved);
+    return (
+      ok: true,
+      shrunk: after == null
+          ? '${StickerStore.maxEdge} 像素内'
+          : '${after.width.round()}×${after.height.round()}',
+    );
+  }
+
+  /// 只读图片头拿像素尺寸（不整张解码）,用于如实提示压缩结果（REQ-20.5）；
+  /// 格式不受支持时返回 null。
+  Future<Size?> _pixelSize(Uint8List bytes) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    try {
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      return Size(descriptor.width.toDouble(), descriptor.height.toDouble());
+    } on Exception {
+      return null;
+    } finally {
+      descriptor?.dispose();
+      buffer?.dispose();
+    }
+  }
+
+  /// 自定义素材角标菜单：重命名 / 分组 / 删除（REQ-20.4）。
   Future<void> _customStickerMenu(CustomSticker sticker) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -1047,7 +1272,8 @@ Widget _paperSection(
         height: 62,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: paperStyles.where((p) => p.kind == kind).length +
+          itemCount:
+              paperStyles.where((p) => p.kind == kind).length +
               (kind == PaperKind.texture ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(width: 10),
           itemBuilder: (context, i) {
@@ -1159,7 +1385,13 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                 ),
               ),
               const SizedBox(height: 14),
-              Text('花样字体', style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+              Text(
+                '花样字体',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -1170,8 +1402,7 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                       label: Text(
                         font.name,
                         style: TextStyle(
-                          fontFamily:
-                              font.family.isEmpty ? null : font.family,
+                          fontFamily: font.family.isEmpty ? null : font.family,
                           fontFamilyFallback: canvasFontFallback,
                         ),
                       ),
@@ -1192,8 +1423,7 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                       max: 34,
                       divisions: 24,
                       label: '${(e.fontScale * 400).round()}',
-                      onChanged: (v) =>
-                          setState(() => e.fontScale = v / 400),
+                      onChanged: (v) => setState(() => e.fontScale = v / 400),
                     ),
                   ),
                   IconButton(
@@ -1205,7 +1435,13 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                 ],
               ),
               const SizedBox(height: 4),
-              Text('墨色', style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+              Text(
+                '墨色',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 10,
@@ -1235,7 +1471,10 @@ class _TextElementDialogState extends State<_TextElementDialog> {
               SegmentedButton<int>(
                 segments: const [
                   ButtonSegment(value: 0, icon: Icon(Icons.format_align_left)),
-                  ButtonSegment(value: 1, icon: Icon(Icons.format_align_center)),
+                  ButtonSegment(
+                    value: 1,
+                    icon: Icon(Icons.format_align_center),
+                  ),
                   ButtonSegment(value: 2, icon: Icon(Icons.format_align_right)),
                 ],
                 selected: {e.align},
@@ -1264,7 +1503,10 @@ class _TextElementDialogState extends State<_TextElementDialog> {
 }
 
 /// 图片元素编辑面板：遮罩（原图 / 圆形 / 拍立得）+ 圆角微调。
-Future<bool> showImageElementEditor(BuildContext context, ImageElement element) {
+Future<bool> showImageElementEditor(
+  BuildContext context,
+  ImageElement element,
+) {
   final e = element;
   final result = showModalBottomSheet<bool>(
     context: context,
@@ -1279,10 +1521,9 @@ Future<bool> showImageElementEditor(BuildContext context, ImageElement element) 
             children: [
               Text(
                 '照片样式',
-                style: Theme.of(sheetContext)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(
+                  sheetContext,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 14),
               SegmentedButton<ImageMask>(
@@ -1307,8 +1548,7 @@ Future<bool> showImageElementEditor(BuildContext context, ImageElement element) 
                         value: e.radius.clamp(0, 0.1),
                         min: 0,
                         max: 0.1,
-                        onChanged: (v) =>
-                            setSheetState(() => e.radius = v),
+                        onChanged: (v) => setSheetState(() => e.radius = v),
                       ),
                     ),
                   ],
@@ -1476,10 +1716,7 @@ class _StickerElementDialogState extends State<_StickerElementDialog> {
         child: value == null
             ? Text(
                 '原',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               )
             : null,
       ),
@@ -1492,7 +1729,10 @@ Widget _stickerPreview(String key, int? tint) {
   if (key.startsWith(stickerKeyVector)) {
     return CustomPaint(
       size: const Size(60, 60),
-      painter: StickerPainter(key.substring(stickerKeyVector.length), tint: tint),
+      painter: StickerPainter(
+        key.substring(stickerKeyVector.length),
+        tint: tint,
+      ),
     );
   }
   if (key.startsWith(stickerKeyImage)) {

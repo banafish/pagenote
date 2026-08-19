@@ -3,9 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../models/journal_entry.dart';
 import '../models/mood.dart';
+import '../models/sticker_assets.dart' show stickerKeyImage;
 import '../models/template.dart';
+import '../providers/custom_sticker_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/template_provider.dart';
+import '../services/share_pack_service.dart';
 import '../utils/date_utils.dart';
 import '../widgets/canvas/canvas_view.dart';
 import 'editor_page.dart';
@@ -29,15 +32,73 @@ const _gridPadding = 16.0;
 /// 缩略图宽高比（含底部名字栏）。
 const _cellRatio = 0.62;
 
+// ---------------- 分享包导出的公共件（REQ-21.1/21.2，设置页复用） ----------------
+
+/// 导出用的模板副本，画布内的本机照片路径一律清空只留占位框
+/// （FIX-01 + REQ-21.4：包内不得含任何本机绝对路径）。本机模板不受影响。
+JournalTemplate templateWithoutPhotos(JournalTemplate template) {
+  if (!(template.canvas?.hasImagePaths ?? false)) return template;
+  final copy = template.copy();
+  copy.canvas?.clearImagePaths();
+  return copy;
+}
+
+/// 这批模板引用到的自定义贴纸 sha1（REQ-21.3：随包带上，接收方开箱即用）。
+Set<String> referencedStickerIds(Iterable<JournalTemplate> templates) => {
+  for (final t in templates)
+    for (final key in t.canvas?.stickerKeys ?? const <String>{})
+      if (key.startsWith(stickerKeyImage))
+        key.substring(stickerKeyImage.length),
+};
+
+/// 导出前的照片提示（FIX-01 语义）：确认后照片不进包，只留占位框。
+/// 返回 true 表示用户同意继续导出。
+Future<bool> confirmDropTemplatePhotos(
+  BuildContext context,
+  List<JournalTemplate> withPhotos,
+) async {
+  final names = withPhotos.take(3).map((t) => '「${t.name}」').join('、');
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('模板里还留着照片'),
+      content: Text(
+        '$names${withPhotos.length > 3 ? ' 等 ${withPhotos.length} 套模板' : ''}'
+        '的版式里还有本机照片。\n\n'
+        '素材包是发给别人的，不会带上私人照片：导出的模板只保留照片占位框，'
+        '接收方套用后填自己的图。本机模板不受影响。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('清空照片并导出'),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
 /// 模板管理页（REQ-09.3 + REQ-18）：网格缩略图、更多菜单、排序与空态引导。
 class TemplateManagerPage extends StatefulWidget {
-  const TemplateManagerPage({super.key});
+  const TemplateManagerPage({super.key, this.highlightIds = const []});
+
+  /// 刚从分享包装进来的模板 id，卡片上做高亮标记（REQ-21.9）。
+  final List<String> highlightIds;
 
   @override
   State<TemplateManagerPage> createState() => _TemplateManagerPageState();
 }
 
 class _TemplateManagerPageState extends State<TemplateManagerPage> {
+  /// 多选态（REQ-21.1）：从顶栏按钮进入，与手动排序的长按拖拽错开手势。
+  bool _selecting = false;
+  final Set<String> _selectedIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -67,7 +128,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
       case 'duplicate':
         await _duplicate(template);
       case 'export':
-        _exportPlaceholder();
+        await _exportPack([template]);
       case 'delete':
         await _delete(template);
     }
@@ -113,11 +174,109 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
       ..showSnackBar(SnackBar(content: Text('已复制为「${copy.name}」,可自由改名编辑 ✨')));
   }
 
-  /// 导出分享（REQ-18.2）：分享包服务（REQ-21）落地后接入,此处先占位。
-  void _exportPlaceholder() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('模板分享包即将支持,敬请期待 📦')));
+  /// 导出分享（REQ-18.2 / REQ-21.1）：单个模板走更多菜单，多个走多选态。
+  /// 只带被模板引用的自定义贴纸，接收方无需再找素材（REQ-21.3）。
+  Future<void> _exportPack(List<JournalTemplate> targets) async {
+    if (targets.isEmpty) return;
+    final withPhotos = targets
+        .where((t) => t.canvas?.hasImagePaths ?? false)
+        .toList();
+    if (withPhotos.isNotEmpty) {
+      final ok = await confirmDropTemplatePhotos(context, withPhotos);
+      if (!ok || !mounted) return;
+    }
+    final meta = await _askPackMeta(
+      targets.length == 1 ? targets.first.name : '我的模板包',
+    );
+    if (meta == null || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final stickers = context.read<CustomStickerProvider>();
+    final packed = [for (final t in targets) templateWithoutPhotos(t)];
+    final ids = referencedStickerIds(packed);
+    try {
+      final path = await SharePackService.instance.exportPack(
+        packName: meta.name,
+        author: meta.author,
+        templates: packed,
+        stickers: [
+          for (final s in stickers.stickers)
+            if (ids.contains(s.id)) s,
+        ],
+        stickerBytes: await stickers.exportBytes(ids: ids),
+      );
+      // 用户在系统对话框里取消时返回 null，不打扰。
+      if (path != null) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('素材包已导出：$path')));
+      }
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('导出失败，请重试')));
+    }
+    if (mounted && _selecting) _exitSelection();
+  }
+
+  /// 包名与署名（附录 pack.json 的 name / author）；署名可留空。
+  Future<({String name, String author})?> _askPackMeta(
+    String defaultName,
+  ) async {
+    final nameController = TextEditingController(text: defaultName);
+    final authorController = TextEditingController();
+    final meta = await showDialog<({String name, String author})>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导出为素材包'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '包名',
+                hintText: '如：秋日旅行模板集',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: authorController,
+              decoration: const InputDecoration(labelText: '署名（可留空）'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, (
+              name: nameController.text.trim(),
+              author: authorController.text.trim(),
+            )),
+            child: const Text('导出'),
+          ),
+        ],
+      ),
+    );
+    if (meta == null) return null;
+    return meta.name.isEmpty ? (name: defaultName, author: meta.author) : meta;
+  }
+
+  void _toggleSelect(JournalTemplate template) {
+    setState(() {
+      if (!_selectedIds.remove(template.id)) _selectedIds.add(template.id);
+    });
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selecting = false;
+      _selectedIds.clear();
+    });
   }
 
   Future<void> _delete(JournalTemplate template) async {
@@ -230,11 +389,27 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
     final provider = context.watch<TemplateProvider>();
     final builtin = provider.builtinTemplates;
     final users = provider.userTemplates;
-    final draggable = provider.sort == TemplateSort.manual && users.length > 1;
+    // 多选态下让出长按手势，拖拽排序不受影响（两者不同时生效）。
+    final draggable =
+        !_selecting && provider.sort == TemplateSort.manual && users.length > 1;
     final cell = _cellSize(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('手账模板')),
+      appBar: _selecting
+          ? _selectionBar(provider.templates)
+          : AppBar(
+              title: const Text('手账模板'),
+              actions: [
+                IconButton(
+                  tooltip: '多选导出',
+                  icon: const Icon(Icons.checklist_rounded),
+                  onPressed: provider.templates.isEmpty
+                      ? null
+                      : () => setState(() => _selecting = true),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _sortBar(provider.sort, draggable)),
@@ -258,6 +433,39 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
           const SliverToBoxAdapter(child: SizedBox(height: 28)),
         ],
       ),
+    );
+  }
+
+  /// 多选态顶栏（REQ-21.1）：已选计数 + 全选 + 明确的退出入口。
+  PreferredSizeWidget _selectionBar(List<JournalTemplate> all) {
+    final allSelected = all.isNotEmpty && _selectedIds.length == all.length;
+    return AppBar(
+      leading: IconButton(
+        tooltip: '退出多选',
+        icon: const Icon(Icons.close_rounded),
+        onPressed: _exitSelection,
+      ),
+      title: Text('已选 ${_selectedIds.length} 套'),
+      actions: [
+        TextButton(
+          onPressed: () => setState(() {
+            _selectedIds.clear();
+            if (!allSelected) _selectedIds.addAll(all.map((t) => t.id));
+          }),
+          child: Text(allSelected ? '取消全选' : '全选'),
+        ),
+        IconButton(
+          tooltip: '导出为素材包',
+          icon: const Icon(Icons.ios_share_rounded),
+          onPressed: _selectedIds.isEmpty
+              ? null
+              : () => _exportPack([
+                  for (final t in all)
+                    if (_selectedIds.contains(t.id)) t,
+                ]),
+        ),
+        const SizedBox(width: 4),
+      ],
     );
   }
 
@@ -286,7 +494,13 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
               onSelectionChanged: (values) => _setSort(values.first),
             ),
           ),
-          if (draggable) ...[
+          if (_selecting) ...[
+            const SizedBox(height: 8),
+            Text(
+              '点卡片勾选，内置模板也能打包；选好后点右上角导出',
+              style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+            ),
+          ] else if (draggable) ...[
             const SizedBox(height: 8),
             Text(
               '长按卡片拖动可调整「我的模板」顺序',
@@ -361,7 +575,16 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
 
   Widget _card(JournalTemplate template) => _TemplateCard(
     template: template,
-    onTap: () => _preview(template),
+    selecting: _selecting,
+    selected: _selectedIds.contains(template.id),
+    highlighted: widget.highlightIds.contains(template.id),
+    onTap: () {
+      if (_selecting) {
+        _toggleSelect(template);
+      } else {
+        _preview(template);
+      }
+    },
     onAction: (action) => _onAction(action, template),
   );
 
@@ -453,26 +676,39 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
   }
 }
 
-/// 模板卡片（REQ-18.1）：版式缩略图 + 名字 + 更多菜单。
+/// 模板卡片（REQ-18.1）：版式缩略图 + 名字 + 更多菜单；
+/// 多选态下改为勾选（REQ-21.1），新导入的模板带高亮标记（REQ-21.9）。
 class _TemplateCard extends StatelessWidget {
   const _TemplateCard({
     required this.template,
+    required this.selecting,
+    required this.selected,
+    required this.highlighted,
     required this.onTap,
     required this.onAction,
   });
 
   final JournalTemplate template;
+  final bool selecting;
+  final bool selected;
+  final bool highlighted;
   final VoidCallback onTap;
   final ValueChanged<String> onAction;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final accent = selected
+        ? scheme.primary
+        : (highlighted ? scheme.tertiary : null);
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: accent ?? scheme.outlineVariant.withValues(alpha: 0.5),
+          width: accent == null ? 1 : 2,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -484,7 +720,11 @@ class _TemplateCard extends StatelessWidget {
                 children: [
                   Positioned.fill(child: _thumbnail(context)),
                   if (template.builtin)
-                    Positioned(left: 6, top: 6, child: _badge(context)),
+                    Positioned(left: 6, top: 6, child: _badge(context, '内置'))
+                  else if (highlighted)
+                    Positioned(left: 6, top: 6, child: _badge(context, '新导入')),
+                  if (selecting)
+                    Positioned(right: 6, top: 6, child: _checkMark(context)),
                 ],
               ),
             ),
@@ -536,7 +776,7 @@ class _TemplateCard extends StatelessWidget {
     );
   }
 
-  Widget _badge(BuildContext context) {
+  Widget _badge(BuildContext context, String text) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
@@ -545,13 +785,34 @@ class _TemplateCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        '内置',
+        text,
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: scheme.onSecondaryContainer,
         ),
       ),
+    );
+  }
+
+  /// 多选态的勾选标记（REQ-21.1）。
+  Widget _checkMark(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: selected
+            ? scheme.primary
+            : scheme.surface.withValues(alpha: 0.9),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? scheme.primary : scheme.outlineVariant,
+        ),
+      ),
+      child: selected
+          ? Icon(Icons.check_rounded, size: 15, color: scheme.onPrimary)
+          : null,
     );
   }
 
@@ -569,84 +830,88 @@ class _TemplateCard extends StatelessWidget {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
-          // 内置模板的显式复制入口（REQ-18.3）。
-          if (template.builtin)
-            IconButton(
-              tooltip: '复制为我的模板',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          // 内置模板的显式复制入口（REQ-18.3）;多选态下让位给勾选。
+          if (selecting)
+            const SizedBox(width: 8)
+          else ...[
+            if (template.builtin)
+              IconButton(
+                tooltip: '复制为我的模板',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                icon: Icon(
+                  Icons.copy_all_outlined,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                onPressed: () => onAction('duplicate'),
+              ),
+            PopupMenuButton<String>(
+              tooltip: '更多',
               icon: Icon(
-                Icons.copy_all_outlined,
-                size: 18,
-                color: scheme.primary,
+                Icons.more_vert_rounded,
+                size: 19,
+                color: scheme.onSurfaceVariant,
               ),
-              onPressed: () => onAction('duplicate'),
-            ),
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            icon: Icon(
-              Icons.more_vert_rounded,
-              size: 19,
-              color: scheme.onSurfaceVariant,
-            ),
-            padding: EdgeInsets.zero,
-            iconSize: 19,
-            constraints: const BoxConstraints(minWidth: 168),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            itemBuilder: (context) => [
-              if (!template.builtin)
-                const PopupMenuItem(
-                  value: 'rename',
+              padding: EdgeInsets.zero,
+              iconSize: 19,
+              constraints: const BoxConstraints(minWidth: 168),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              itemBuilder: (context) => [
+                if (!template.builtin)
+                  const PopupMenuItem(
+                    value: 'rename',
+                    child: Row(
+                      children: [
+                        Icon(Icons.drive_file_rename_outline_rounded, size: 19),
+                        SizedBox(width: 10),
+                        Text('重命名'),
+                      ],
+                    ),
+                  ),
+                PopupMenuItem(
+                  value: 'duplicate',
                   child: Row(
                     children: [
-                      Icon(Icons.drive_file_rename_outline_rounded, size: 19),
-                      SizedBox(width: 10),
-                      Text('重命名'),
+                      const Icon(Icons.copy_all_outlined, size: 19),
+                      const SizedBox(width: 10),
+                      Text(template.builtin ? '复制为我的模板' : '复制一份'),
                     ],
                   ),
                 ),
-              PopupMenuItem(
-                value: 'duplicate',
-                child: Row(
-                  children: [
-                    const Icon(Icons.copy_all_outlined, size: 19),
-                    const SizedBox(width: 10),
-                    Text(template.builtin ? '复制为我的模板' : '复制一份'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'export',
-                child: Row(
-                  children: [
-                    Icon(Icons.ios_share_rounded, size: 19),
-                    SizedBox(width: 10),
-                    Text('导出分享'),
-                  ],
-                ),
-              ),
-              // 内置模板不可删（REQ-09.3）,菜单里直接不出现。
-              if (!template.builtin)
                 const PopupMenuItem(
-                  value: 'delete',
+                  value: 'export',
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.delete_outline,
-                        size: 19,
-                        color: Color(0xFFE57373),
-                      ),
+                      Icon(Icons.ios_share_rounded, size: 19),
                       SizedBox(width: 10),
-                      Text('删除', style: TextStyle(color: Color(0xFFE57373))),
+                      Text('导出分享'),
                     ],
                   ),
                 ),
-            ],
-            onSelected: onAction,
-          ),
+                // 内置模板不可删（REQ-09.3）,菜单里直接不出现。
+                if (!template.builtin)
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.delete_outline,
+                          size: 19,
+                          color: Color(0xFFE57373),
+                        ),
+                        SizedBox(width: 10),
+                        Text('删除', style: TextStyle(color: Color(0xFFE57373))),
+                      ],
+                    ),
+                  ),
+              ],
+              onSelected: onAction,
+            ),
+          ],
         ],
       ),
     );
