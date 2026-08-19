@@ -85,10 +85,11 @@ class JournalProvider extends ChangeNotifier {
       entries.where((e) => e.date == DateUtils2.dateKey(DateTime.now())).length;
 
   /// 连续记录天数（自今天或昨天向前数）。
-  int get streakDays {
+  /// 可传入参考时间，供 WidgetContent 等需要确定性结果的场景使用。
+  int streakDays([DateTime? now]) {
     if (entries.isEmpty) return 0;
     final dates = entries.map((e) => e.date).toSet();
-    var day = DateTime.now();
+    var day = now ?? DateTime.now();
     if (!dates.contains(DateUtils2.dateKey(day))) {
       day = day.subtract(const Duration(days: 1));
       if (!dates.contains(DateUtils2.dateKey(day))) return 0;

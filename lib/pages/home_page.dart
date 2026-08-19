@@ -176,7 +176,7 @@ class _HomePageState extends State<HomePage> {
       journal.entries.where((e) => e.isFavorite).toList();
 
   String _greeting(DateTime now) {
-    final streak = context.watch<JournalProvider>().streakDays;
+    final streak = context.watch<JournalProvider>().streakDays();
     final base = switch (now.hour) {
       < 5 => '夜深了',
       < 11 => '早上好',

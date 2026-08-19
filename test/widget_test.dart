@@ -84,7 +84,7 @@ void main() {
     test('空数据统计为 0', () {
       final journal = JournalProviderForTest();
       expect(journal.totalCount, 0);
-      expect(journal.streakDays, 0);
+      expect(journal.streakDays(), 0);
       expect(journal.totalWords, 0);
     });
 
@@ -108,7 +108,7 @@ void main() {
         _entry(id: '3', date: _key(today.subtract(const Duration(days: 2)))),
         _entry(id: '4', date: _key(today.subtract(const Duration(days: 9)))),
       ]);
-      expect(journal.streakDays, 3);
+      expect(journal.streakDays(), 3);
     });
 
     test('心情分布', () {

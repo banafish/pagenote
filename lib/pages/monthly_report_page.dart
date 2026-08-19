@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/journal_provider.dart';
 import '../utils/date_utils.dart';
+import '../widgets/stat_card_grid.dart';
 
 /// 月报页（REQ-10.2）：查看指定月份的写作报告，可切换历史月份。
 class MonthlyReportPage extends StatefulWidget {
@@ -87,66 +88,43 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
               ),
             )
           else ...[
-            // 卡片按可用宽度自适应排列，始终保持一行显示。
-            LayoutBuilder(
-              builder: (context, constraints) {
-                const spacing = 12.0;
-                final count = 4;
-                final cardWidth =
-                    (constraints.maxWidth - spacing * (count - 1)) / count;
-                return Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: [
-                    SizedBox(
-                      width: cardWidth,
-                      child: _ReportStat(
-                        icon: Icons.menu_book_rounded,
-                        label: '篇数',
-                        value: '${report.count}',
-                        unit: '篇',
-                        color: scheme.primary,
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: _ReportStat(
-                        icon: Icons.font_download_rounded,
-                        label: '总字数',
-                        value: '${report.words}',
-                        unit: '字',
-                        color: const Color(0xFF3E8468),
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: _ReportStat(
-                        icon: Icons.emoji_emotions_rounded,
-                        label: '心情均值',
-                        value: report.avgMood == null
-                            ? '—'
-                            : report.avgMood!.toStringAsFixed(1),
-                        unit: '/10',
-                        color: const Color(0xFFE8734A),
-                      ),
-                    ),
-                    SizedBox(
-                      width: cardWidth,
-                      child: _ReportStat(
-                        icon: Icons.compare_arrows_rounded,
-                        label: '对比上月',
-                        value: report.delta > 0
-                            ? '+${report.delta}'
-                            : '${report.delta}',
-                        unit: '篇',
-                        color: report.delta >= 0
-                            ? const Color(0xFF3E8468)
-                            : const Color(0xFFE57373),
-                      ),
-                    ),
-                  ],
-                );
-              },
+            StatCardGrid(
+              items: [
+                StatCardData(
+                  icon: Icons.menu_book_rounded,
+                  label: '篇数',
+                  value: '${report.count}',
+                  unit: '篇',
+                  color: scheme.primary,
+                ),
+                StatCardData(
+                  icon: Icons.font_download_rounded,
+                  label: '总字数',
+                  value: '${report.words}',
+                  unit: '字',
+                  color: const Color(0xFF3E8468),
+                ),
+                StatCardData(
+                  icon: Icons.emoji_emotions_rounded,
+                  label: '心情均值',
+                  value: report.avgMood == null
+                      ? '—'
+                      : report.avgMood!.toStringAsFixed(1),
+                  unit: '/10',
+                  color: const Color(0xFFE8734A),
+                ),
+                StatCardData(
+                  icon: Icons.compare_arrows_rounded,
+                  label: '对比上月',
+                  value: report.delta > 0
+                      ? '+${report.delta}'
+                      : '${report.delta}',
+                  unit: '篇',
+                  color: report.delta >= 0
+                      ? const Color(0xFF3E8468)
+                      : const Color(0xFFE57373),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             _ReportCard(
@@ -219,69 +197,6 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
   static String _weekdayCN(int weekday) {
     const names = ['', '一', '二', '三', '四', '五', '六', '日'];
     return names[weekday];
-  }
-}
-
-class _ReportStat extends StatelessWidget {
-  const _ReportStat({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final String unit;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(height: 10),
-          RichText(
-            text: TextSpan(
-              style: Theme.of(context).textTheme.bodyMedium,
-              children: [
-                TextSpan(
-                  text: value,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: color,
-                  ),
-                ),
-                TextSpan(
-                  text: ' $unit',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
   }
 }
 

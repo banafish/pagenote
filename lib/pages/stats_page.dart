@@ -5,6 +5,7 @@ import '../models/activity.dart';
 import '../models/mood.dart';
 import '../providers/journal_provider.dart';
 import '../widgets/mood_trend_chart.dart';
+import '../widgets/stat_card_grid.dart';
 import 'monthly_report_page.dart';
 
 /// 统计页：记录数据总览。
@@ -32,59 +33,37 @@ class _StatsPageState extends State<StatsPage> {
         const SizedBox(height: 14),
         _sectionTitle(context, '记录足迹'),
         const SizedBox(height: 10),
-        // 卡片按可用宽度自适应：窄屏 2 列，宽屏 4 列，避免固定宽度导致单列堆叠。
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 700 ? 4 : 2;
-            final cardWidth =
-                (constraints.maxWidth - 12 * (columns - 1)) / columns;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: cardWidth,
-                  child: _StatCard(
-                    icon: Icons.menu_book_rounded,
-                    label: '总篇数',
-                    value: '${journal.totalCount}',
-                    unit: '篇',
-                    color: scheme.primary,
-                  ),
-                ),
-                SizedBox(
-                  width: cardWidth,
-                  child: _StatCard(
-                    icon: Icons.local_fire_department_rounded,
-                    label: '连续记录',
-                    value: '${journal.streakDays}',
-                    unit: '天',
-                    color: const Color(0xFFE8734A),
-                  ),
-                ),
-                SizedBox(
-                  width: cardWidth,
-                  child: _StatCard(
-                    icon: Icons.calendar_month_rounded,
-                    label: '本月',
-                    value: '${journal.monthCount}',
-                    unit: '篇',
-                    color: const Color(0xFF3F6C9C),
-                  ),
-                ),
-                SizedBox(
-                  width: cardWidth,
-                  child: _StatCard(
-                    icon: Icons.font_download_rounded,
-                    label: '累计字数',
-                    value: '${journal.totalWords}',
-                    unit: '字',
-                    color: const Color(0xFF3E8468),
-                  ),
-                ),
-              ],
-            );
-          },
+        StatCardGrid(
+          items: [
+            StatCardData(
+              icon: Icons.menu_book_rounded,
+              label: '总篇数',
+              value: '${journal.totalCount}',
+              unit: '篇',
+              color: scheme.primary,
+            ),
+            StatCardData(
+              icon: Icons.local_fire_department_rounded,
+              label: '连续记录',
+              value: '${journal.streakDays()}',
+              unit: '天',
+              color: const Color(0xFFE8734A),
+            ),
+            StatCardData(
+              icon: Icons.calendar_month_rounded,
+              label: '本月',
+              value: '${journal.monthCount}',
+              unit: '篇',
+              color: const Color(0xFF3F6C9C),
+            ),
+            StatCardData(
+              icon: Icons.font_download_rounded,
+              label: '累计字数',
+              value: '${journal.totalWords}',
+              unit: '字',
+              color: const Color(0xFF3E8468),
+            ),
+          ],
         ),
         const SizedBox(height: 26),
 
@@ -446,77 +425,6 @@ class _ActivityStats extends StatelessWidget {
                 ),
               ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final String unit;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, size: 19, color: color),
-          ),
-          const SizedBox(height: 12),
-          RichText(
-            text: TextSpan(
-              style: Theme.of(context).textTheme.bodyMedium,
-              children: [
-                TextSpan(
-                  text: value,
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: color,
-                  ),
-                ),
-                TextSpan(
-                  text: ' $unit',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-          ),
         ],
       ),
     );

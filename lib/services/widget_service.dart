@@ -24,7 +24,7 @@ class WidgetContent {
   static WidgetContent from(JournalProvider journal, [DateTime? now]) {
     final n = now ?? DateTime.now();
     return WidgetContent(
-      streakDays: journal.streakDays,
+      streakDays: journal.streakDays(n),
       writtenToday: journal.entries.any((e) => e.date == DateUtils2.dateKey(n)),
       prompt: promptForDate(DateUtils2.dateKey(n)),
     );

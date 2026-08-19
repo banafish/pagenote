@@ -31,7 +31,7 @@ void main() {
     // 覆盖首页、统计页、月报的全部派生计算。
     expect(provider.totalCount, 2000);
     expect(provider.allTags.length, 40);
-    provider.streakDays;
+    provider.streakDays();
     provider.monthCount;
     provider.moodCounts;
     provider.lastWeekCounts;
