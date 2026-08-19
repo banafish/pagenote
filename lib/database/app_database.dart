@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/journal_entry.dart';
+import '../models/sticker_assets.dart';
 import '../models/template.dart';
 
 /// 手账数据库：负责建表、版本迁移与条目的增删改查。
@@ -13,6 +14,8 @@ import '../models/template.dart';
 /// - v3：entries 新增 activities（活动打卡，REQ-12）；新建 templates 表（REQ-09）。
 /// - v4：entries 新增 paper/stickers（装饰排版，REQ-13）与 isQuickNote（快速速记，REQ-16）。
 /// - v5：entries 新增 canvas（画布元素树）；templates 新增 canvas（整页版式模板）。
+/// - v6：templates 新增 originId / lastUsedAt / sortIndex（分享包安装与排序，
+///   FIX-02 + REQ-18）；新建 custom_stickers 表（自定义图片贴纸，REQ-20）。
 class AppDatabase {
   AppDatabase._();
 
@@ -36,7 +39,7 @@ class AppDatabase {
   }
 
   static const _dbName = 'pagenote.db';
-  static const dbVersion = 5;
+  static const dbVersion = 6;
 
   Database? _db;
   bool _inMemory = false;
@@ -76,7 +79,7 @@ class AppDatabase {
       await db.execute(
         "ALTER TABLE entries ADD COLUMN activities TEXT NOT NULL DEFAULT ''",
       );
-      await _createTemplatesTable(db, withCanvas: false);
+      await _createTemplatesTable(db, withCanvas: false, withSharing: false);
     },
     4: (db) async {
       await db.execute(
@@ -96,6 +99,14 @@ class AppDatabase {
       await db.execute(
         "ALTER TABLE templates ADD COLUMN canvas TEXT NOT NULL DEFAULT ''",
       );
+    },
+    6: (db) async {
+      await db.execute('ALTER TABLE templates ADD COLUMN originId TEXT');
+      await db.execute('ALTER TABLE templates ADD COLUMN lastUsedAt INTEGER');
+      await db.execute(
+        'ALTER TABLE templates ADD COLUMN sortIndex INTEGER NOT NULL DEFAULT 0',
+      );
+      await _createCustomStickersTable(db);
     },
   };
 
@@ -123,12 +134,15 @@ class AppDatabase {
     ''');
     await db.execute('CREATE INDEX idx_entries_date ON entries(date)');
     await _createTemplatesTable(db);
+    await _createCustomStickersTable(db);
   }
 
-  /// [withCanvas] 为 false 时建 v3 时期的老结构（迁移链上 canvas 由 v5 补加）。
+  /// [withCanvas] 为 false 时建 v3 时期的老结构（迁移链上 canvas 由 v5 补加）；
+  /// [withSharing] 为 false 时不含 v6 的 originId / lastUsedAt / sortIndex。
   static Future<void> _createTemplatesTable(
     Database db, {
     bool withCanvas = true,
+    bool withSharing = true,
   }) async {
     await db.execute('''
       CREATE TABLE templates (
@@ -139,8 +153,23 @@ class AppDatabase {
         tags TEXT NOT NULL DEFAULT '',
         builtin INTEGER NOT NULL DEFAULT 0,
         ${withCanvas ? "canvas TEXT NOT NULL DEFAULT ''," : ''}
+        ${withSharing ? 'originId TEXT, lastUsedAt INTEGER, sortIndex INTEGER NOT NULL DEFAULT 0,' : ''}
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  /// 自定义图片贴纸（REQ-20）：id 为文件内容 sha1，天然跨设备稳定。
+  static Future<void> _createCustomStickersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE custom_stickers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT '',
+        keywords TEXT NOT NULL DEFAULT '',
+        ext TEXT NOT NULL DEFAULT '.png',
+        createdAt INTEGER NOT NULL
       )
     ''');
   }
@@ -264,5 +293,32 @@ class AppDatabase {
       orderBy: 'builtin DESC, updatedAt DESC',
     );
     return rows.map(JournalTemplate.fromMap).toList();
+  }
+
+  // ---------------- 自定义贴纸（REQ-20） ----------------
+
+  Future<List<CustomSticker>> getAllCustomStickers() async {
+    final db = await database;
+    final rows = await db.query('custom_stickers', orderBy: 'createdAt DESC');
+    return rows.map(CustomSticker.fromMap).toList();
+  }
+
+  Future<void> insertCustomSticker(CustomSticker sticker) async {
+    final db = await database;
+    await db.insert(
+      'custom_stickers',
+      sticker.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteCustomSticker(String id) async {
+    final db = await database;
+    await db.delete('custom_stickers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteAllCustomStickers() async {
+    final db = await database;
+    await db.delete('custom_stickers');
   }
 }

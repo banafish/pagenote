@@ -235,7 +235,8 @@ class _ImageElementView extends StatelessWidget {
   }
 }
 
-/// 贴纸元素：矢量贴纸（免抠）或 emoji。
+/// 贴纸元素：矢量贴纸（免抠，可换色）、emoji 或自定义图片贴纸。
+/// 本机没有的素材渲染为明确的缺失占位，不伪装成正常贴纸（FIX-03.2）。
 class _StickerElementView extends StatelessWidget {
   const _StickerElementView({required this.element, required this.pw});
 
@@ -245,20 +246,38 @@ class _StickerElementView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final key = element.key;
-    if (key.startsWith('vec:')) {
+    if (key.startsWith(stickerKeyVector)) {
+      final id = key.substring(stickerKeyVector.length);
+      // 未知 id 由 StickerPainter 画成虚线框 + ?。
       return CustomPaint(
         size: Size(element.w * pw, element.h * pw),
-        painter: StickerPainter(key.substring(4)),
+        painter: StickerPainter(id, tint: element.tint),
       );
     }
-    final emoji = key.startsWith('emoji:') ? key.substring(6) : key;
-    return SizedBox.expand(
-      child: FittedBox(
+    if (key.startsWith(stickerKeyImage)) {
+      final path = CustomStickerIndex.instance.pathOf(
+        key.substring(stickerKeyImage.length),
+      );
+      if (path == null) return _missingBox();
+      return Image.file(
+        File(path),
         fit: BoxFit.contain,
-        child: Text(emoji),
-      ),
+        errorBuilder: (_, _, _) => _missingBox(),
+      );
+    }
+    final emoji = key.startsWith(stickerKeyEmoji)
+        ? key.substring(stickerKeyEmoji.length)
+        : key;
+    return SizedBox.expand(
+      child: FittedBox(fit: BoxFit.contain, child: Text(emoji)),
     );
   }
+
+  /// 自定义贴纸文件缺失：与矢量缺失占位统一视觉。
+  Widget _missingBox() => CustomPaint(
+    size: Size(element.w * pw, element.h * pw),
+    painter: const StickerPainter('__missing__'),
+  );
 }
 
 /// 结构化组件元素：日期 / 心情 / 天气 / 活动。

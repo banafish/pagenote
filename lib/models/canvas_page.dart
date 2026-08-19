@@ -204,7 +204,8 @@ class ImageElement extends CanvasElement {
   );
 }
 
-/// 贴纸元素：key 为 `vec:<id>`（内置矢量贴纸）或 `emoji:<字符>`。
+/// 贴纸元素：key 为 `vec:<id>`（内置矢量贴纸）、`emoji:<字符>`
+/// 或 `img:<sha1>`（自定义图片贴纸，REQ-20）。
 class StickerElement extends CanvasElement {
   StickerElement({
     super.id,
@@ -215,15 +216,20 @@ class StickerElement extends CanvasElement {
     super.rotation,
     super.opacity,
     required this.key,
+    this.tint,
   });
 
   String key;
+
+  /// 矢量贴纸的换色色调（0xAARRGGBB，REQ-19）；
+  /// null 为素材原配色 —— 存量数据无该字段时不出现视觉突变。
+  int? tint;
 
   @override
   CanvasElementType get type => CanvasElementType.sticker;
 
   @override
-  Map<String, Object?> typeMap() => {'k': key};
+  Map<String, Object?> typeMap() => {'k': key, if (tint != null) 'tc': tint};
 
   static StickerElement fromMap(Map<String, Object?> map) => StickerElement(
     id: map['id'] as String?,
@@ -234,6 +240,7 @@ class StickerElement extends CanvasElement {
     rotation: _d(map['r'], 0),
     opacity: _d(map['o'], 1),
     key: (map['k'] ?? 'emoji:⭐️') as String,
+    tint: map['tc'] == null ? null : _i(map['tc'], 0),
   );
 }
 
@@ -356,6 +363,11 @@ class JournalCanvas {
 
   Iterable<ImageElement> get images => elements.whereType<ImageElement>();
 
+  Iterable<StickerElement> get stickers => elements.whereType<StickerElement>();
+
+  /// 画布引用到的全部贴纸 key（引用完整性校验用，FIX-03 / REQ-21）。
+  Set<String> get stickerKeys => {for (final s in stickers) s.key};
+
   Iterable<StructuredElement> get components =>
       elements.whereType<StructuredElement>();
 
@@ -404,6 +416,18 @@ class JournalCanvas {
       if (e is ImageElement && e.path.isNotEmpty) e.path = convert(e.path);
     }
   }
+
+  /// 清空全部照片路径，只留占位框（FIX-01.1）。
+  /// 「另存为模板」默认走这里：模板的语义就是让使用者填自己的照片，
+  /// 同时避免把本机绝对路径（含用户名）写进模板与分享包。
+  void clearImagePaths() {
+    for (final e in elements) {
+      if (e is ImageElement) e.path = '';
+    }
+  }
+
+  /// 画布内是否含本机绝对路径（导出前自检，REQ-21.4）。
+  bool get hasImagePaths => images.any((e) => e.path.isNotEmpty);
 }
 
 /// 序列化到 entries.canvas 列；空画布存空串。

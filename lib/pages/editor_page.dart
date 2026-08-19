@@ -711,6 +711,8 @@ class _EditorPageState extends State<EditorPage> {
     });
     _pushHistory();
     _editorKey.currentState?.clearSelection();
+    // 记一次套用时间，供模板管理页「按最近使用」排序（REQ-18.4）；不阻塞套用。
+    context.read<TemplateProvider>().markUsed(template.id);
     if (mounted) {
       ScaffoldMessenger.of(
         context,
@@ -720,29 +722,60 @@ class _EditorPageState extends State<EditorPage> {
 
   Future<void> _saveAsTemplate() async {
     final controller = TextEditingController();
+    // 只有画布确实带照片才给「保留照片」选项，否则勾了也没意义（FIX-01.2）。
+    final hasPhotos = _canvas.hasImagePaths;
+    var keepPhotos = false;
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('另存为模板'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '给模板起个名字'),
+      builder: (dialogContext) => StatefulBuilder(
+        // 勾选态由对话框自管理：外层 setState 不会重建 showDialog 的 builder。
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('另存为模板'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(hintText: '给模板起个名字'),
+              ),
+              if (hasPhotos) ...[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: keepPhotos,
+                  onChanged: (v) =>
+                      setDialogState(() => keepPhotos = v ?? false),
+                  title: const Text('保留照片', style: TextStyle(fontSize: 14)),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                Text(
+                  '不勾选时照片位置会留成占位框，套用模板时填自己的照片',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text),
+              child: const Text('保存'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty || !mounted) return;
+    final kept = hasPhotos && keepPhotos;
     _draft
       ..title = _titleElement?.text.trim() ?? ''
       ..content = _bodyElement?.text.trim() ?? '';
@@ -750,11 +783,12 @@ class _EditorPageState extends State<EditorPage> {
       _draft,
       trimmed,
       canvas: _canvas,
+      keepPhotos: kept,
     );
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('已保存模板「$trimmed」📔')));
+      var tip = '已保存模板「$trimmed」📔';
+      if (hasPhotos) tip += kept ? ' 已保留照片' : ' 照片已留成占位框';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tip)));
     }
   }
 

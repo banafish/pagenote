@@ -8,9 +8,10 @@ import 'package:flutter/material.dart';
 /// 坐标系：每个贴纸在 100×100 逻辑画布内绘制，渲染时缩放至元素框。
 
 class StickerAsset {
-  const StickerAsset(this.id, this.category, this.name);
+  const StickerAsset(this.id, this.category, this.name, [this.keywords = '']);
 
   /// 唯一 id（存入 StickerElement.key 的 `vec:<id>` 部分）。
+  /// NFR-08：一经发布不得重命名或删除，只能新增。
   final String id;
 
   /// 分类：自然 / 美食 / 生活 / 可爱。
@@ -18,6 +19,19 @@ class StickerAsset {
 
   /// 素材面板中的名称。
   final String name;
+
+  /// 搜索关键词（REQ-17.6），空格分隔的 3～5 个中文词。
+  final String keywords;
+
+  /// 该素材是否命中搜索词（名称 / id / 关键词 / 分类）。
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return name.contains(q) ||
+        category.contains(q) ||
+        keywords.contains(q) ||
+        id.toLowerCase().contains(q);
+  }
 }
 
 /// 贴纸分类顺序（面板 tab 顺序）。
@@ -25,45 +39,174 @@ const stickerCategories = ['自然', '美食', '生活', '可爱'];
 
 const List<StickerAsset> vectorStickers = [
   // ---- 自然 ----
-  StickerAsset('flower', '自然', '小花'),
-  StickerAsset('sun', '自然', '太阳'),
-  StickerAsset('moon', '自然', '月亮'),
-  StickerAsset('cloud', '自然', '云朵'),
-  StickerAsset('rainbow', '自然', '彩虹'),
-  StickerAsset('star', '自然', '星星'),
-  StickerAsset('leaf', '自然', '叶子'),
-  StickerAsset('clover', '自然', '四叶草'),
+  StickerAsset('flower', '自然', '小花', '花朵 植物 春天 浪漫 粉色'),
+  StickerAsset('sun', '自然', '太阳', '晴天 阳光 夏天 天气 温暖'),
+  StickerAsset('moon', '自然', '月亮', '夜晚 晚安 睡觉 月牙 安静'),
+  StickerAsset('cloud', '自然', '云朵', '天气 多云 天空 柔软 蓝色'),
+  StickerAsset('rainbow', '自然', '彩虹', '天气 雨后 色彩 治愈 希望'),
+  StickerAsset('star', '自然', '星星', '夜空 闪耀 愿望 高光 收藏'),
+  StickerAsset('leaf', '自然', '叶子', '植物 绿色 自然 秋天 清新'),
+  StickerAsset('clover', '自然', '四叶草', '幸运 植物 绿色 好运 许愿'),
   // ---- 美食 ----
-  StickerAsset('coffee', '美食', '咖啡'),
-  StickerAsset('cake', '美食', '蛋糕'),
-  StickerAsset('icecream', '美食', '冰淇淋'),
-  StickerAsset('cherry', '美食', '樱桃'),
-  StickerAsset('strawberry', '美食', '草莓'),
-  StickerAsset('watermelon', '美食', '西瓜'),
-  StickerAsset('candy', '美食', '糖果'),
-  StickerAsset('donut', '美食', '甜甜圈'),
+  StickerAsset('coffee', '美食', '咖啡', '饮品 下午茶 提神 拿铁 早晨'),
+  StickerAsset('cake', '美食', '蛋糕', '生日 甜点 庆祝 派对 奶油'),
+  StickerAsset('icecream', '美食', '冰淇淋', '甜点 夏天 冰激凌 凉爽 甜筒'),
+  StickerAsset('cherry', '美食', '樱桃', '水果 甜 红色 夏天 可爱'),
+  StickerAsset('strawberry', '美食', '草莓', '水果 甜点 红色 春天 可爱'),
+  StickerAsset('watermelon', '美食', '西瓜', '水果 夏天 解暑 甜 红色'),
+  StickerAsset('candy', '美食', '糖果', '零食 甜 童年 粉色 小食'),
+  StickerAsset('donut', '美食', '甜甜圈', '甜点 下午茶 零食 早餐 可爱'),
   // ---- 生活 ----
-  StickerAsset('book', '生活', '书本'),
-  StickerAsset('camera', '生活', '相机'),
-  StickerAsset('mail', '生活', '信件'),
-  StickerAsset('gift', '生活', '礼物'),
-  StickerAsset('bow', '生活', '蝴蝶结'),
-  StickerAsset('candle', '生活', '蜡烛'),
-  StickerAsset('music', '生活', '音乐'),
-  StickerAsset('mug', '生活', '热茶'),
+  StickerAsset('book', '生活', '书本', '阅读 读书 学习 笔记 知识'),
+  StickerAsset('camera', '生活', '相机', '拍照 旅行 记录 摄影 回忆'),
+  StickerAsset('mail', '生活', '信件', '信封 邮件 书信 想念 收到'),
+  StickerAsset('gift', '生活', '礼物', '生日 惊喜 节日 礼盒 庆祝'),
+  StickerAsset('bow', '生活', '蝴蝶结', '装饰 丝带 少女 粉色 可爱'),
+  StickerAsset('candle', '生活', '蜡烛', '生日 温暖 香薰 夜晚 治愈'),
+  StickerAsset('music', '生活', '音乐', '歌曲 音符 听歌 耳机 旋律'),
+  StickerAsset('mug', '生活', '热茶', '饮品 马克杯 温暖 下午茶 休息'),
   // ---- 可爱 ----
-  StickerAsset('cat', '可爱', '猫咪'),
-  StickerAsset('butterfly', '可爱', '蝴蝶'),
-  StickerAsset('bird', '可爱', '小鸟'),
-  StickerAsset('bear', '可爱', '小熊'),
-  StickerAsset('heart', '可爱', '爱心'),
-  StickerAsset('smiley', '可爱', '笑脸'),
-  StickerAsset('balloon', '可爱', '气球'),
-  StickerAsset('flag', '可爱', '小旗'),
+  StickerAsset('cat', '可爱', '猫咪', '动物 宠物 喵 萌 撸猫'),
+  StickerAsset('butterfly', '可爱', '蝴蝶', '动物 春天 飞舞 昆虫 浪漫'),
+  StickerAsset('bird', '可爱', '小鸟', '动物 飞翔 自由 春天 鸟儿'),
+  StickerAsset('bear', '可爱', '小熊', '动物 玩偶 萌 抱抱 治愈'),
+  StickerAsset('heart', '可爱', '爱心', '喜欢 心形 love 表白 红色'),
+  StickerAsset('smiley', '可爱', '笑脸', '开心 微笑 心情 快乐 表情'),
+  StickerAsset('balloon', '可爱', '气球', '庆祝 生日 派对 飞起 童年'),
+  StickerAsset('flag', '可爱', '小旗', '标记 目标 打卡 旗帜 计划'),
 ];
 
 StickerAsset? stickerById(String id) =>
     vectorStickers.where((s) => s.id == id).firstOrNull;
+
+// ---------------------------------------------------------------------------
+// 贴纸 key 体系
+// ---------------------------------------------------------------------------
+
+/// `StickerElement.key` 的三种前缀：
+/// - `vec:<id>`      内置矢量贴纸
+/// - `emoji:<字符>`  系统 emoji
+/// - `img:<sha1>`    自定义图片贴纸（REQ-20，内容寻址使 key 跨设备稳定）
+const stickerKeyVector = 'vec:';
+const stickerKeyEmoji = 'emoji:';
+const stickerKeyImage = 'img:';
+
+/// 自定义图片贴纸（REQ-20）：id 为文件内容 sha1，天然去重且跨设备稳定。
+class CustomSticker {
+  CustomSticker({
+    required this.id,
+    required this.name,
+    this.category = '我的',
+    this.keywords = '',
+    this.ext = '.png',
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  /// 文件内容 sha1（同时是文件名主干）。
+  final String id;
+  String name;
+  String category;
+  String keywords;
+
+  /// 文件扩展名（含点）。
+  final String ext;
+  final DateTime createdAt;
+
+  /// 画布元素引用它时使用的 key。
+  String get stickerKey => '$stickerKeyImage$id';
+
+  String get fileName => '$id$ext';
+
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return name.toLowerCase().contains(q) ||
+        category.contains(q) ||
+        keywords.toLowerCase().contains(q);
+  }
+
+  Map<String, Object?> toMap() => {
+    'id': id,
+    'name': name,
+    'category': category,
+    'keywords': keywords,
+    'ext': ext,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+  };
+
+  static CustomSticker fromMap(Map<String, Object?> map) => CustomSticker(
+    id: map['id']! as String,
+    name: (map['name'] ?? '') as String,
+    category: (map['category'] ?? '我的') as String,
+    keywords: (map['keywords'] ?? '') as String,
+    ext: (map['ext'] ?? '.png') as String,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(
+      (map['createdAt'] ?? 0) as int,
+    ),
+  );
+}
+
+/// 自定义贴纸的本机索引（REQ-20）。
+///
+/// 渲染端（CanvasView / 分享长图 / 时间线卡片）大多拿不到 Provider，
+/// 因此由 CustomStickerProvider 在加载与增删时同步刷新这份全局索引，
+/// 供渲染与引用完整性校验同步查询。
+class CustomStickerIndex {
+  CustomStickerIndex._();
+
+  static final CustomStickerIndex instance = CustomStickerIndex._();
+
+  final Map<String, String> _paths = {};
+  final Map<String, String> _names = {};
+
+  /// sha1 → 本机文件绝对路径；不存在返回 null。
+  String? pathOf(String id) => _paths[id];
+
+  /// sha1 → 素材名；未知返回 null。
+  String? nameOf(String id) => _names[id];
+
+  bool contains(String id) => _paths.containsKey(id);
+
+  void replaceAll(Map<String, String> paths, Map<String, String> names) {
+    _paths
+      ..clear()
+      ..addAll(paths);
+    _names
+      ..clear()
+      ..addAll(names);
+  }
+}
+
+/// 该贴纸 key 在本机是否可渲染（FIX-03 引用完整性校验）。
+bool isKnownStickerKey(String key) {
+  if (key.startsWith(stickerKeyVector)) {
+    return stickerById(key.substring(stickerKeyVector.length)) != null;
+  }
+  if (key.startsWith(stickerKeyImage)) {
+    return CustomStickerIndex.instance.contains(
+      key.substring(stickerKeyImage.length),
+    );
+  }
+  // emoji 与裸字符恒可渲染（系统字体兜底）。
+  return true;
+}
+
+/// 贴纸 key 的可读名称（缺失提示与导入预览页复用）。
+String stickerKeyLabel(String key) {
+  if (key.startsWith(stickerKeyVector)) {
+    final id = key.substring(stickerKeyVector.length);
+    return stickerById(id)?.name ?? '矢量贴纸 $id';
+  }
+  if (key.startsWith(stickerKeyImage)) {
+    final id = key.substring(stickerKeyImage.length);
+    final name = CustomStickerIndex.instance.nameOf(id);
+    return name ?? '自定义贴纸 ${id.length > 8 ? id.substring(0, 8) : id}';
+  }
+  if (key.startsWith(stickerKeyEmoji)) {
+    return key.substring(stickerKeyEmoji.length);
+  }
+  return key;
+}
 
 /// 素材面板主色调（贴纸面板底色）。
 const stickerPaletteColors = [
@@ -105,57 +248,124 @@ const tapePalette = [
 ];
 
 /// 矢量贴纸画笔：按 id 分发到具体绘制函数。
+///
+/// [tint] 非空时对素材内部调色板做统一色相迁移（REQ-19）：
+/// 轮廓墨色与白/奶白等中性色保持原样，多色层次（小熊的鼻头、
+/// 猫的胡须）因此仍可辨识，而非整体单色填充。
+///
+/// 未知 id 绘制为明确的缺失占位（虚线框 + ?），
+/// 不再静默回退成星星（FIX-03）。
 class StickerPainter extends CustomPainter {
-  const StickerPainter(this.id);
+  const StickerPainter(this.id, {this.tint});
+
   final String id;
+
+  /// 目标色调（0xAARRGGBB）；null 为素材原配色。
+  final int? tint;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final painter = switch (id) {
-      'flower' => _flower,
-      'sun' => _sun,
-      'moon' => _moon,
-      'cloud' => _cloud,
-      'rainbow' => _rainbow,
-      'star' => _star,
-      'leaf' => _leaf,
-      'clover' => _clover,
-      'coffee' => _coffee,
-      'cake' => _cake,
-      'icecream' => _icecream,
-      'cherry' => _cherry,
-      'strawberry' => _strawberry,
-      'watermelon' => _watermelon,
-      'candy' => _candy,
-      'donut' => _donut,
-      'book' => _book,
-      'camera' => _camera,
-      'mail' => _mail,
-      'gift' => _gift,
-      'bow' => _bow,
-      'candle' => _candle,
-      'music' => _music,
-      'mug' => _mug,
-      'cat' => _cat,
-      'butterfly' => _butterfly,
-      'bird' => _bird,
-      'bear' => _bear,
-      'heart' => _heart,
-      'smiley' => _smiley,
-      'balloon' => _balloon,
-      'flag' => _flag,
-      _ => _star,
-    };
+    final painter = _stickerPainters[id] ?? _missing;
     // 统一缩放：素材绘制在 100×100 逻辑画布。
     canvas.save();
     canvas.scale(size.width / 100, size.height / 100);
-    painter(canvas);
-    canvas.restore();
+    // 绘制期间生效的色调：_p() 读取它做色相迁移，
+    // 32 个绘制函数无需逐个改写。paint 全程同步，无并发风险。
+    _activeTint = tint == null || painter == _missing ? null : Color(tint!);
+    try {
+      painter(canvas);
+    } finally {
+      _activeTint = null;
+      canvas.restore();
+    }
   }
 
   @override
   bool shouldRepaint(covariant StickerPainter oldDelegate) =>
-      oldDelegate.id != id;
+      oldDelegate.id != id || oldDelegate.tint != tint;
+}
+
+/// id → 绘制函数。缺失的 id 不再落到 `_star`（FIX-03）。
+const Map<String, void Function(Canvas)> _stickerPainters = {
+  'flower': _flower,
+  'sun': _sun,
+  'moon': _moon,
+  'cloud': _cloud,
+  'rainbow': _rainbow,
+  'star': _star,
+  'leaf': _leaf,
+  'clover': _clover,
+  'coffee': _coffee,
+  'cake': _cake,
+  'icecream': _icecream,
+  'cherry': _cherry,
+  'strawberry': _strawberry,
+  'watermelon': _watermelon,
+  'candy': _candy,
+  'donut': _donut,
+  'book': _book,
+  'camera': _camera,
+  'mail': _mail,
+  'gift': _gift,
+  'bow': _bow,
+  'candle': _candle,
+  'music': _music,
+  'mug': _mug,
+  'cat': _cat,
+  'butterfly': _butterfly,
+  'bird': _bird,
+  'bear': _bear,
+  'heart': _heart,
+  'smiley': _smiley,
+  'balloon': _balloon,
+  'flag': _flag,
+};
+
+/// 缺失素材占位（FIX-03.2）：虚线圆角框 + 问号。
+/// 与任何正常贴纸在视觉上明显可区分，用户一眼看出「这里少了个素材」。
+void _missing(Canvas c) {
+  final border = Paint()
+    ..color = const Color(0xFF9A8C7C)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 3
+    ..strokeCap = StrokeCap.round
+    ..isAntiAlias = true;
+  c.drawRRect(
+    RRect.fromRectAndRadius(
+      const Rect.fromLTRB(10, 10, 90, 90),
+      const Radius.circular(12),
+    ),
+    Paint()..color = const Color(0x14000000),
+  );
+  // 虚线边框：沿矩形按 10/7 的实虚节奏画短线。
+  const rect = Rect.fromLTRB(10, 10, 90, 90);
+  const dash = 10.0, gap = 7.0;
+  for (var x = rect.left + 12; x < rect.right - 8; x += dash + gap) {
+    final end = math.min(x + dash, rect.right - 8);
+    c.drawLine(Offset(x, rect.top), Offset(end, rect.top), border);
+    c.drawLine(Offset(x, rect.bottom), Offset(end, rect.bottom), border);
+  }
+  for (var y = rect.top + 12; y < rect.bottom - 8; y += dash + gap) {
+    final end = math.min(y + dash, rect.bottom - 8);
+    c.drawLine(Offset(rect.left, y), Offset(rect.left, end), border);
+    c.drawLine(Offset(rect.right, y), Offset(rect.right, end), border);
+  }
+  // 问号：绘制为路径，避免依赖字体。
+  final mark = Paint()
+    ..color = const Color(0xFF7A6A58)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 7
+    ..strokeCap = StrokeCap.round
+    ..isAntiAlias = true;
+  c.drawArc(
+    const Rect.fromLTRB(36, 28, 64, 54),
+    math.pi * 0.9,
+    math.pi * 1.35,
+    false,
+    mark,
+  );
+  c.drawLine(const Offset(50, 52), const Offset(50, 64), mark);
+  c.drawCircle(const Offset(50, 76), 4.5, Paint()..color = const Color(0xFF7A6A58));
 }
 
 // ---------------------------------------------------------------------------
@@ -177,11 +387,34 @@ const _red = Color(0xFFE57373);
 const _white = Color(0xFFFFFFFF);
 
 Paint _p(Color color, {bool stroke = false, double width = 3}) => Paint()
-  ..color = color
+  ..color = _tinted(color)
   ..style = stroke ? PaintingStyle.stroke : PaintingStyle.fill
   ..strokeWidth = width
   ..strokeCap = StrokeCap.round
   ..isAntiAlias = true;
+
+/// 当前绘制生效的色调（REQ-19）。由 [StickerPainter.paint] 在同步的
+/// 绘制过程中设置与清空，绘制函数经 [_p] 间接读取。
+Color? _activeTint;
+
+/// 色相迁移：把素材色拉到目标色相，饱和度与目标混合，
+/// 明度以原色为主 —— 多色层次（高光、暗部）因此得以保留。
+/// 轮廓墨色与白/奶白等中性色原样返回，保证五官与线条仍可辨识（REQ-19.3）。
+Color _tinted(Color color) {
+  final tint = _activeTint;
+  if (tint == null) return color;
+  final hsl = HSLColor.fromColor(color);
+  if (hsl.saturation < 0.2 || hsl.lightness > 0.93 || hsl.lightness < 0.12) {
+    return color;
+  }
+  final target = HSLColor.fromColor(tint);
+  return HSLColor.fromAHSL(
+    hsl.alpha,
+    target.hue,
+    (hsl.saturation * 0.4 + target.saturation * 0.6).clamp(0.0, 1.0),
+    (hsl.lightness * 0.72 + target.lightness * 0.28).clamp(0.1, 0.95),
+  ).toColor();
+}
 
 void _circle(Canvas c, Offset center, double r, Paint p) =>
     c.drawCircle(center, r, p);

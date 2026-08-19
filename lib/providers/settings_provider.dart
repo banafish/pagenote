@@ -74,6 +74,16 @@ class SettingsProvider extends ChangeNotifier {
   // WebDAV 自动备份间隔选项（REQ-15 定期备份）。
   static const webdavIntervalChoices = [1, 3, 7];
 
+  // 素材面板最近使用与收藏（REQ-17.1 / REQ-17.2）。
+  static const _keyRecentStickers = 'stickers.recent';
+  static const _keyFavoriteStickers = 'stickers.favorite';
+
+  // 模板列表排序方式（REQ-18.4）。
+  static const _keyTemplateSort = 'template.sort';
+
+  /// 最近使用素材保留的最大条数（REQ-17.1）。
+  static const _recentStickerLimit = 24;
+
   ThemeMode get themeMode {
     final index = _prefs.getInt(_keyThemeMode) ?? ThemeMode.system.index;
     return ThemeMode.values[index.clamp(0, ThemeMode.values.length - 1)];
@@ -324,4 +334,58 @@ class SettingsProvider extends ChangeNotifier {
     intervalDays: webdavIntervalDays,
     now: DateTime.now(),
   );
+
+  // ---------------- 素材最近使用与收藏（REQ-17） ----------------
+
+  /// 读取以 JSON 数组存储的素材 key 列表。
+  List<String> _stickerKeys(String prefsKey) {
+    final raw = _prefs.getString(prefsKey);
+    if (raw == null || raw.isEmpty) return [];
+    return (jsonDecode(raw) as List).cast<String>();
+  }
+
+  /// 最近使用的素材 key，最新在前（REQ-17.1，只存 key 不存素材本体）。
+  List<String> get recentStickerKeys => _stickerKeys(_keyRecentStickers);
+
+  /// 记录一次素材使用：置顶去重，超出上限丢弃最旧的。
+  Future<void> pushRecentSticker(String key) async {
+    if (key.isEmpty) return;
+    final list = recentStickerKeys..remove(key);
+    list.insert(0, key);
+    if (list.length > _recentStickerLimit) {
+      list.removeRange(_recentStickerLimit, list.length);
+    }
+    await _prefs.setString(_keyRecentStickers, jsonEncode(list));
+    notifyListeners();
+  }
+
+  /// 收藏的素材 key，列表顺序即展示顺序（REQ-17.2）。
+  List<String> get favoriteStickerKeys => _stickerKeys(_keyFavoriteStickers);
+
+  bool isFavoriteSticker(String key) => favoriteStickerKeys.contains(key);
+
+  /// 切换收藏状态，新收藏排在最前。
+  Future<void> toggleFavoriteSticker(String key) async {
+    if (key.isEmpty) return;
+    final list = favoriteStickerKeys;
+    if (!list.remove(key)) list.insert(0, key);
+    await _prefs.setString(_keyFavoriteStickers, jsonEncode(list));
+    notifyListeners();
+  }
+
+  /// 手动拖拽排序后整体覆盖收藏顺序（REQ-17.2）。
+  Future<void> reorderFavoriteStickers(List<String> keys) async {
+    await _prefs.setString(_keyFavoriteStickers, jsonEncode(keys));
+    notifyListeners();
+  }
+
+  // ---------------- 模板排序（REQ-18.4） ----------------
+
+  /// 模板列表排序方式的枚举名，默认手动排序。
+  String get templateSortName => _prefs.getString(_keyTemplateSort) ?? 'manual';
+
+  Future<void> setTemplateSortName(String name) async {
+    await _prefs.setString(_keyTemplateSort, name);
+    notifyListeners();
+  }
 }

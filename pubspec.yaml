@@ -61,6 +61,9 @@ dependencies:
   # PIN salted hash (REQ-08)
   crypto: ^3.0.6
 
+  # 自定义贴纸的解码、缩放与去白底（REQ-20）
+  image: ^4.8.0
+
   # Daily writing reminder notifications on Android (REQ-07).
   # 19.x 起附带 Windows 实现需要 VS ATL 组件，且需求本就仅要求 Android；
   # 使用 18.x（无 Windows 插件），Windows 端在设置页展示降级说明。

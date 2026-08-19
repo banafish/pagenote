@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/canvas_page.dart';
 import '../../models/journal_entry.dart';
+import '../../models/sticker_assets.dart';
+import 'canvas_tool_sheets.dart';
 import 'canvas_view.dart';
 
 /// 画布编辑层（调研二/三阶段）：静态渲染之上叠加手势与选择态。
@@ -13,6 +15,7 @@ import 'canvas_view.dart';
 /// - 选中后单指拖动 → 移动；双指捏合 → 缩放 + 旋转
 /// - 角点手柄拖动 → 单指调整大小（文本/胶带调宽,其余等比缩放）
 /// - 再次点按已选中的文本/图片/组件 → 打开对应编辑面板
+/// - 选中素材本机缺失的贴纸 → 提示缺失并可替换/删除（FIX-03.3）
 ///
 /// 撤销/重做与历史快照由宿主（编辑页）管理：[onCommit] 在每次
 /// 「一次完整操作结束」时回调（手势结束、增删、图层、面板保存）。
@@ -142,6 +145,66 @@ class CanvasEditorState extends State<CanvasEditor> {
     widget.onCommit();
   }
 
+  // ---------------- 缺失素材（FIX-03.3） ----------------
+
+  /// 贴纸引用的素材本机不存在时返回该元素（画布上渲染为虚线占位）。
+  StickerElement? _missingSticker(CanvasElement e) =>
+      e is StickerElement && !isKnownStickerKey(e.key) ? e : null;
+
+  /// 缺失占位的说明弹窗：说清缺的是什么,并给出替换/删除两个出口。
+  Future<void> _showMissingAsset(StickerElement e) async {
+    final scheme = Theme.of(context).colorScheme;
+    final action = await showDialog<_MissingAction>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('素材缺失'),
+        content: Text(
+          '缺少「${stickerKeyLabel(e.key)}」（${e.key}）\n'
+          '本机没有这个素材，画布上以虚线占位框显示。可以换成本机已有的素材，或删掉这个元素。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: scheme.error),
+            onPressed: () =>
+                Navigator.pop(dialogContext, _MissingAction.delete),
+            child: const Text('删除该元素'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _MissingAction.replace),
+            child: const Text('替换为本机素材'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _MissingAction.replace:
+        await _replaceSticker(e);
+      case _MissingAction.delete:
+        deleteSelected();
+    }
+  }
+
+  /// 换成本机素材：复用贴纸面板,只取其贴纸 key（胶带无法顶替贴纸）。
+  Future<void> _replaceSticker(StickerElement e) async {
+    final picked = await showStickerPalette(context);
+    if (!mounted || picked == null) return;
+    if (picked is! StickerElement) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请选一个贴纸或表情来替换')));
+      return;
+    }
+    e.key = picked.key;
+    e.tint = picked.tint;
+    _afterOp();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -259,6 +322,12 @@ class CanvasEditorState extends State<CanvasEditor> {
   }
 
   void _tapSelected(CanvasElement e) {
+    // 缺失占位可点击：不进编辑面板,直接给替换/删除出口（FIX-03.3）。
+    final missing = _missingSticker(e);
+    if (missing != null) {
+      _showMissingAsset(missing);
+      return;
+    }
     switch (e) {
       case TextElement():
         widget.onEditText(e);
@@ -337,6 +406,7 @@ class CanvasEditorState extends State<CanvasEditor> {
     CanvasElement e,
   ) {
     final isComponent = e is StructuredElement;
+    final missing = _missingSticker(e);
     return Positioned(
       left: 8,
       right: 8,
@@ -359,17 +429,27 @@ class CanvasEditorState extends State<CanvasEditor> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _toolButton(
-                scheme,
-                icon: switch (e) {
-                  TextElement() => Icons.edit_outlined,
-                  ImageElement() => Icons.photo_filter_outlined,
-                  StructuredElement() => Icons.tune_rounded,
-                  _ => Icons.palette_outlined,
-                },
-                label: '编辑',
-                onTap: () => _tapSelected(e),
-              ),
+              // 素材缺失时首位换成缺失入口,编辑对缺失贴纸无意义（FIX-03.3）。
+              if (missing != null)
+                _toolButton(
+                  scheme,
+                  icon: Icons.error_outline_rounded,
+                  label: '素材缺失',
+                  color: scheme.error,
+                  onTap: () => _showMissingAsset(missing),
+                )
+              else
+                _toolButton(
+                  scheme,
+                  icon: switch (e) {
+                    TextElement() => Icons.edit_outlined,
+                    ImageElement() => Icons.photo_filter_outlined,
+                    StructuredElement() => Icons.tune_rounded,
+                    _ => Icons.palette_outlined,
+                  },
+                  label: '编辑',
+                  onTap: () => _tapSelected(e),
+                ),
               _toolButton(
                 scheme,
                 icon: Icons.flip_to_front_rounded,
@@ -438,6 +518,9 @@ class CanvasEditorState extends State<CanvasEditor> {
     );
   }
 }
+
+/// 缺失素材弹窗的两个出口（FIX-03.3）。
+enum _MissingAction { replace, delete }
 
 /// 右下角缩放手柄：拖动改变元素尺寸（旋转近似处理,小角度误差可接受）。
 class _ResizeHandle extends StatelessWidget {

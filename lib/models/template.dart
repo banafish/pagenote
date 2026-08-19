@@ -13,6 +13,9 @@ class JournalTemplate {
     List<String>? tags,
     this.builtin = false,
     this.canvas,
+    this.originId,
+    this.lastUsedAt,
+    this.sortIndex = 0,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : tags = tags ?? [],
@@ -35,7 +38,19 @@ class JournalTemplate {
   JournalCanvas? canvas;
 
   /// 内置模板不可删除。
+  /// 该标志只能由本机内置清单决定,不接受外部文件的自称（FIX-02）。
   final bool builtin;
+
+  /// 分享包安装而来的模板：原包内 id（FIX-02.2）。
+  /// 本地 id 一律重新分配,originId 用于识别「同一模板的新版本」。
+  String? originId;
+
+  /// 最近一次套用时间（REQ-18.4 排序用）；null 为从未使用。
+  DateTime? lastUsedAt;
+
+  /// 手动排序序号，越小越靠前（REQ-18.4）。
+  int sortIndex;
+
   final DateTime createdAt;
   DateTime updatedAt;
 
@@ -50,6 +65,9 @@ class JournalTemplate {
     'tags': tags.join('\u001F'),
     'builtin': builtin ? 1 : 0,
     'canvas': encodeCanvas(canvas),
+    'originId': originId,
+    'lastUsedAt': lastUsedAt?.millisecondsSinceEpoch,
+    'sortIndex': sortIndex,
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
   };
@@ -64,11 +82,52 @@ class JournalTemplate {
         : (map['tags'] as String).split('\u001F'),
     builtin: (map['builtin'] ?? 0) as int == 1,
     canvas: decodeCanvas((map['canvas'] ?? '') as String),
+    originId: map['originId'] as String?,
+    lastUsedAt: map['lastUsedAt'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(map['lastUsedAt']! as int),
+    sortIndex: (map['sortIndex'] ?? 0) as int,
     createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']! as int),
     updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt']! as int),
   );
 
+  /// 从不可信的外部文件（备份包 / 分享包）解析（FIX-02.1）。
+  /// `builtin` 一律由本机内置清单推导,忽略文件里的自称——否则手工
+  /// 改造的包可以塞进永远删不掉的模板。
+  static JournalTemplate fromExternalMap(Map<String, Object?> map) {
+    final parsed = fromMap(map);
+    final trusted = isBuiltinTemplateId(parsed.id);
+    if (trusted == parsed.builtin) return parsed;
+    return JournalTemplate(
+      id: parsed.id,
+      name: parsed.name,
+      title: parsed.title,
+      content: parsed.content,
+      tags: parsed.tags,
+      builtin: trusted,
+      canvas: parsed.canvas,
+      originId: parsed.originId,
+      lastUsedAt: parsed.lastUsedAt,
+      sortIndex: parsed.sortIndex,
+      createdAt: parsed.createdAt,
+      updatedAt: parsed.updatedAt,
+    );
+  }
+
   JournalTemplate copy() => JournalTemplate.fromMap(toMap());
+
+  /// 复制为一份新的用户模板（REQ-18.2「复制一份」/ REQ-18.3「复制内置模板」）。
+  /// 新 id + `builtin = false`,因此副本可自由改名、编辑与删除。
+  JournalTemplate copyAsNew({String? name, String? originId}) =>
+      JournalTemplate(
+        id: newTemplateId(),
+        name: name ?? this.name,
+        title: title,
+        content: content,
+        tags: List.of(tags),
+        canvas: canvas?.clone(),
+        originId: originId ?? this.originId,
+      );
 }
 
 /// 内置模板清单（REQ-09.1 ≥4 套 + 调研二阶段「今日手账」）。
@@ -132,6 +191,15 @@ final builtinTemplates = [
 
 /// 生成不冲突的新模板 id。
 String newTemplateId() => 'tpl-${makeId()}';
+
+/// 内置模板 id 清单（NFR-08：一经发布不得重命名或删除,只能新增）。
+final Set<String> builtinTemplateIds = {
+  for (final t in builtinTemplates) t.id,
+};
+
+/// 该 id 是否属于本机内置模板。
+/// `builtin` 标志的唯一可信来源——外部文件里的自称一律忽略（FIX-02）。
+bool isBuiltinTemplateId(String id) => builtinTemplateIds.contains(id);
 
 // ---------------------------------------------------------------------------
 // 内置整页版式

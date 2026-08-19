@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/template_provider.dart';
@@ -85,9 +86,12 @@ class _WebDavPageState extends State<WebDavPage> {
   Future<Uint8List> _buildZip() async {
     final journal = context.read<JournalProvider>();
     final templates = context.read<TemplateProvider>();
+    final stickers = context.read<CustomStickerProvider>();
     return BackupService.instance.buildZip(
       entries: journal.entries,
       templates: templates.templates,
+      customStickers: stickers.stickers,
+      stickerBytes: await stickers.exportBytes(),
     );
   }
 
@@ -121,35 +125,68 @@ class _WebDavPageState extends State<WebDavPage> {
       final data = BackupService.instance.parseBackup(bytes);
 
       if (!mounted) return;
-      final mode = await _pickImportMode(data.entries.length);
+      final mode = await _pickImportMode(data);
       if (mode == null || !mounted) return;
 
       final journal = context.read<JournalProvider>();
       final templates = context.read<TemplateProvider>();
-      final changed = await journal.importBackup(
-        data,
-        overwrite: mode == 'overwrite',
-      );
+      final stickers = context.read<CustomStickerProvider>();
+      final overwrite = mode == 'overwrite';
+      final changed = await journal.importBackup(data, overwrite: overwrite);
+      // 模板画布里的照片按附件文件名重映射到落地后的新路径（FIX-01.3）。
       await templates.importTemplates(
         data.templates,
-        overwrite: mode == 'overwrite',
+        overwrite: overwrite,
+        attachments: data.attachments,
+      );
+      final stickerCount = await _restoreStickers(
+        stickers,
+        data,
+        overwrite: overwrite,
       );
       if (!mounted) return;
       _toast(
-        mode == 'overwrite'
-            ? '已覆盖导入 ${data.entries.length} 篇手账'
-            : '合并导入完成,更新 $changed 篇',
+        overwrite
+            ? '已覆盖导入 ${data.entries.length} 篇手账、'
+                  '${data.templates.length} 个模板、$stickerCount 张自定义贴纸'
+            : '合并导入完成,更新 $changed 篇手账,'
+                  '另含 ${data.templates.length} 个模板、$stickerCount 张自定义贴纸',
       );
     });
   }
 
-  Future<String?> _pickImportMode(int count) {
+  /// 恢复备份内的自定义图片贴纸（REQ-20.6）,返回实际落地的张数。
+  /// 覆盖模式先清空既有素材,与手账、模板的覆盖语义保持一致。
+  Future<int> _restoreStickers(
+    CustomStickerProvider stickers,
+    BackupData data, {
+    required bool overwrite,
+  }) async {
+    if (overwrite) await stickers.clearAll();
+    var count = 0;
+    for (final sticker in data.customStickers) {
+      final bytes = data.stickerBytes[sticker.fileName];
+      if (bytes == null) continue;
+      final saved = await stickers.importFromBytes(
+        bytes,
+        name: sticker.name,
+        category: sticker.category,
+        ext: sticker.ext,
+      );
+      if (saved != null) count++;
+    }
+    return count;
+  }
+
+  Future<String?> _pickImportMode(BackupData data) {
     return showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('从 WebDAV 恢复'),
         content: Text(
-          '最新备份包含 $count 篇手账。\n\n'
+          '最新备份包含 ${data.entries.length} 篇手账、'
+          '${data.templates.length} 个模板、'
+          '${data.customStickers.length} 张自定义贴纸。\n\n'
           '· 合并：按条目去重,保留较新的版本\n'
           '· 覆盖：清空现有全部数据后导入',
         ),

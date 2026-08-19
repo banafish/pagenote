@@ -9,6 +9,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'app.dart';
 import 'pages/editor_page.dart';
+import 'providers/custom_sticker_provider.dart';
 import 'providers/journal_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/template_provider.dart';
@@ -38,6 +39,10 @@ Future<void> main() async {
   final templates = TemplateProvider();
   await templates.load();
 
+  // 自定义图片贴纸（REQ-20）:加载后同步全局索引,供渲染端取素材路径。
+  final customStickers = CustomStickerProvider();
+  await customStickers.load();
+
   // 写作提醒（仅 Android;Windows 自动降级）。
   await NotificationService.instance.init();
 
@@ -47,7 +52,12 @@ Future<void> main() async {
   await WidgetService.instance.updateFrom(journal);
 
   runApp(
-    PageNoteApp(settings: settings, journal: journal, templates: templates),
+    PageNoteApp(
+      settings: settings,
+      journal: journal,
+      templates: templates,
+      customStickers: customStickers,
+    ),
   );
 
   // WebDAV 定期自动备份（REQ-15）:到期则后台执行,不阻塞首帧。
@@ -68,11 +78,13 @@ class PageNoteApp extends StatelessWidget {
     required this.settings,
     required this.journal,
     required this.templates,
+    required this.customStickers,
   });
 
   final SettingsProvider settings;
   final JournalProvider journal;
   final TemplateProvider templates;
+  final CustomStickerProvider customStickers;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +93,7 @@ class PageNoteApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: settings),
         ChangeNotifierProvider.value(value: journal),
         ChangeNotifierProvider.value(value: templates),
+        ChangeNotifierProvider.value(value: customStickers),
       ],
       child: AnimatedBuilder(
         animation: Listenable.merge([settings, templates]),
