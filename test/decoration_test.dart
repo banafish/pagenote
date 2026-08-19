@@ -12,6 +12,7 @@ import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/models/decoration.dart';
 import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/pages/editor_page.dart';
+import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
@@ -143,6 +144,9 @@ void main() {
           ChangeNotifierProvider.value(value: journal),
           ChangeNotifierProvider.value(value: settings),
           ChangeNotifierProvider.value(value: templates),
+          ChangeNotifierProvider.value(
+            value: CustomStickerProvider(database: db),
+          ),
         ],
         child: MaterialApp(
           locale: const Locale('zh'),
@@ -157,12 +161,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 底部工具栏打开贴纸面板,切到「表情」页签添加一枚 emoji 贴纸。
+    // 底部工具栏打开贴纸面板,切到「表情」页签的「植物」类目添加一枚 emoji 贴纸;
+    // 面板为常驻抽屉（REQ-17.3）,插入后需手动收起才能继续操作工具栏。
+    Finder inSheet(Finder finder) =>
+        find.descendant(of: find.byType(BottomSheet), matching: finder);
+    // 最近使用横条里也会出现同一枚 emoji,限定在页签网格内点选。
+    Finder inGrid(String text) => inSheet(
+      find.descendant(of: find.byType(GridView), matching: find.text(text)),
+    );
     await tester.tap(find.byTooltip('贴纸'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('表情'));
+    await tester.tap(inSheet(find.text('表情')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('🌸').first);
+    await tester.tap(inSheet(find.text('植物')));
+    await tester.pumpAndSettle();
+    await tester.tap(inGrid('🌸'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();
 
     // 选择「方格」纸张。

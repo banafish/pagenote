@@ -10,6 +10,7 @@ import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/pages/editor_page.dart';
+import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
@@ -49,6 +50,9 @@ void main() {
         ChangeNotifierProvider.value(value: journal),
         ChangeNotifierProvider.value(value: SettingsProvider(prefs)),
         ChangeNotifierProvider.value(value: templates),
+        ChangeNotifierProvider.value(
+          value: CustomStickerProvider(database: db),
+        ),
       ],
       child: const MaterialApp(
         locale: Locale('zh'),
@@ -69,14 +73,25 @@ void main() {
     expect(find.byType(CanvasView), findsOneWidget, reason: '编辑层内嵌静态渲染层');
 
     // 添加两枚贴纸（列表顺序即 z 序,后加的在上）。
+    // REQ-17.3：面板为常驻抽屉,点选后不关闭,可连续插入。
+    Finder inSheet(Finder finder) =>
+        find.descendant(of: find.byType(BottomSheet), matching: finder);
+    // 最近使用横条里也会出现同一枚 emoji,限定在页签网格内点选。
+    Finder inGrid(String text) => inSheet(
+      find.descendant(of: find.byType(GridView), matching: find.text(text)),
+    );
+    await tester.tap(find.byTooltip('贴纸'));
+    await tester.pumpAndSettle();
+    await tester.tap(inSheet(find.text('表情')));
+    await tester.pumpAndSettle();
+    await tester.tap(inSheet(find.text('植物')));
+    await tester.pumpAndSettle();
     for (final _ in [1, 2]) {
-      await tester.tap(find.byTooltip('贴纸'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('表情'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('🌸').first);
+      await tester.tap(inGrid('🌸'));
       await tester.pumpAndSettle();
     }
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
 
     // 选中第二枚贴纸（新增后自动选中）→ 操作条出现。
     expect(find.text('置顶'), findsOneWidget);

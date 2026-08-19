@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -347,9 +349,29 @@ class _EditorPageState extends State<EditorPage> {
 
   // ---------------- 素材添加 ----------------
 
+  /// 素材面板本次打开以来的插入次数，用于落点递增偏移（REQ-17.4）。
+  int _pickSeq = 0;
+
+  /// 素材面板为常驻抽屉，点一次插一个、面板不关（REQ-17.3）。
   Future<void> _addSticker() async {
-    final element = await showStickerPalette(context);
-    if (element == null || !mounted) return;
+    _pickSeq = 0;
+    await showStickerPalette(context, onPick: _insertPicked);
+    _pickSeq = 0;
+  }
+
+  /// 面板给的是固定默认落点，这里按插入序号沿对角线递增偏移，
+  /// 连着点也不会叠在同一处；走满一条对角线后换一条平行线回绕（REQ-17.4）。
+  void _insertPicked(CanvasElement element) {
+    const step = 0.045;
+    const perLine = 6;
+    final line = (_pickSeq ~/ perLine) % 4;
+    final index = _pickSeq % perLine;
+    _pickSeq++;
+    final maxX = math.max(0.0, 1 - element.w);
+    final maxY = math.max(0.0, _canvas.effectiveHeight - element.h);
+    element
+      ..x = (element.x + step * index - line * 0.07).clamp(0.0, maxX)
+      ..y = (element.y + step * index + line * 0.035).clamp(0.0, maxY);
     setState(() => _canvas.elements.add(element));
     _commit();
     _editorKey.currentState?.select(element.id);
@@ -434,6 +456,12 @@ class _EditorPageState extends State<EditorPage> {
       return;
     }
     final changed = await showImageElementEditor(context, element);
+    if (changed && mounted) _commit();
+  }
+
+  /// 贴纸属性：换色与不透明度（REQ-19.2）。
+  Future<void> _editSticker(StickerElement element) async {
+    final changed = await showStickerElementEditor(context, element);
     if (changed && mounted) _commit();
   }
 
@@ -825,6 +853,7 @@ class _EditorPageState extends State<EditorPage> {
                       onCommit: _commit,
                       onEditText: _editText,
                       onEditImage: _editImage,
+                      onEditSticker: _editSticker,
                       onEditComponent: _editComponent,
                     ),
           ),

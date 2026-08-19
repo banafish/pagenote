@@ -14,8 +14,9 @@ import 'canvas_view.dart';
 /// - 单指点按未选中元素 → 选中；点空白 → 取消选中
 /// - 选中后单指拖动 → 移动；双指捏合 → 缩放 + 旋转
 /// - 角点手柄拖动 → 单指调整大小（文本/胶带调宽,其余等比缩放）
-/// - 再次点按已选中的文本/图片/组件 → 打开对应编辑面板
+/// - 再次点按已选中的文本/图片/贴纸/组件 → 打开对应编辑面板
 /// - 选中素材本机缺失的贴纸 → 提示缺失并可替换/删除（FIX-03.3）
+/// - 从素材面板长按拖入的元素落在指针位置（REQ-17.5）
 ///
 /// 撤销/重做与历史快照由宿主（编辑页）管理：[onCommit] 在每次
 /// 「一次完整操作结束」时回调（手势结束、增删、图层、面板保存）。
@@ -27,6 +28,7 @@ class CanvasEditor extends StatefulWidget {
     required this.onCommit,
     required this.onEditText,
     required this.onEditImage,
+    required this.onEditSticker,
     required this.onEditComponent,
   });
 
@@ -36,9 +38,10 @@ class CanvasEditor extends StatefulWidget {
   /// 一次操作完成（数据已被就地修改）：宿主推送撤销历史并刷新。
   final VoidCallback onCommit;
 
-  /// 编辑文本 / 图片遮罩 / 结构化组件（心情、天气等）。
+  /// 编辑文本 / 图片遮罩 / 贴纸属性 / 结构化组件（心情、天气等）。
   final ValueChanged<TextElement> onEditText;
   final ValueChanged<ImageElement> onEditImage;
+  final ValueChanged<StickerElement> onEditSticker;
   final ValueChanged<StructuredElement> onEditComponent;
 
   @override
@@ -47,6 +50,9 @@ class CanvasEditor extends StatefulWidget {
 
 class CanvasEditorState extends State<CanvasEditor> {
   String? _selectedId;
+
+  /// 页面矩形：拖拽落点由全局坐标换算成页宽归一化坐标时用（REQ-17.5）。
+  final _pageKey = GlobalKey();
 
   CanvasElement? get _selected =>
       widget.canvas.elements.where((e) => e.id == _selectedId).firstOrNull;
@@ -120,16 +126,23 @@ class CanvasEditorState extends State<CanvasEditor> {
   void duplicate() {
     final e = _selected;
     if (e == null || e is StructuredElement) return;
-    final copy = JournalCanvas.fromMap({
-      'elements': [e.encode()],
-      'paper': '',
-    }).elements.first;
+    final copy = _cloneElement(e);
     copy
       ..x = (e.x + 0.05).clamp(0.0, 1 - copy.w)
       ..y = e.y + 0.05;
     widget.canvas.elements.add(copy);
     _selectedId = copy.id;
     _afterOp();
+  }
+
+  /// 复制一个元素：走一遍序列化省得逐类型手抄字段,去掉 id 以取得新 id
+  /// （否则副本与原件同 id,选中态会落回原件）。
+  CanvasElement _cloneElement(CanvasElement e) {
+    final map = Map<String, Object?>.from(e.encode())..remove('id');
+    return JournalCanvas.fromMap({
+      'elements': [map],
+      'paper': '',
+    }).elements.first;
   }
 
   void deleteSelected() {
@@ -190,18 +203,49 @@ class CanvasEditorState extends State<CanvasEditor> {
     }
   }
 
-  /// 换成本机素材：复用贴纸面板,只取其贴纸 key（胶带无法顶替贴纸）。
+  /// 换成本机素材：复用素材面板,只取其贴纸 key（胶带无法顶替贴纸）。
   Future<void> _replaceSticker(StickerElement e) async {
-    final picked = await showStickerPalette(context);
-    if (!mounted || picked == null) return;
-    if (picked is! StickerElement) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请选一个贴纸或表情来替换')));
-      return;
-    }
-    e.key = picked.key;
-    e.tint = picked.tint;
+    var replaced = false;
+    await showStickerPalette(
+      context,
+      onPick: (picked) {
+        if (picked is! StickerElement) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('请选一个贴纸或表情来替换')));
+          return;
+        }
+        e.key = picked.key;
+        e.tint = picked.tint;
+        replaced = true;
+        // 替换是一次性动作,选中即收面板（与连续插入的常驻语义区分）。
+        Navigator.of(context).pop();
+      },
+    );
+    if (!mounted || !replaced) return;
+    _afterOp();
+  }
+
+  // ---------------- 拖拽放置（REQ-17.5） ----------------
+
+  /// 素材面板拖入：[DragTargetDetails.offset] 约定为「元素中心」的全局坐标,
+  /// 经页面 RenderBox 换算成页宽归一化坐标（globalToLocal 已含滚动偏移）,
+  /// 落点越界时贴边收回。触摸与鼠标同一条路径,双端一致（NFR-04）。
+  void _dropElement(DragTargetDetails<CanvasElement> details, double pageWidth) {
+    final box = _pageKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || pageWidth <= 0) return;
+    final local = box.globalToLocal(details.offset);
+    // 面板里的 Draggable 长期持有同一个实例,直接入列会与下次拖拽共用对象。
+    final element = _cloneElement(details.data);
+    element.moveTo(Offset(local.dx / pageWidth, local.dy / pageWidth));
+    element
+      ..x = element.x.clamp(0.0, math.max(0.0, 1 - element.w))
+      ..y = element.y.clamp(
+        0.0,
+        math.max(0.0, widget.canvas.effectiveHeight - element.h),
+      );
+    widget.canvas.elements.add(element);
+    _selectedId = element.id;
     _afterOp();
   }
 
@@ -214,6 +258,7 @@ class CanvasEditorState extends State<CanvasEditor> {
         final pageSize = Size(pageWidth, pageWidth);
         // 页面（可滚动）。
         final page = SizedBox(
+          key: _pageKey,
           width: pageWidth,
           height: widget.canvas.effectiveHeight * pageWidth,
           child: Stack(
@@ -271,15 +316,31 @@ class CanvasEditorState extends State<CanvasEditor> {
 
         // 操作条固定在编辑区视口底部,不随页面滚动,
         // 也不会被页面级底部工具栏遮挡（EditorPage 中本组件位于其上方）。
-        return Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 120),
-              child: page,
-            ),
-            if (_selected != null)
-              _selectionToolbar(context, scheme, _selected!),
-          ],
+        // 整块同时是素材面板的拖拽落区（REQ-17.5）。
+        return DragTarget<CanvasElement>(
+          onAcceptWithDetails: (details) => _dropElement(details, pageWidth),
+          builder: (context, candidate, _) => Stack(
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 120),
+                child: page,
+              ),
+              // 拖拽悬停时描边,提示「松手就落在这」。
+              if (candidate.isNotEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: scheme.primary, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_selected != null)
+                _selectionToolbar(context, scheme, _selected!),
+            ],
+          ),
         );
       },
     );
@@ -333,6 +394,9 @@ class CanvasEditorState extends State<CanvasEditor> {
         widget.onEditText(e);
       case ImageElement():
         widget.onEditImage(e);
+      // 插入后仍可换色 / 调不透明度（REQ-19.2）。
+      case StickerElement():
+        widget.onEditSticker(e);
       case StructuredElement():
         widget.onEditComponent(e);
       default:
