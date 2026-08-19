@@ -386,4 +386,40 @@ void main() {
     expect(small.height, 120);
     expect(small.bytes, lessThanOrEqualTo(StickerStore.maxBytes));
   });
+
+  test('包内伪造的扩展名不能写出素材目录（NFR-06 路径消毒）', () async {
+    // stickers.json 里的 ext 与 zip 条目名是两回事，不经条目名校验，
+    // 直接拼进文件名就能用 ../ 逃出 stickers/ 覆盖任意文件。
+    final provider = await newProvider();
+    final bytes = pngOf(80, 60, seed: 9);
+    final saved = await provider.importFromBytes(
+      bytes,
+      name: '越权素材',
+      ext: '/../../越权.png',
+    );
+
+    expect(saved, isNotNull, reason: '扩展名非法只降级为 .png，不该整张丢弃');
+    expect(saved!.ext, '.png');
+    // 落盘位置必须仍在素材目录内，文档目录里不能凭空多出文件。
+    final stickerDir = await StickerStore.ensureDir();
+    final escaped = File(p.join(documents.path, '越权.png'));
+    expect(await escaped.exists(), isFalse, reason: '不得写到素材目录之外');
+    expect(
+      p.equals(
+        p.dirname(StickerStore.pathOf(saved.id, saved.ext)),
+        stickerDir.path,
+      ),
+      isTrue,
+    );
+    expect(
+      await File(StickerStore.pathOf(saved.id, saved.ext)).exists(),
+      isTrue,
+    );
+
+    // 读路径与写路径用同一套消毒，存量记录里的脏 ext 也能取回字节。
+    expect(await StickerStore.readBytes(saved.id, '/../../越权.png'), isNotNull);
+    expect(StickerStore.safeExt('.PNG'), '.PNG');
+    expect(StickerStore.safeExt(''), '.png');
+    expect(StickerStore.safeExt(r'..\evil'), '.png');
+  });
 }

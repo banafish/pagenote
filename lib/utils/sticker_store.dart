@@ -20,6 +20,17 @@ class StickerStore {
   static const maxEdge = 1024;
   static const maxBytes = 2 * 1024 * 1024;
 
+  /// 解码前的尺寸硬闸（NFR-06）：单边像素上限。
+  /// 8192 是移动端 GPU 纹理边长的常见上限，超过这个数的图连渲染都无从谈起，
+  /// 已经不可能是正常素材，只可能是构造出来的攻击载荷。
+  static const maxDecodeEdge = 8192;
+
+  /// 解码前的尺寸硬闸（NFR-06）：像素总数上限（4096×4096）。
+  /// 解码后按 RGBA 每像素 4 字节算约 64MB，是单张图能接受的内存天花板；
+  /// 20MB 的 PNG 能解压成上万像素的方图（图像层解压炸弹），
+  /// 必须在**解码之前**用文件头拦下，不能先解码再判断。
+  static const maxDecodePixels = 4096 * 4096;
+
   static const _imageGroup = XTypeGroup(
     label: '图片',
     extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'],
@@ -32,9 +43,10 @@ class StickerStore {
   static Future<List<XFile>> pickImages() =>
       openFiles(acceptedTypeGroups: [_imageGroup]);
 
-  /// 导入一张图片作为自定义贴纸（REQ-20.1）：解码 → 长边超限等比缩放 →
-  /// 统一编码 PNG（保留 alpha）→ 按 sha1 落盘，同一图片重复导入命中同一文件。
-  /// 解码失败返回 null，由调用方给出中文提示，不向 UI 抛异常。
+  /// 导入一张图片作为自定义贴纸（REQ-20.1）：尺寸闸（NFR-06）→ 解码 →
+  /// 长边超限等比缩放 → 统一编码 PNG（保留 alpha）→ 按 sha1 落盘，
+  /// 同一图片重复导入命中同一文件。
+  /// 尺寸超限或解码失败返回 null，由调用方给出中文提示，不向 UI 抛异常。
   static Future<CustomSticker?> importFile(
     XFile file, {
     String name = '',
@@ -42,7 +54,10 @@ class StickerStore {
   }) async {
     final Uint8List? png;
     try {
-      png = await compute(_toPng, await file.readAsBytes());
+      final raw = await file.readAsBytes();
+      // 巨图直接拒，不尝试压缩挽救：压缩本身就要先整张解码。
+      if (!withinDecodeLimit(raw)) return null;
+      png = await compute(_toPng, raw);
     } on Exception {
       return null;
     }
@@ -61,10 +76,14 @@ class StickerStore {
 
   /// 去白底（REQ-20.3）：接近纯白的像素 alpha 置 0，阈值边缘留一档
   /// 半透明过渡避免锯齿。解码失败原样返回，不打断用户操作。
+  /// 面板是「先抠白再导入」，这一步先于 [importFile] 整张解码，
+  /// 因此这里也要过尺寸闸（NFR-06）；未过闸时原样返回，
+  /// 由随后的 [importFile] 统一拒绝并提示。
   static Future<Uint8List> removeWhiteBackground(
     Uint8List png, {
     int tolerance = 24,
   }) async {
+    if (!withinDecodeLimit(png)) return png;
     try {
       final cut = await compute(_cutWhite, (bytes: png, tolerance: tolerance));
       return cut ?? png;
@@ -73,15 +92,84 @@ class StickerStore {
     }
   }
 
-  /// 按内容 sha1 落盘并返回绝对路径；同 sha1 的文件已存在则直接复用。
-  static Future<String> persistBytes(Uint8List bytes, String ext) =>
-      _write(idOf(bytes), bytes, ext.isEmpty ? '.png' : ext);
+  /// 不可信字节的归一化落盘（NFR-06 + REQ-20.5），备份恢复与分享包安装共用：
+  /// 先读文件头过尺寸闸，再保证落盘结果不超出 [maxEdge] / [maxBytes]。
+  ///
+  /// 返回落盘后的 id（内容 sha1）与实际扩展名；空字节、格式无法识别、
+  /// 尺寸超上限或解码失败一律返回 **null**，调用方跳过这一张继续导入其余素材，
+  /// 不抛异常打断整包（REQ-21.3）。
+  ///
+  /// 已在上限内的字节原样落盘，不做无意义的重编码——重编码会让 sha1 漂移，
+  /// 打断分享包里 `img:<sha1>` 的引用（REQ-21），而尺寸闸已保证解码安全。
+  static Future<({String id, String ext})?> persistNormalizedBytes(
+    Uint8List bytes, {
+    String ext = '.png',
+  }) async {
+    if (bytes.isEmpty) return null;
+    final size = _probeSize(bytes);
+    if (size == null || !_withinLimit(size)) return null;
+
+    if (max(size.width, size.height) <= maxEdge && bytes.length <= maxBytes) {
+      final ok = safeExt(ext);
+      final id = idOf(bytes);
+      await _write(id, bytes, ok);
+      return (id: id, ext: ok);
+    }
+
+    final Uint8List? png;
+    try {
+      png = await compute(_toPng, bytes);
+    } on Exception {
+      return null;
+    }
+    if (png == null) return null;
+    final id = idOf(png);
+    await _write(id, png, '.png');
+    return (id: id, ext: '.png');
+  }
+
+  /// 解码前的尺寸闸（NFR-06）：只解析文件头，不解码像素。
+  /// 格式无法识别或超出 [maxDecodeEdge] / [maxDecodePixels] 时返回 false，
+  /// 此时调用方应直接跳过该图，不要试图压缩一张恶意构造的巨图。
+  static bool withinDecodeLimit(Uint8List bytes) {
+    final size = _probeSize(bytes);
+    return size != null && _withinLimit(size);
+  }
+
+  static bool _withinLimit(({int width, int height}) size) =>
+      size.width <= maxDecodeEdge &&
+      size.height <= maxDecodeEdge &&
+      size.width * size.height <= maxDecodePixels;
+
+  /// 读图像头取画布尺寸；识别不了或头部损坏返回 null。
+  /// `startDecode` 只走到尺寸信息为止，不会展开像素数据。
+  static ({int width, int height})? _probeSize(Uint8List bytes) {
+    try {
+      final info = img.findDecoderForData(bytes)?.startDecode(bytes);
+      if (info == null || info.width <= 0 || info.height <= 0) return null;
+      return (width: info.width, height: info.height);
+    } catch (_) {
+      // 头部损坏的文件可能抛出各种越界错误，一律按无法识别处理。
+      return null;
+    }
+  }
 
   /// 字节内容的 sha1，即贴纸 id 与文件名主干（分享包打包时复用）。
   static String idOf(List<int> bytes) => sha1.convert(bytes).toString();
 
   /// 已知 id 的文件路径；需先 [ensureDir]（provider 加载时已调用）。
-  static String pathOf(String id, String ext) => p.join(_root, '$id$ext');
+  /// 扩展名经 [safeExt] 消毒，读写两侧算出的文件名始终一致。
+  static String pathOf(String id, String ext) =>
+      p.join(_root, '$id${safeExt(ext)}');
+
+  /// 落盘用的安全扩展名（NFR-06 路径消毒）。
+  ///
+  /// 分享包 stickers.json 里的 `ext` 与包内条目名不同，不经 zip 条目名校验，
+  /// 直接拼进文件名可以用 `../` 逃出素材目录写到任意位置；
+  /// 这里只放行「点 + 短字母数字」的扩展名，其余一律按 .png 处理。
+  static String safeExt(String ext) => _extPattern.hasMatch(ext) ? ext : '.png';
+
+  static final _extPattern = RegExp(r'^\.[A-Za-z0-9]{1,8}$');
 
   /// 读取素材字节（备份 REQ-20.6 与分享包 REQ-21.3 打包用）；缺失返回 null。
   static Future<Uint8List?> readBytes(String id, String ext) async {
@@ -138,7 +226,7 @@ class StickerStore {
 
   static Future<String> _write(String id, Uint8List bytes, String ext) async {
     final dir = await ensureDir();
-    final target = p.join(dir.path, '$id$ext');
+    final target = p.join(dir.path, '$id${safeExt(ext)}');
     final file = File(target);
     if (!await file.exists()) {
       await file.writeAsBytes(bytes, flush: true);

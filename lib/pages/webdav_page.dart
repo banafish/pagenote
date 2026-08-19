@@ -145,37 +145,51 @@ class _WebDavPageState extends State<WebDavPage> {
         overwrite: overwrite,
       );
       if (!mounted) return;
+      // 跳过的素材如实附在末尾（NFR-06 尺寸闸拦下的那些）。
+      final skippedNote = stickerCount.skipped > 0
+          ? '；${stickerCount.skipped} 张素材尺寸超限或无法识别,已跳过'
+          : '';
       _toast(
         overwrite
             ? '已覆盖导入 ${data.entries.length} 篇手账、'
-                  '${data.templates.length} 个模板、$stickerCount 张自定义贴纸'
+                  '${data.templates.length} 个模板、'
+                  '${stickerCount.saved} 张自定义贴纸$skippedNote'
             : '合并导入完成,更新 $changed 篇手账,'
-                  '另含 ${data.templates.length} 个模板、$stickerCount 张自定义贴纸',
+                  '另含 ${data.templates.length} 个模板、'
+                  '${stickerCount.saved} 张自定义贴纸$skippedNote',
       );
     });
   }
 
-  /// 恢复备份内的自定义图片贴纸（REQ-20.6）,返回实际落地的张数。
+  /// 恢复备份内的自定义图片贴纸（REQ-20.6）,返回落地张数与跳过张数。
   /// 覆盖模式先清空既有素材,与手账、模板的覆盖语义保持一致。
-  Future<int> _restoreStickers(
+  Future<({int saved, int skipped})> _restoreStickers(
     CustomStickerProvider stickers,
     BackupData data, {
     required bool overwrite,
   }) async {
     if (overwrite) await stickers.clearAll();
     var count = 0;
+    var skipped = 0;
     for (final sticker in data.customStickers) {
       final bytes = data.stickerBytes[sticker.fileName];
-      if (bytes == null) continue;
+      if (bytes == null) {
+        skipped++;
+        continue;
+      }
       final saved = await stickers.importFromBytes(
         bytes,
         name: sticker.name,
         category: sticker.category,
         ext: sticker.ext,
       );
-      if (saved != null) count++;
+      if (saved != null) {
+        count++;
+      } else {
+        skipped++;
+      }
     }
-    return count;
+    return (saved: count, skipped: skipped);
   }
 
   Future<String?> _pickImportMode(BackupData data) {

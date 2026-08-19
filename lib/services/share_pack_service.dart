@@ -34,6 +34,7 @@ class SharePackData {
     required this.templates,
     required this.stickers,
     required this.stickerBytes,
+    this.photoBytes = const {},
   });
 
   /// 包名（pack.json 的 name）。
@@ -49,6 +50,12 @@ class SharePackData {
 
   /// 贴纸文件名（`<sha1><ext>`）→ 字节内容，取自包内 assets/ 目录。
   final Map<String, Uint8List> stickerBytes;
+
+  /// 模板画布照片的文件名 → 字节内容，取自包内 photos/ 目录（FIX-01.2）。
+  /// 导出方未勾选「保留照片」时为空。
+  /// 调用方直接把它交给 `TemplateProvider.installTemplates` 的 attachments 参数，
+  /// 由那边按文件名落盘并重映射为本机路径（FIX-01.3）。
+  final Map<String, Uint8List> photoBytes;
 }
 
 /// 素材 / 模板分享包（REQ-21）：独立于备份包的分发格式。
@@ -65,6 +72,7 @@ class SharePackService {
   static const _templatesFileName = 'templates.json';
   static const _stickersFileName = 'stickers.json';
   static const _assetsDir = 'assets/';
+  static const _photosDir = 'photos/';
 
   /// 单包体积上限（NFR-06）。
   static const maxPackBytes = 20 * 1024 * 1024;
@@ -82,16 +90,25 @@ class SharePackService {
 
   /// 组装分享包 zip 字节（REQ-21.1/21.2）。
   ///
-  /// 模板画布内的照片路径一律清空只留占位框——REQ-21.4「不得包含任何本机绝对路径」
-  /// 是硬约束，不能只靠调用方自觉，因此这里对副本再清一遍，
-  /// 且不影响调用方内存里的模板对象。
+  /// [includePhotos] 决定模板画布里的照片怎么处理，两条路都不会留下本机绝对路径
+  /// ——REQ-21.4 是硬约束，不能只靠调用方自觉，因此这里对副本再处理一遍，
+  /// 且不影响调用方内存里的模板对象：
+  /// - false（默认）：路径一律清空只留占位框。分享给别人的包默认不带私人照片，
+  ///   模板本身的语义也是让使用者填自己的照片（FIX-01.1）。
+  /// - true：照片字节入包放进 photos/ 目录，画布里的路径改写为纯文件名，
+  ///   由导入端按文件名重映射（FIX-01.2），与备份包 [BackupService.buildZip] 同一套做法。
+  ///
+  /// 读不到的照片文件跳过，对应元素退化为占位框，不让整包导出失败。
+  /// 注意带照片的包很容易超过 [maxPackBytes]，调用方应在勾选开关处提示体积。
   Future<Uint8List> buildPack({
     required String packName,
     required String author,
     required List<JournalTemplate> templates,
     List<CustomSticker> stickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
+    bool includePhotos = false,
   }) async {
+    final photoBytes = <String, Uint8List>{};
     final templateMaps = <Map<String, Object?>>[];
     for (final t in templates) {
       final canvas = t.canvas;
@@ -99,8 +116,27 @@ class SharePackService {
         templateMaps.add(t.toMap());
         continue;
       }
-      final cleaned = canvas.clone()..clearImagePaths();
-      templateMaps.add({...t.toMap(), 'canvas': encodeCanvas(cleaned)});
+      if (!includePhotos) {
+        final cleaned = canvas.clone()..clearImagePaths();
+        templateMaps.add({...t.toMap(), 'canvas': encodeCanvas(cleaned)});
+        continue;
+      }
+      final packed = <String>{};
+      for (final img in canvas.images) {
+        if (img.path.isEmpty) continue;
+        final name = p.basename(img.path);
+        if (packed.contains(name)) continue;
+        final file = File(img.path);
+        if (!await file.exists()) continue;
+        photoBytes.putIfAbsent(name, file.readAsBytesSync);
+        packed.add(name);
+      }
+      final packedCanvas = canvas.clone();
+      packedCanvas.remapImagePaths((path) {
+        final name = p.basename(path);
+        return packed.contains(name) ? name : '';
+      });
+      templateMaps.add({...t.toMap(), 'canvas': encodeCanvas(packedCanvas)});
     }
 
     final meta = <String, Object?>{
@@ -126,6 +162,10 @@ class SharePackService {
     stickerBytes.forEach((name, bytes) {
       archive.addFile(ArchiveFile.bytes('$_assetsDir$name', bytes));
     });
+    // 照片与贴纸分目录存放，导入端才能分别交给贴纸库与模板重映射（FIX-01.2）。
+    photoBytes.forEach((name, bytes) {
+      archive.addFile(ArchiveFile.bytes('$_photosDir$name', bytes));
+    });
 
     return ZipEncoder().encodeBytes(archive);
   }
@@ -139,6 +179,7 @@ class SharePackService {
     required List<JournalTemplate> templates,
     List<CustomSticker> stickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
+    bool includePhotos = false,
   }) async {
     final bytes = await buildPack(
       packName: packName,
@@ -146,6 +187,7 @@ class SharePackService {
       templates: templates,
       stickers: stickers,
       stickerBytes: stickerBytes,
+      includePhotos: includePhotos,
     );
     // 文件名含包名与日期（REQ-21.5）；扩展名固定 .zip，
     // 自创扩展名会让微信 / QQ 的「用其他应用打开」失效。
@@ -235,12 +277,18 @@ class SharePackService {
       throw SharePackFormatException('素材包中的贴纸数据格式不正确');
     }
 
+    // 贴纸位图与模板照片分属两个目录；老包与不带照片的包没有 photos/，降级为空（NFR-07）。
     final stickerBytes = <String, Uint8List>{};
+    final photoBytes = <String, Uint8List>{};
     for (final f in archive) {
-      if (!f.isFile || !f.name.startsWith(_assetsDir)) continue;
+      if (!f.isFile) continue;
       final name = p.basename(f.name);
       if (name.isEmpty) continue;
-      stickerBytes[name] = Uint8List.fromList(f.content as List<int>);
+      if (f.name.startsWith(_assetsDir)) {
+        stickerBytes[name] = Uint8List.fromList(f.content as List<int>);
+      } else if (f.name.startsWith(_photosDir)) {
+        photoBytes[name] = Uint8List.fromList(f.content as List<int>);
+      }
     }
 
     return SharePackData(
@@ -249,6 +297,7 @@ class SharePackService {
       templates: templates,
       stickers: stickers,
       stickerBytes: stickerBytes,
+      photoBytes: photoBytes,
     );
   }
 

@@ -16,6 +16,7 @@ import '../services/share_pack_service.dart';
 import '../widgets/lock_gate.dart';
 import 'pin_setup_page.dart';
 import 'share_pack_import_page.dart';
+import 'sticker_manager_page.dart';
 import 'template_manager_page.dart';
 import 'trash_page.dart';
 import 'webdav_page.dart';
@@ -132,6 +133,28 @@ class SettingsPage extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const TemplateManagerPage()),
+              ),
+            ),
+            // 自定义素材的统一入口（REQ-21.2）：导入 / 改名 / 分组 / 打包分享。
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _iconBox(
+                context,
+                Icons.emoji_emotions_outlined,
+                scheme.primaryContainer,
+                scheme.onPrimaryContainer,
+              ),
+              title: const Text(
+                '我的素材',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                '从相册导入图片做成贴纸，也能打包分享',
+                style: TextStyle(fontSize: 12.5),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const StickerManagerPage()),
               ),
             ),
             const _ReminderTile(),
@@ -551,14 +574,20 @@ class SettingsPage extends StatelessWidget {
       overwrite: overwrite,
     );
     if (!context.mounted) return;
+    // 跳过的素材如实附在末尾（NFR-06 尺寸闸拦下的那些）。
+    final skippedNote = stickerCount.skipped > 0
+        ? '；${stickerCount.skipped} 张素材尺寸超限或无法识别，已跳过'
+        : '';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           overwrite
               ? '已覆盖导入 ${data.entries.length} 篇手账、'
-                    '${data.templates.length} 个模板、$stickerCount 张自定义贴纸'
+                    '${data.templates.length} 个模板、'
+                    '${stickerCount.saved} 张自定义贴纸$skippedNote'
               : '合并导入完成，更新 $changed 篇手账，'
-                    '另含 ${data.templates.length} 个模板、$stickerCount 张自定义贴纸',
+                    '另含 ${data.templates.length} 个模板、'
+                    '${stickerCount.saved} 张自定义贴纸$skippedNote',
         ),
       ),
     );
@@ -566,25 +595,33 @@ class SettingsPage extends StatelessWidget {
 
   /// 恢复备份内的自定义图片贴纸（REQ-20.6），返回实际落地的张数。
   /// 覆盖模式先清空既有素材，与手账、模板的覆盖语义保持一致。
-  Future<int> _restoreStickers(
+  Future<({int saved, int skipped})> _restoreStickers(
     CustomStickerProvider stickers,
     BackupData data, {
     required bool overwrite,
   }) async {
     if (overwrite) await stickers.clearAll();
     var count = 0;
+    var skipped = 0;
     for (final sticker in data.customStickers) {
       final bytes = data.stickerBytes[sticker.fileName];
-      if (bytes == null) continue;
+      if (bytes == null) {
+        skipped++;
+        continue;
+      }
       final saved = await stickers.importFromBytes(
         bytes,
         name: sticker.name,
         category: sticker.category,
         ext: sticker.ext,
       );
-      if (saved != null) count++;
+      if (saved != null) {
+        count++;
+      } else {
+        skipped++;
+      }
     }
-    return count;
+    return (saved: count, skipped: skipped);
   }
 
   // ---------------- 素材包手动导入（REQ-21.12） ----------------
@@ -621,12 +658,20 @@ class SettingsPage extends StatelessWidget {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text('已导入 ${parts.join('、')}')));
-    // 导入完成后跳到模板管理页并高亮新增（REQ-21.9）；
-    // 只有贴纸时不跳转，素材面板在编辑页内，留在设置页更自然。
+    // 导入完成后跳到对应位置并高亮新增（REQ-21.9）；
+    // 两样都有时先看模板、退出后接着看素材，两边的高亮都不落空。
     if (result.templateIds.isNotEmpty) {
       await navigator.push(
         MaterialPageRoute<void>(
           builder: (_) => TemplateManagerPage(highlightIds: result.templateIds),
+        ),
+      );
+    }
+    if (result.stickerIds.isNotEmpty) {
+      await navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              StickerManagerPage(highlightStickerIds: result.stickerIds),
         ),
       );
     }
@@ -792,7 +837,7 @@ class _SharePackExportPageState extends State<_SharePackExportPage> {
           const SizedBox(height: 14),
           Text(
             '模板用到的自定义贴纸会自动随包带上，接收方开箱即用；'
-            '模板里的本机照片不会进包，只保留占位框。',
+            '模板里的本机照片默认不进包，只留占位框，导出时可以选择一并带上。',
             style: TextStyle(
               fontSize: 11.5,
               height: 1.6,
@@ -911,16 +956,21 @@ class _SharePackExportPageState extends State<_SharePackExportPage> {
       for (final t in templateProvider.userTemplates)
         if (_templateIds.contains(t.id)) t,
     ];
-    // 画布里还留着本机照片时先提示（FIX-01 / REQ-21.4）。
+    // 画布里还留着本机照片时先问一次带不带（FIX-01.2 / REQ-21.4）。
     final withPhotos = picked
         .where((t) => t.canvas?.hasImagePaths ?? false)
         .toList();
+    var includePhotos = false;
     if (withPhotos.isNotEmpty) {
-      final ok = await confirmDropTemplatePhotos(context, withPhotos);
-      if (!ok || !mounted) return;
+      final choice = await askIncludeTemplatePhotos(context, withPhotos);
+      if (choice == null || !mounted) return;
+      includePhotos = choice;
     }
 
-    final packed = [for (final t in picked) templateWithoutPhotos(t)];
+    // 带照片时把原始模板交给 buildPack，不带时先在这里清成占位框。
+    final packed = includePhotos
+        ? picked
+        : [for (final t in picked) templateWithoutPhotos(t)];
     // 勾选的贴纸 + 模板引用到的贴纸（REQ-21.3）。
     final ids = {..._stickerIds, ...referencedStickerIds(packed)};
     final name = _nameController.text.trim();
@@ -935,6 +985,7 @@ class _SharePackExportPageState extends State<_SharePackExportPage> {
             if (ids.contains(s.id)) s,
         ],
         stickerBytes: await stickerProvider.exportBytes(ids: ids),
+        includePhotos: includePhotos,
       );
       // 用户在系统对话框里取消时返回 null，留在页面上不打扰。
       if (path != null) {

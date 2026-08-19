@@ -11,6 +11,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'app.dart';
 import 'pages/editor_page.dart';
 import 'pages/share_pack_import_page.dart';
+import 'pages/sticker_manager_page.dart';
 import 'pages/template_manager_page.dart';
 import 'providers/custom_sticker_provider.dart';
 import 'providers/journal_provider.dart';
@@ -232,11 +233,20 @@ class _SharePackGateState extends State<_SharePackGate>
       ),
     );
     if (result == null || result.isEmpty || !mounted) return;
-    // REQ-21.9：导入完成后落到模板管理页并高亮新装的模板。
+    // REQ-21.9：导入完成后落到对应位置并高亮新装的内容。
+    // 两样都有时先看模板、退出后接着看素材，与设置页的手动导入同一条路径。
     if (result.templateIds.isNotEmpty) {
       await navigator.push(
-        MaterialPageRoute(
+        MaterialPageRoute<void>(
           builder: (_) => TemplateManagerPage(highlightIds: result.templateIds),
+        ),
+      );
+    }
+    if (result.stickerIds.isNotEmpty) {
+      await navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              StickerManagerPage(highlightStickerIds: result.stickerIds),
         ),
       );
     }

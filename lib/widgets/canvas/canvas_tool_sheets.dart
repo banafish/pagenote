@@ -10,6 +10,7 @@ import '../../models/app_fonts.dart';
 import '../../models/canvas_page.dart';
 import '../../models/decoration.dart';
 import '../../models/sticker_assets.dart';
+import '../../pages/sticker_manager_page.dart';
 import '../../providers/custom_sticker_provider.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -795,6 +796,17 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
                   style: TextStyle(
                     fontSize: 11.5,
                     color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              // 打包导出等批量操作在素材管理页（REQ-21.2）：
+              // 面板本身是编辑器的常驻抽屉,不适合塞多选与导出流程。
+              IconButton(
+                tooltip: '管理我的素材',
+                icon: const Icon(Icons.tune_rounded, size: 20),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const StickerManagerPage(),
                   ),
                 ),
               ),

@@ -6,6 +6,8 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
+// ignore: depend_on_referenced_packages
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pagenote/database/app_database.dart';
@@ -16,6 +18,7 @@ import 'package:pagenote/models/sticker_assets.dart';
 import 'package:pagenote/models/template.dart';
 import 'package:pagenote/pages/template_manager_page.dart'
     show referencedStickerIds, templateWithoutPhotos;
+import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/services/share_pack_service.dart';
 import 'package:pagenote/utils/sticker_store.dart';
@@ -629,4 +632,357 @@ void main() {
       expect(real, {strangeKey});
     });
   });
+
+  // ================= 安装素材时的尺寸闸（NFR-06） =================
+
+  group('分享包素材落盘的尺寸闸（NFR-06）', () {
+    useTempDocuments();
+
+    /// 每个用例一套独立的贴纸库。
+    Future<CustomStickerProvider> newStickerProvider() async {
+      final db = AppDatabase.inMemory();
+      addTearDown(db.close);
+      final provider = CustomStickerProvider(database: db);
+      await provider.load();
+      return provider;
+    }
+
+    /// 图像层的解压炸弹：文件只有几百字节，头里却声明 20000×20000
+    /// （解码成 RGBA 约 1.6GB）。改 IHDR 的宽高后补回该块的 CRC32，
+    /// 得到一个头部完全合法、只有真去解码才会炸的文件。
+    /// PNG 块布局：8..11 长度，12..15 类型 `IHDR`，16..28 数据（宽 4 + 高 4 + …），29..32 CRC。
+    Uint8List bombPng() {
+      final bytes = Uint8List.fromList(
+        img.encodePng(img.Image(width: 4, height: 4, numChannels: 4)),
+      );
+      final view = ByteData.sublistView(bytes);
+      view.setUint32(16, 20000);
+      view.setUint32(20, 20000);
+      view.setUint32(29, getCrc32(bytes.sublist(12, 29)));
+      return bytes;
+    }
+
+    /// 一张真实可解码的大图：色块填充，解码后 600 万像素，
+    /// 编码后只有几十 KB，不至于让整包撞上 maxPackBytes 把闸门测歪。
+    Uint8List bigPng(int width, int height) {
+      final image = img.Image(width: width, height: height, numChannels: 4);
+      img.fill(image, color: img.ColorRgba8(240, 235, 220, 255));
+      for (var i = 0; i < 6; i++) {
+        img.fillRect(
+          image,
+          x1: i * 400,
+          y1: i * 200,
+          x2: i * 400 + 360,
+          y2: i * 200 + 160,
+          color: img.ColorRgba8(30 + i * 30, 90, 160, 255),
+        );
+      }
+      return img.encodePng(image);
+    }
+
+    /// 素材目录里实际存在的文件名。
+    Future<Set<String>> storedNames() async {
+      final dir = await StickerStore.ensureDir();
+      return {
+        for (final f in dir.listSync().whereType<File>()) p.basename(f.path),
+      };
+    }
+
+    test('声明尺寸极大的图被解码前拒绝且不落盘，同包其余贴纸照常导入（NFR-06）', () async {
+      final provider = await newStickerProvider();
+      final bombBytes = bombPng();
+      final goodBytes = pngOf(11);
+      final bomb = stickerOf(bombBytes, '解压炸弹');
+      final good = stickerOf(goodBytes, '正常贴纸');
+
+      final packed = await SharePackService.instance.buildPack(
+        packName: '夹带炸弹的包',
+        author: '陌生人',
+        templates: [
+          templateOf(
+            'tpl-bomb',
+            name: '引用了炸弹的模板',
+            elements: [StickerElement(key: bomb.stickerKey)],
+          ),
+        ],
+        stickers: [bomb, good],
+        stickerBytes: {bomb.fileName: bombBytes, good.fileName: goodBytes},
+      );
+
+      // 打包与解包只搬运字节，这道闸在落盘那一步（NFR-06）。
+      final pack = SharePackService.instance.parsePack(packed);
+      expect(pack.stickerBytes[bomb.fileName], bombBytes);
+
+      // 导入页的循环：逐张 importFromBytes，返回 null 即这一张被跳过。
+      final saved = <String, CustomSticker?>{};
+      for (final s in pack.stickers) {
+        saved[s.name] = await provider.importFromBytes(
+          pack.stickerBytes[s.fileName]!,
+          name: s.name,
+        );
+      }
+
+      expect(saved['解压炸弹'], isNull, reason: '超出解码上限的图必须在解码前就被拒');
+      expect(saved['正常贴纸'], isNotNull, reason: '一张坏图不能中断整包导入');
+      expect(provider.stickers.map((s) => s.id).toList(), [good.id]);
+      expect(await storedNames(), {good.fileName}, reason: '被拒的图一个字节都不许落盘');
+
+      // 模板照常安装，被拒的贴纸退化为缺失占位（FIX-03），而不是让整包失败。
+      final templates = await newProvider();
+      final installed = await templates.installTemplates(pack.templates);
+      expect(installed.single.canvas!.stickerKeys, {bomb.stickerKey});
+    });
+
+    test(
+      '包里 3000×2000 的贴纸落盘前被压到 REQ-20.5 的上限内（NFR-06）',
+      () async {
+        final provider = await newStickerProvider();
+        final bigBytes = bigPng(3000, 2000);
+        final big = stickerOf(bigBytes, '朋友的大图');
+
+        final packed = await SharePackService.instance.buildPack(
+          packName: '大图包',
+          author: '',
+          templates: const [],
+          stickers: [big],
+          stickerBytes: {big.fileName: bigBytes},
+        );
+        expect(
+          packed.lengthInBytes,
+          lessThan(SharePackService.maxPackBytes),
+          reason: '包本身没超限，确保命中的是落盘归一化这道闸',
+        );
+
+        final pack = SharePackService.instance.parsePack(packed);
+        final saved = await provider.importFromBytes(
+          pack.stickerBytes[big.fileName]!,
+          name: big.name,
+        );
+        expect(saved, isNotNull, reason: '尺寸在解码上限内，应压缩后导入而不是跳过');
+
+        final stored = File(
+          StickerStore.pathOf(saved!.id, saved.ext),
+        ).readAsBytesSync();
+        expect(stored.length, lessThanOrEqualTo(StickerStore.maxBytes));
+        final decoded = img.decodeImage(stored)!;
+        expect(decoded.width, lessThanOrEqualTo(StickerStore.maxEdge));
+        expect(decoded.height, lessThanOrEqualTo(StickerStore.maxEdge));
+        expect(decoded.width, StickerStore.maxEdge, reason: '长边压到上限，等比缩放');
+        expect(decoded.height, 683, reason: '3:2 等比缩放后的短边');
+        expect(saved.id, StickerStore.idOf(stored), reason: 'id 恒等于落盘字节的 sha1');
+        // 分享包来的大图不再原样落盘，sha1 必然改变，模板里的 img:<sha1>
+        // 引用随之退化为缺失占位（FIX-03）。本应用 exportPack 产出的包走不到这条路：
+        // 导出前素材已经在 REQ-20.5 的上限内。
+        expect(saved.id, isNot(big.id));
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+  });
+
+  // ================= 分享包携带模板照片 =================
+
+  group('分享包携带模板照片（FIX-01.2）', () {
+    useTempDocuments();
+
+    late Directory album;
+    late File photo;
+    late Uint8List photoBytes;
+
+    setUp(() async {
+      album = await Directory.systemTemp.createTemp('pagenote-album');
+      photoBytes = pngOf(12);
+      photo = File(p.join(album.path, 'trip.png'));
+      await photo.writeAsBytes(photoBytes);
+    });
+
+    tearDown(() async {
+      if (await album.exists()) await album.delete(recursive: true);
+    });
+
+    JournalTemplate photoTemplate() => templateOf(
+      'tpl-with-photo',
+      name: '带照片的模板',
+      elements: [
+        ImageElement(path: photo.path),
+        TextElement(text: '旅行记录'),
+      ],
+    );
+
+    /// 本机痕迹：盘符、照片目录全路径与其中的路径片段、当前用户名。
+    void expectClean(String text) {
+      expect(
+        text,
+        isNot(matches(RegExp(r'[A-Za-z]:[\\/]'))),
+        reason: '不得出现 Windows 盘符',
+      );
+      expect(text, isNot(contains(album.path)));
+      for (final segment in p.split(album.path)) {
+        if (segment.length > 3 && !segment.contains(':')) {
+          expect(text, isNot(contains(segment)), reason: '路径片段「$segment」泄漏了');
+        }
+      }
+      final user = Platform.environment['USERNAME'] ?? '';
+      if (user.length > 2) expect(text, isNot(contains(user)));
+    }
+
+    test('开关关闭（默认）：照片不入包，画布只剩占位框（FIX-01.1）', () async {
+      final packed = await SharePackService.instance.buildPack(
+        packName: '模板包',
+        author: '',
+        templates: [photoTemplate()],
+      );
+
+      expect(
+        namesOf(packed).where((n) => n.startsWith('photos/')),
+        isEmpty,
+        reason: '默认不带私人照片，包内不该出现 photos/',
+      );
+      expectClean(textOf(packed));
+
+      final pack = SharePackService.instance.parsePack(packed);
+      expect(pack.photoBytes, isEmpty);
+      final canvas = pack.templates.single.canvas!;
+      expect(canvas.hasImagePaths, isFalse, reason: '路径一律清空');
+      expect(canvas.images.length, 1, reason: '占位框本身要保留');
+    });
+
+    test('开关打开：照片作为附件入包，安装时重映射到本机新路径（FIX-01.2/01.3）', () async {
+      final local = photoTemplate();
+      final packed = await SharePackService.instance.buildPack(
+        packName: '带照片的模板包',
+        author: '阿拾',
+        templates: [local],
+        includePhotos: true,
+      );
+
+      expect(namesOf(packed), contains('photos/trip.png'));
+      // REQ-21.4 仍是硬约束：照片进了包，文本条目里也不许留下本机绝对路径。
+      expectClean(textOf(packed));
+      // 调用方内存里的模板对象不受影响，本机路径还在。
+      expect(local.canvas!.images.single.path, photo.path);
+
+      final pack = SharePackService.instance.parsePack(packed);
+      expect(pack.photoBytes.keys.toSet(), {'trip.png'});
+      expect(pack.photoBytes['trip.png'], photoBytes, reason: '照片字节原样往返');
+      expect(
+        pack.templates.single.canvas!.images.single.path,
+        'trip.png',
+        reason: '包内只留纯文件名，由导入端重映射',
+      );
+
+      final provider = await newProvider();
+      final installed = await provider.installTemplates(
+        pack.templates,
+        attachments: pack.photoBytes,
+      );
+      final path = provider
+          .byId(installed.single.id)!
+          .canvas!
+          .images
+          .single
+          .path;
+      expect(path, isNot(photo.path), reason: '落到本机附件目录，而不是导出方的路径');
+      expect(p.isAbsolute(path), isTrue);
+      expect(File(path).existsSync(), isTrue);
+      expect(File(path).readAsBytesSync(), photoBytes);
+    });
+  });
+
+  // ================= 素材 id 稳定性 =================
+
+  group('内置素材与模板 id 稳定性（NFR-08）', () {
+    // NFR-08：已发布的素材 / 模板 id **只能新增，不得重命名或删除**。
+    // 存量用户的手账画布里存的是 `vec:<id>`，套用记录里存的是模板 id，
+    // 改名或删除会让老手账的贴纸变成缺失占位、模板引用直接断链。
+    //
+    // 本用例失败即意味着破坏了存量用户数据的素材引用：
+    // - 新增了 id → 允许，把新 id 补进下面的快照即可；
+    // - 删除或改名 → 必须停下来，不能靠改快照把测试「修好」。
+    const publishedStickerIds = <String>{
+      // 自然
+      'flower', 'sun', 'moon', 'cloud', 'rainbow', 'star', 'leaf', 'clover',
+      // 美食
+      'coffee', 'cake', 'icecream', 'cherry',
+      'strawberry', 'watermelon', 'candy', 'donut',
+      // 生活
+      'book', 'camera', 'mail', 'gift', 'bow', 'candle', 'music', 'mug',
+      // 可爱
+      'cat', 'butterfly', 'bird', 'bear', 'heart', 'smiley', 'balloon', 'flag',
+    };
+
+    const publishedTemplateIds = <String>{
+      'builtin-today',
+      'builtin-daily-review',
+      'builtin-reading-notes',
+      'builtin-travel',
+      'builtin-weekly',
+      'builtin-gratitude',
+    };
+
+    test('内置矢量贴纸 id 只增，不删不改名（NFR-08）', () {
+      final ids = vectorStickers.map((s) => s.id).toList();
+      expect(ids.length, ids.toSet().length, reason: 'id 必须唯一，重名会让同一引用指向两张图');
+      expect(
+        ids.toSet(),
+        containsAll(publishedStickerIds),
+        reason: '少了任何一个 id，存量手账里的 vec:<id> 就会变成缺失占位',
+      );
+      // key 前缀同样是引用的一部分，不能顺手改。
+      expect(stickerKeyVector, 'vec:');
+      expect(stickerKeyImage, 'img:');
+      expect(stickerKeyEmoji, 'emoji:');
+    });
+
+    test('内置模板 id 只增，不删不改名（NFR-08）', () {
+      expect(
+        builtinTemplateIds.length,
+        builtinTemplates.length,
+        reason: 'id 必须唯一',
+      );
+      expect(
+        builtinTemplateIds,
+        containsAll(publishedTemplateIds),
+        reason: '少了任何一个 id，套用过该模板的手账与内置补种逻辑都会错乱',
+      );
+      // builtin 标志的唯一可信来源就是这份清单（FIX-02）。
+      for (final id in publishedTemplateIds) {
+        expect(isBuiltinTemplateId(id), isTrue);
+      }
+    });
+  });
+}
+
+/// 把文档目录指向临时目录：StickerStore 与 Attachments 的落盘都走这里，
+/// 测试不得污染真实文档目录。只在需要落盘的分组内调用。
+void useTempDocuments() {
+  late Directory documents;
+  late Future<String> Function() previousDocs;
+  late PathProviderPlatform previousPlatform;
+
+  setUpAll(() async {
+    documents = await Directory.systemTemp.createTemp('pagenote-pack-docs');
+    previousDocs = StickerStore.documentsDir;
+    previousPlatform = PathProviderPlatform.instance;
+    StickerStore.documentsDir = () async => documents.path;
+    PathProviderPlatform.instance = _TempDocuments(documents.path);
+  });
+
+  setUp(() async {
+    await StickerStore.clearAll();
+  });
+
+  tearDownAll(() async {
+    StickerStore.documentsDir = previousDocs;
+    PathProviderPlatform.instance = previousPlatform;
+    if (await documents.exists()) await documents.delete(recursive: true);
+  });
+}
+
+class _TempDocuments extends PathProviderPlatform {
+  _TempDocuments(this.root);
+
+  final String root;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => root;
 }

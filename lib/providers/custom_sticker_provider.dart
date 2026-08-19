@@ -43,7 +43,7 @@ class CustomStickerProvider extends ChangeNotifier {
 
   /// 从相册导入一张图片（REQ-20.1）：同 sha1 视为同一张素材，
   /// 已存在则不重复入库，直接返回既有记录（REQ-20.2）。
-  /// 图片无法解码时返回 null。
+  /// 图片无法解码、或尺寸超出解码上限（NFR-06）时返回 null。
   Future<CustomSticker?> importFromFile(XFile file, {String? name}) async {
     final sticker = await StickerStore.importFile(file, name: name ?? '');
     if (sticker == null) return null;
@@ -51,21 +51,30 @@ class CustomStickerProvider extends ChangeNotifier {
   }
 
   /// 从字节导入（备份恢复 REQ-20.6 与分享包安装 REQ-21.3 复用）：
-  /// id 由字节 sha1 推导，与包内 `<sha1>.png` 的文件名天然对齐，
-  /// 因此模板里的 `img:<sha1>` 引用无需重映射。字节原样落盘，不再压缩，
-  /// 否则 sha1 变化会打断引用。
+  /// 走与 [importFromFile] 相同的归一化路径——先读文件头过尺寸闸（NFR-06），
+  /// 再保证落盘结果在 REQ-20.5 的上限内，不可信字节不会原样落盘。
+  ///
+  /// id 仍是落盘字节的 sha1，与包内 `<sha1>.png` 的文件名天然对齐，
+  /// 因此模板里的 `img:<sha1>` 引用无需重映射；
+  /// 只有超限被压缩过的图 sha1 会变，其引用退化为缺失占位（FIX-03）。
+  ///
+  /// 返回 null 表示**这一张被跳过**：空字节、格式无法识别、尺寸超上限或解码失败。
+  /// 不抛异常，调用方按返回值计数并继续导入其余素材，不中断整包。
   Future<CustomSticker?> importFromBytes(
     Uint8List bytes, {
     required String name,
     String category = '我的',
     String ext = '.png',
   }) async {
-    if (bytes.isEmpty) return null;
-    final safeExt = ext.isEmpty ? '.png' : ext;
-    final id = StickerStore.idOf(bytes);
-    await StickerStore.persistBytes(bytes, safeExt);
+    final stored = await StickerStore.persistNormalizedBytes(bytes, ext: ext);
+    if (stored == null) return null;
     return _put(
-      CustomSticker(id: id, name: name, category: category, ext: safeExt),
+      CustomSticker(
+        id: stored.id,
+        name: name,
+        category: category,
+        ext: stored.ext,
+      ),
     );
   }
 

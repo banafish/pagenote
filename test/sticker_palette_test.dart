@@ -260,6 +260,108 @@ void main() {
     });
   });
 
+  // 扩充后的量级下限：当前实际 1255 项 / 13 类目。
+  // 一律用 greaterThan 而非等值断言 —— 以后继续加字不该把测试改红，
+  // 但整批丢失（比如误删某个类目块）必须立刻暴露。
+  group('emoji 扩充后的规模回归（REQ-17.7）', () {
+    List<EmojiAsset> allEmoji() =>
+        emojiCategories.values.expand((list) => list).toList();
+
+    test('总量与类目数达到扩充后的量级', () {
+      expect(
+        stickerPalette.length,
+        greaterThan(1000),
+        reason: '扩充后应覆盖常用 Unicode 主体（当前 1255 项），跌回三位数说明有整块丢失',
+      );
+      expect(
+        emojiCategories.length,
+        greaterThanOrEqualTo(12),
+        reason: '扩充后拆出了「身体」「服饰」等类目（当前 13 类），类目数不应回退',
+      );
+      for (final entry in emojiCategories.entries) {
+        expect(
+          entry.value.length,
+          greaterThanOrEqualTo(10),
+          reason: '类目「${entry.key}」只剩 ${entry.value.length} 项，太少就不值得单独占一个页签',
+        );
+      }
+    });
+
+    test('扁平列表与类目顺序严格一致', () {
+      expect(stickerPalette, [
+        for (final e in allEmoji()) e.char,
+      ], reason: '面板按 stickerPalette 渲染、按类目分段跳转，两者顺序错位会跳错位置');
+    });
+
+    test('扩充后全集仍无重复字符', () {
+      final seen = <String, String>{};
+      final duplicated = <String>[];
+      for (final entry in emojiCategories.entries) {
+        for (final emoji in entry.value) {
+          final previous = seen[emoji.char];
+          if (previous != null) {
+            duplicated.add('${emoji.char}（$previous / ${entry.key}）');
+          } else {
+            seen[emoji.char] = entry.key;
+          }
+        }
+      }
+      expect(
+        duplicated,
+        isEmpty,
+        reason: '同一 emoji 出现在多个类目：${duplicated.join('、')}',
+      );
+      expect(seen.length, stickerPalette.length);
+    });
+
+    test('每个 emoji 都有多个中文检索词，且字符本身干净', () {
+      final chinese = RegExp(r'[一-龥]');
+      for (final emoji in allEmoji()) {
+        expect(
+          emoji.char.trim(),
+          emoji.char,
+          reason: '「${emoji.char}」的字符带了空白，贴到画布上会串位',
+        );
+        final words = emoji.keywords.split(RegExp(r'\s+'))
+          ..removeWhere((w) => w.isEmpty);
+        expect(
+          words.length,
+          greaterThanOrEqualTo(2),
+          reason: '「${emoji.char}」只有 ${words.length} 个检索词，搜索命中率会明显下降',
+        );
+        // 允许夹带英文别名（如 🦹 的 boss），但中文词至少要有两个，
+        // 否则中文搜索只剩一条命中路径，换个说法就搜不到了。
+        expect(
+          words.where((w) => chinese.hasMatch(w)).length,
+          greaterThanOrEqualTo(2),
+          reason: '「${emoji.char}」的中文检索词不足两个：${emoji.keywords}',
+        );
+      }
+    });
+
+    test('类目名仍为纯中文，且互不重复', () {
+      final names = emojiCategories.keys.toList();
+      expect(names.toSet().length, names.length, reason: '类目名重复，页签会撞车');
+      for (final name in names) {
+        expect(
+          name,
+          matches(RegExp(r'^[一-龥]+$')),
+          reason: '类目名「$name」应为纯中文（面板页签直接显示它）',
+        );
+      }
+    });
+
+    test('扩充进来的每个 emoji 都是可渲染的合法贴纸 key', () {
+      for (final char in stickerPalette) {
+        expect(
+          isKnownStickerKey('$stickerKeyEmoji$char'),
+          isTrue,
+          reason: '「$char」拼出的 key 不被识别，贴到手账上会变成缺失占位',
+        );
+      }
+    });
+  });
+
   group('贴纸换色（REQ-19）', () {
     test('tint 随画布序列化往返保留', () {
       final canvas = JournalCanvas(

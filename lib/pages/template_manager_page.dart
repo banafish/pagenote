@@ -36,6 +36,7 @@ const _cellRatio = 0.62;
 
 /// 导出用的模板副本，画布内的本机照片路径一律清空只留占位框
 /// （FIX-01 + REQ-21.4：包内不得含任何本机绝对路径）。本机模板不受影响。
+/// 用户勾选「包含照片」时不走这里，改由 buildPack 把照片一并打包。
 JournalTemplate templateWithoutPhotos(JournalTemplate template) {
   if (!(template.canvas?.hasImagePaths ?? false)) return template;
   final copy = template.copy();
@@ -51,36 +52,64 @@ Set<String> referencedStickerIds(Iterable<JournalTemplate> templates) => {
         key.substring(stickerKeyImage.length),
 };
 
-/// 导出前的照片提示（FIX-01 语义）：确认后照片不进包，只留占位框。
-/// 返回 true 表示用户同意继续导出。
-Future<bool> confirmDropTemplatePhotos(
+/// 导出前的照片开关（FIX-01.2 / REQ-21.4）：默认不勾，只保留占位框；
+/// 勾选后照片一并进包，由 [SharePackService.buildPack] 改写成纯文件名。
+///
+/// 返回 true 表示带照片导出，false 表示只导出占位框，null 表示用户取消。
+Future<bool?> askIncludeTemplatePhotos(
   BuildContext context,
   List<JournalTemplate> withPhotos,
-) async {
+) {
   final names = withPhotos.take(3).map((t) => '「${t.name}」').join('、');
-  final ok = await showDialog<bool>(
+  final suffix = withPhotos.length > 3 ? ' 等 ${withPhotos.length} 套模板' : '';
+  final limitMb = SharePackService.maxPackBytes ~/ (1024 * 1024);
+  var include = false;
+  return showDialog<bool>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('模板里还留着照片'),
-      content: Text(
-        '$names${withPhotos.length > 3 ? ' 等 ${withPhotos.length} 套模板' : ''}'
-        '的版式里还有本机照片。\n\n'
-        '素材包是发给别人的，不会带上私人照片：导出的模板只保留照片占位框，'
-        '接收方套用后填自己的图。本机模板不受影响。',
+    builder: (dialogContext) => StatefulBuilder(
+      // 勾选态由对话框自管理：外层 setState 不会重建 showDialog 的 builder。
+      builder: (dialogContext, setDialogState) => AlertDialog(
+        title: const Text('模板里还留着照片'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$names$suffix的版式里还有本机照片。'),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: include,
+              onChanged: (v) => setDialogState(() => include = v ?? false),
+              title: const Text('包含照片', style: TextStyle(fontSize: 14)),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+            Text(
+              include
+                  ? '照片会随包发给对方，先确认里面没有不方便外传的内容；'
+                        '带照片的包容易超过 $limitMb MB，超了对方就导不进来。'
+                  : '素材包是发给别人的，通常不该带上私人照片：导出的模板只保留照片占位框，'
+                        '接收方套用后填自己的图。本机模板不受影响。',
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.5,
+                color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, include),
+            child: Text(include ? '带照片导出' : '导出'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, false),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialogContext, true),
-          child: const Text('清空照片并导出'),
-        ),
-      ],
     ),
   );
-  return ok == true;
 }
 
 /// 模板管理页（REQ-09.3 + REQ-18）：网格缩略图、更多菜单、排序与空态引导。
@@ -176,14 +205,17 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
 
   /// 导出分享（REQ-18.2 / REQ-21.1）：单个模板走更多菜单，多个走多选态。
   /// 只带被模板引用的自定义贴纸，接收方无需再找素材（REQ-21.3）。
+  /// 画布带照片时先问一次「包含照片」（FIX-01.2），默认不带。
   Future<void> _exportPack(List<JournalTemplate> targets) async {
     if (targets.isEmpty) return;
     final withPhotos = targets
         .where((t) => t.canvas?.hasImagePaths ?? false)
         .toList();
+    var includePhotos = false;
     if (withPhotos.isNotEmpty) {
-      final ok = await confirmDropTemplatePhotos(context, withPhotos);
-      if (!ok || !mounted) return;
+      final choice = await askIncludeTemplatePhotos(context, withPhotos);
+      if (choice == null || !mounted) return;
+      includePhotos = choice;
     }
     final meta = await _askPackMeta(
       targets.length == 1 ? targets.first.name : '我的模板包',
@@ -192,7 +224,11 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
 
     final messenger = ScaffoldMessenger.of(context);
     final stickers = context.read<CustomStickerProvider>();
-    final packed = [for (final t in targets) templateWithoutPhotos(t)];
+    // 带照片时把原始模板交给 buildPack（照片入包 + 路径改写为纯文件名），
+    // 不带时先在这里清干净；两条路都不会把本机绝对路径带进包（REQ-21.4）。
+    final packed = includePhotos
+        ? targets
+        : [for (final t in targets) templateWithoutPhotos(t)];
     final ids = referencedStickerIds(packed);
     try {
       final path = await SharePackService.instance.exportPack(
@@ -204,6 +240,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
             if (ids.contains(s.id)) s,
         ],
         stickerBytes: await stickers.exportBytes(ids: ids),
+        includePhotos: includePhotos,
       );
       // 用户在系统对话框里取消时返回 null，不打扰。
       if (path != null) {

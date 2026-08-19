@@ -185,26 +185,46 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
     final stickerProvider = context.read<CustomStickerProvider>();
     final templateProvider = context.read<TemplateProvider>();
     final stickerIds = <String>[];
+    // 尺寸超限或格式无法识别的素材会被跳过（NFR-06），如实告知用户，
+    // 否则贴纸静默变少、模板里的引用却退化成缺失占位，无从追查。
+    var skipped = 0;
     try {
       // 先落贴纸再装模板：贴纸落库会刷新 CustomStickerIndex,
       // 之后模板里的 `img:<sha1>` 才不会先闪一下占位框。
       for (final s in stickers) {
         final bytes = pack.stickerBytes[s.fileName];
-        if (bytes == null) continue;
+        if (bytes == null) {
+          skipped++;
+          continue;
+        }
         final saved = await stickerProvider.importFromBytes(
           bytes,
           name: s.name.trim().isEmpty ? '未命名素材' : s.name,
           category: s.category,
           ext: s.ext,
         );
-        if (saved != null) stickerIds.add(saved.id);
+        if (saved != null) {
+          stickerIds.add(saved.id);
+        } else {
+          skipped++;
+        }
       }
       // 新 id + originId + builtin = false 由 installTemplates 保证（REQ-21.8）。
+      // photos/ 里的照片交给 attachments，模板画布内的路径按文件名重映射到本机，
+      // 不传就会全部退化成占位框（FIX-01.2 / FIX-01.3）。
       final installed = await templateProvider.installTemplates(
         templates,
+        attachments: pack.photoBytes,
         overwriteSameName: _overwriteSameName,
       );
       if (!mounted) return;
+      if (skipped > 0) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text('$skipped 张素材尺寸超限或无法识别，已跳过')),
+          );
+      }
       Navigator.pop(
         context,
         SharePackImportResult(
@@ -424,6 +444,8 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
     final counts = [
       if (pack.templates.isNotEmpty) '${pack.templates.length} 个模板',
       if (pack.stickers.isNotEmpty) '${pack.stickers.length} 张贴纸',
+      // 对方勾了「包含照片」才有，导入后会落到本机并接回模板（FIX-01.2）。
+      if (pack.photoBytes.isNotEmpty) '${pack.photoBytes.length} 张照片',
       _sizeLabel(widget.bytes.lengthInBytes),
     ].join(' · ');
     return Container(
