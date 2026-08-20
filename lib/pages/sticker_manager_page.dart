@@ -225,7 +225,9 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
         ],
       ),
     );
-    controller.dispose();
+    // 对话框关闭还有 ~150ms 退出动画，TextField 仍在树中依赖 controller，
+    // 立刻 dispose 会触发 _dependents.isEmpty 断言，等动画结束再释放。
+    Future.delayed(const Duration(milliseconds: 400), controller.dispose);
     final trimmed = value?.trim() ?? '';
     return trimmed.isEmpty ? null : trimmed;
   }

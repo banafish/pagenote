@@ -226,8 +226,12 @@ class _LibraryPageState extends State<LibraryPage> {
         ],
       ),
     );
-    nameController.dispose();
-    authorController.dispose();
+    // 对话框关闭还有退出动画，TextField 仍在树中依赖 controller，
+    // 立刻 dispose 会触发 _dependents.isEmpty 断言，等动画结束再释放。
+    Future.delayed(const Duration(milliseconds: 400), () {
+      nameController.dispose();
+      authorController.dispose();
+    });
     if (meta == null) return null;
     return meta.name.isEmpty ? (name: defaultName, author: meta.author) : meta;
   }
