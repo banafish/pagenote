@@ -9,6 +9,9 @@ import '../widgets/entry_card.dart';
 import 'share_card_page.dart';
 
 /// 日历页：按月浏览手账记录。
+///
+/// 双栏与否取决于可用列宽而非窗口宽——回顾页宽屏形态下本页嵌在
+/// 固定宽度的左栏里，仍应保持「月历 + 当日列表」的纵向排列。
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key, required this.onOpenEditor});
 
@@ -44,64 +47,68 @@ class _CalendarPageState extends State<CalendarPage> {
           : DateUtils2.dateKey(DateTime(_month.year, _month.month, 1));
     }
 
-    final isPhone = MediaQuery.sizeOf(context).width < 760;
-    final calendar = _MonthCalendar(
-      month: _month,
-      byDate: byDate,
-      todayKey: todayKey,
-      selectedKey: _selectedDay!,
-      onSelect: (key) => setState(() => _selectedDay = key),
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isPhone = constraints.maxWidth < 760;
+        final calendar = _MonthCalendar(
+          month: _month,
+          byDate: byDate,
+          todayKey: todayKey,
+          selectedKey: _selectedDay!,
+          onSelect: (key) => setState(() => _selectedDay = key),
+        );
 
-    final dayList = _DayEntries(
-      dateKey: _selectedDay!,
-      entries: byDate[_selectedDay!] ?? [],
-      onOpen: (entry) => widget.onOpenEditor(context, entry),
-      onToggleFavorite: (id) =>
-          context.read<JournalProvider>().toggleFavorite(id),
-      onDelete: (id) => deleteWithUndo(context, id),
-      onShare: (entry) => Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry))),
-      onNewEntry: () => widget.onOpenEditor(
-        context,
-        JournalEntry(
-          id: JournalProvider.newId(),
-          date: _selectedDay!,
-          title: '',
-          content: '',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-      ),
-    );
-
-    return SafeArea(
-      bottom: false,
-      child: isPhone
-          ? ListView(
-              padding: const EdgeInsets.only(bottom: 24),
-              children: [_header(), calendar, dayList],
-            )
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 24),
-              children: [
-                _header(),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1060),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: calendar),
-                        const SizedBox(width: 20),
-                        SizedBox(width: 400, child: dayList),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+        final dayList = _DayEntries(
+          dateKey: _selectedDay!,
+          entries: byDate[_selectedDay!] ?? [],
+          onOpen: (entry) => widget.onOpenEditor(context, entry),
+          onToggleFavorite: (id) =>
+              context.read<JournalProvider>().toggleFavorite(id),
+          onDelete: (id) => deleteWithUndo(context, id),
+          onShare: (entry) => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry))),
+          onNewEntry: () => widget.onOpenEditor(
+            context,
+            JournalEntry(
+              id: JournalProvider.newId(),
+              date: _selectedDay!,
+              title: '',
+              content: '',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
             ),
+          ),
+        );
+
+        return SafeArea(
+          bottom: false,
+          child: isPhone
+              ? ListView(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  children: [_header(), calendar, dayList],
+                )
+              : ListView(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  children: [
+                    _header(),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1060),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: calendar),
+                            const SizedBox(width: 20),
+                            SizedBox(width: 400, child: dayList),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        );
+      },
     );
   }
 

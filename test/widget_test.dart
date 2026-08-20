@@ -232,7 +232,20 @@ void main() {
     expect(find.text('还没有自己的素材').hitTestable(), findsOneWidget);
 
     // 回顾：默认落在「日历」（REQ-24.2），高频项不为合并多付一次点击。
+    // 默认 800 宽减去侧栏 81 后日历列仅 719（<760），当日列表在折叠线
+    // 以下，滚过去再断言（列宽判断见 calendar_page.dart 的 LayoutBuilder）。
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('这一天还是空白的一页'),
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(CalendarPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     expect(find.text('这一天还是空白的一页').hitTestable(), findsOneWidget);
 
@@ -444,13 +457,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('还没有自己的素材').hitTestable(), findsOneWidget);
 
-    // 回顾：默认落在「日历」（宽屏当日列表在右侧，无需滚动即可见），
-    // 可切到「统计」。
+    // 回顾：宽屏（≥900dp）下日历与统计并排同屏（REQ-24.2 宽屏形态）——
+    // 左栏日历含当日列表、右栏统计卡组，无需切换即同时可见。
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
     await tester.pumpAndSettle();
     expect(find.text('这一天还是空白的一页').hitTestable(), findsOneWidget);
-    await tester.tap(find.text('统计'));
-    await tester.pumpAndSettle();
     expect(find.text('总篇数').hitTestable(), findsOneWidget);
   });
 
