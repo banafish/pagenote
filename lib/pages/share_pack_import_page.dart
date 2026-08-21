@@ -625,9 +625,13 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
     VoidCallback onTap,
   ) {
     final scheme = Theme.of(context).colorScheme;
+    // 描边画在内容之上（同素材页卡片）:cover 铺满的缩略图不挡圆角线。
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: picked
@@ -691,9 +695,10 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
         ),
       );
     }
+    // 与素材页模板卡片同一套处理:cover 铺满 + 顶部对齐,由卡片圆角统一裁型。
     return RepaintBoundary(
       child: FittedBox(
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
         alignment: Alignment.topCenter,
         child: SizedBox(
           width: 240,

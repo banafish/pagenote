@@ -591,9 +591,14 @@ class _TemplateCard extends StatelessWidget {
     final accent = selected
         ? scheme.primary
         : (highlighted ? scheme.tertiary : null);
+    // 描边走 foregroundDecoration 画在内容之上:缩略图 cover 铺满后
+    // 仍能完整露出顶部圆角线,不会被预览图盖住。
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: accent ?? scheme.outlineVariant.withValues(alpha: 0.5),
@@ -651,9 +656,11 @@ class _TemplateCard extends StatelessWidget {
         ),
       );
     }
+    // cover 铺满缩略图区,顶部对齐:纸面顶到卡边后由卡片圆角统一裁型,
+    // 避免 contain 留缝时直角纸面顶进卡片圆角;整页细节由大图预览负责。
     return RepaintBoundary(
       child: FittedBox(
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
         alignment: Alignment.topCenter,
         child: SizedBox(
           width: 240,
