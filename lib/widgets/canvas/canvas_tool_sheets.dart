@@ -739,6 +739,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               final name = emojiCategories.keys.elementAt(i);
               return ChoiceChip(
                 label: Text(name, style: const TextStyle(fontSize: 12.5)),
+                showCheckmark: false,
                 visualDensity: VisualDensity.compact,
                 selected: name == _emojiCategory,
                 onSelected: (_) => setState(() => _emojiCategory = name),
