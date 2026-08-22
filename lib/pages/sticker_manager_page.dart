@@ -400,7 +400,10 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
         ),
       ),
       clipBehavior: Clip.antiAlias,
+      // 波纹画在上层 Material 上,Container 的 clip 管不到,
+      // 需用 customBorder 让水波纹贴合格子圆角。
       child: InkWell(
+        customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         onTap: () {
           if (widget.selecting) {
             widget.onToggleSelect(sticker);
