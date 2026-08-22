@@ -28,13 +28,22 @@ import '../widgets/template_picker.dart';
 /// 缩放、旋转的图层元素；正文不再是文档流,而是画布上的文本元素。
 /// 心情/天气/活动保留为结构化字段（「信息」面板编辑）,统计照常可用。
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key, this.entry, this.isNew = false});
+  const EditorPage({
+    super.key,
+    this.entry,
+    this.isNew = false,
+    this.editingTemplate,
+  });
 
   /// 传入则为编辑已有手账（先进查看态），否则为新建。
   final JournalEntry? entry;
 
   /// 新建入口（右下角按钮、每日一问引导）：即使带预填草稿也直接进编辑态。
   final bool isNew;
+
+  /// 模板编辑模式（素材页模板卡片「编辑」）：由模板构造草稿，
+  /// 保存时回写该模板而不是新增一篇手账。
+  final JournalTemplate? editingTemplate;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -64,17 +73,25 @@ class _EditorPageState extends State<EditorPage> {
   @override
   void initState() {
     super.initState();
+    final tpl = widget.editingTemplate;
     _draft =
         widget.entry?.copy() ??
         JournalEntry(
           id: JournalProvider.newId(),
           date: DateUtils2.dateKey(DateTime.now()),
-          title: '',
-          content: '',
+          title: tpl?.title ?? '',
+          content: tpl?.content ?? '',
+          // 模板不保存心情/天气取值；给个样例值让画布上的组件像
+          // 素材页缩略图一样有内容可渲染。
+          mood: tpl == null ? null : Mood.calm,
+          tags: tpl == null ? null : List.from(tpl.tags),
+          // clone 隔离：编辑中途的改动不能先漏到素材页的预览上。
+          canvas: tpl?.canvas?.clone(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
     _isEditing = widget.entry != null && !widget.isNew;
+    // 查看态只属于打开已有手账；模板编辑（无 entry）直接进可改动态。
     _viewMode = _isEditing;
     // 旧数据无画布 → 自动合成等价元素（文本框 + 图片 + 组件 + 旧贴纸）。
     _canvas = _draft.canvas ?? synthesizeCanvas(_draft);
@@ -135,6 +152,9 @@ class _EditorPageState extends State<EditorPage> {
   // ---------------- 组件同步（结构化字段 ↔ 画布组件元素） ----------------
 
   void _syncComponents() {
+    // 模板编辑模式：画布上的组件就是模板内容本身，不随草稿字段增删——
+    // 模板不保存心情/天气取值，不能因草稿为空而拆掉模板里的组件。
+    if (widget.editingTemplate != null) return;
     void ensure(ComponentKind kind, bool present, Offset at) {
       final existing = _canvas.componentOf(kind);
       if (!present) {
@@ -190,7 +210,19 @@ class _EditorPageState extends State<EditorPage> {
   bool get _hasPhotos =>
       _canvas.images.any((e) => e.path.isNotEmpty) || _draft.images.isNotEmpty;
 
+  /// 画布 → 标题/正文文本（保存手账与保存模板共用的回写规则）。
+  String get _canvasTitle => _titleElement?.text.trim() ?? '';
+
+  String get _canvasBody => [
+    if (_bodyElement != null && _bodyElement!.text.trim().isNotEmpty)
+      _bodyElement!.text.trim(),
+    for (final t in _canvas.texts.where((t) => t.role.isEmpty))
+      if (t.text.trim().isNotEmpty) t.text.trim(),
+  ].join('\n\n');
+
   Future<void> _save() async {
+    // 模板编辑模式：回写模板本身，不产生手账（素材页「编辑」入口）。
+    if (widget.editingTemplate != null) return _saveTemplate();
     if (!_hasText && !_hasPhotos) {
       ScaffoldMessenger.of(
         context,
@@ -202,21 +234,14 @@ class _EditorPageState extends State<EditorPage> {
 
     // 画布 → 结构化字段：标题/正文回写（搜索、统计、导出依赖）,
     // 照片元素路径同步进 images（备份、回收站清理、只看有图复用现有逻辑）。
-    final title = _titleElement;
     final oldImages = List<String>.from(_draft.images);
-    _draft.title = title?.text.trim() ?? '';
-    final bodyTexts = [
-      if (_bodyElement != null && _bodyElement!.text.trim().isNotEmpty)
-        _bodyElement!.text.trim(),
-      for (final t in _canvas.texts.where((t) => t.role.isEmpty))
-        if (t.text.trim().isNotEmpty) t.text.trim(),
-    ];
-    _draft.content = bodyTexts.join('\n\n');
-    _draft.images = [
-      for (final e in _canvas.images)
-        if (e.path.isNotEmpty) e.path,
-    ];
     _draft
+      ..title = _canvasTitle
+      ..content = _canvasBody
+      ..images = [
+        for (final e in _canvas.images)
+          if (e.path.isNotEmpty) e.path,
+      ]
       ..paper = _canvas.paperId
       ..canvas = _canvas
       // 整理速记：在编辑页保存即转为正式手账（REQ-16）。
@@ -234,13 +259,42 @@ class _EditorPageState extends State<EditorPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  /// 模板编辑模式的保存：整页版式与文字回写原模板（就地更新），
+  /// 不落手账库；照片路径按编辑结果原样保留（等价另存为模板勾选「保留照片」），
+  /// 也不清理移除的照片文件——它们可能仍被来源手账引用。
+  Future<void> _saveTemplate() async {
+    // 比手账保存放宽一档：纯贴纸/纸张的装饰模板没有文字也成立。
+    if (!_hasText && !_hasPhotos && _canvas.elements.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('模板还空着，加点内容再保存吧 ✏️')),
+      );
+      return;
+    }
+    _canvas.fitHeight();
+
+    final provider = context.read<TemplateProvider>();
+    // 以库里最新版为基础回写（编辑期间可能被重命名/挪包），只动内容字段。
+    final template =
+        provider.byId(widget.editingTemplate!.id) ?? widget.editingTemplate!;
+    template
+      ..title = _canvasTitle
+      ..content = _canvasBody
+      ..tags = List.of(_draft.tags)
+      ..canvas = _canvas;
+    await provider.saveTemplate(template);
+    _saved = true;
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
   Future<bool> _confirmDiscard() async {
     // 查看态 / 无改动时直接返回，不弹放弃确认（含打开已有手账未编辑的情况）。
     if (_saved || !_dirty) return true;
     final result = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('放弃这篇手账？'),
+        title: Text(
+          widget.editingTemplate == null ? '放弃这篇手账？' : '放弃对模板的修改？',
+        ),
         content: const Text('未保存的修改将会丢失。'),
         actions: [
           TextButton(
@@ -827,9 +881,14 @@ class _EditorPageState extends State<EditorPage> {
     final scheme = Theme.of(context).colorScheme;
     final isWide = MediaQuery.sizeOf(context).width >= 780;
 
-    // 新建且未动笔画布时,引导从整页模板开始（三步成稿）。
+    // 新建且未动笔画布时,引导从整页模板开始（三步成稿）；
+    // 模板编辑模式不走这条引导。
     final showTemplateChips =
-        !_isEditing && !_dirty && !_hasText && _canvas.images.isEmpty;
+        widget.editingTemplate == null &&
+        !_isEditing &&
+        !_dirty &&
+        !_hasText &&
+        _canvas.images.isEmpty;
 
     final canvasChild = Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -932,7 +991,13 @@ class _EditorPageState extends State<EditorPage> {
               if (shouldPop && context.mounted) Navigator.of(context).pop();
             },
           ),
-          title: Text(_viewMode ? '手账' : (_isEditing ? '编辑手账' : '写手账')),
+          title: Text(
+            _viewMode
+                ? '手账'
+                : widget.editingTemplate != null
+                ? '编辑模板'
+                : (_isEditing ? '编辑手账' : '写手账'),
+          ),
           actions: [
             if (_viewMode)
               IconButton(
@@ -951,7 +1016,9 @@ class _EditorPageState extends State<EditorPage> {
                 icon: const Icon(Icons.redo_rounded),
                 onPressed: _canRedo ? _redo : null,
               ),
-              PopupMenuButton<String>(
+              // 模板模式没有「套用/另存为」的语义，只有撤销/重做/保存。
+              if (widget.editingTemplate == null)
+                PopupMenuButton<String>(
                 icon: Icon(
                   Icons.more_vert_rounded,
                   color: scheme.onSurfaceVariant,

@@ -359,6 +359,8 @@ class _PackDetailPageState extends State<PackDetailPage>
 
   Future<void> _onTemplateAction(String action, JournalTemplate template) async {
     switch (action) {
+      case 'edit':
+        await _editTemplate(template);
       case 'rename':
         await _renameTemplate(template);
       case 'duplicate':
@@ -369,6 +371,23 @@ class _PackDetailPageState extends State<PackDetailPage>
         }
       case 'delete':
         await _deleteTemplate(template);
+    }
+  }
+
+  /// 编辑模板整页版式（就地更新）：复用手账编辑器，保存回写该模板本身。
+  /// 网格刷新由 TemplateProvider.saveTemplate 的 notifyListeners 驱动。
+  Future<void> _editTemplate(JournalTemplate template) async {
+    final saved =
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => EditorPage(editingTemplate: template),
+          ),
+        ) ??
+        false;
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已更新模板「${template.name}」✨')),
+      );
     }
   }
 
@@ -1549,6 +1568,18 @@ class _TemplateCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               itemBuilder: (context) => [
+                // 内置模板只读（REQ-26），编辑只对我的模板开放。
+                if (!template.builtin)
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined, size: 19),
+                        SizedBox(width: 10),
+                        Text('编辑'),
+                      ],
+                    ),
+                  ),
                 if (!template.builtin)
                   const PopupMenuItem(
                     value: 'rename',

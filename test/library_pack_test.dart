@@ -11,6 +11,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/template.dart';
+import 'package:pagenote/pages/editor_page.dart';
 import 'package:pagenote/pages/library_page.dart';
 import 'package:pagenote/pages/pack_detail_page.dart';
 import 'package:pagenote/providers/custom_sticker_provider.dart';
@@ -19,6 +20,7 @@ import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
 import 'package:pagenote/utils/sticker_store.dart';
+import 'package:pagenote/widgets/canvas/canvas_editor.dart';
 import 'package:pagenote/widgets/template_picker.dart';
 
 /// 素材包优先浏览（REQ-26～28）的五条关键路径（NFR-15）：
@@ -345,5 +347,91 @@ void main() {
     expect(find.text('共 1 套'), findsNWidgets(2));
     // 内置 badge 在 tile 上保留（REQ-28.3）。
     expect(find.text('内置'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('模板「编辑」：复用编辑器就地更新原模板，不产生手账（REQ-18.3）', (
+    tester,
+  ) async {
+    final (journal, settings, templates, stickers) = await bootstrap(tester);
+    // 未分组的一套旧式纯文本模板：编辑时自动合成画布，保存升级为整页版式。
+    await templates.saveTemplate(
+      JournalTemplate(
+        id: 'tpl-edit-me',
+        name: '待编辑',
+        title: '旧标题',
+        content: '旧正文',
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        const PackDetailPage.ungrouped(),
+        journal: journal,
+        settings: settings,
+        templates: templates,
+        stickers: stickers,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 我的模板：更多菜单里提供「编辑」。
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑'), findsOneWidget);
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+
+    // 编辑器以模板模式打开：直接进编辑态，画布上已有模板内容。
+    expect(find.byType(EditorPage), findsOneWidget);
+    expect(find.text('编辑模板'), findsOneWidget);
+    expect(find.byType(CanvasEditor), findsOneWidget);
+    expect(find.text('旧正文'), findsOneWidget);
+    expect(find.text('套用模板'), findsNothing, reason: '模板模式不提供套用/另存');
+
+    // 加一块自由文字后保存：回写原模板本身。
+    await tester.tap(find.byTooltip('文字'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '新加的文字');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('保存'));
+    await tester.pumpAndSettle();
+
+    final saved = templates.byId('tpl-edit-me')!;
+    expect(saved.canvas, isNotNull, reason: '纯文本模板经编辑升级为整页版式');
+    expect(saved.content, contains('旧正文'));
+    expect(saved.content, contains('新加的文字'), reason: '编辑结果就地回写原模板');
+    expect(saved.title, '旧标题');
+    expect(saved.name, '待编辑', reason: '名字等元数据保持不动');
+    expect(journal.entries, isEmpty, reason: '编辑模板不产生手账');
+    // 回到详情页：更新提示可见，网格仍在。
+    expect(find.byType(PackDetailPage), findsOneWidget);
+    expect(find.textContaining('已更新模板'), findsOneWidget);
+    expect(find.text('待编辑'), findsOneWidget);
+  });
+
+  testWidgets('内置模板菜单不出现「编辑」，保持只读现状（REQ-26）', (tester) async {
+    final (journal, settings, templates, stickers) = await bootstrap(tester);
+
+    await tester.pumpWidget(
+      wrap(
+        const PackDetailPage.builtin(),
+        journal: journal,
+        settings: settings,
+        templates: templates,
+        stickers: stickers,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 内置卡片的更多菜单：只有复制与导出，没有编辑/重命名/删除。
+    await tester.tap(find.byTooltip('更多').first);
+    await tester.pumpAndSettle();
+    expect(find.text('编辑'), findsNothing);
+    expect(find.text('重命名'), findsNothing);
+    expect(find.text('删除'), findsNothing);
+    expect(find.text('复制为我的模板'), findsOneWidget);
+    expect(find.text('导出分享'), findsOneWidget);
   });
 }
