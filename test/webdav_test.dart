@@ -253,13 +253,10 @@ void main() {
         'webdav.password': base64Encode(utf8.encode(password)),
         'webdav.enabled': true,
         'webdav.intervalDays': 7,
-        'webdav.lastBackupAt': DateTime(
-          2026,
-          8,
-          15,
-          0,
-          0,
-        ).millisecondsSinceEpoch,
+        // 相对当前时间取 3 天前,避免固定日期随真实时间推移变成“已到期”。
+        'webdav.lastBackupAt': DateTime.now()
+            .subtract(const Duration(days: 3))
+            .millisecondsSinceEpoch,
       });
       expect(s.webdavBackupDue, isFalse);
 
