@@ -16,8 +16,13 @@ import '../../providers/journal_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/template_provider.dart';
 import '../../utils/sticker_store.dart';
+import '../sticker_pack_sheet.dart';
 
 /// 画布工具面板（调研一/二阶段）：素材与属性编辑的底部弹层集合。
+
+/// 「我的」页签的未分组过滤值（packId 为 null 的贴纸）。
+/// 包 id 由 makeId 生成，不会与该哨兵值撞车。
+const _mineUngroupedFilter = '__ungrouped__';
 
 /// 文字可选墨色。
 const textInkColors = <int>[
@@ -136,6 +141,10 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
 
   /// 表情页签当前类目（REQ-17.7）。
   String _emojiCategory = emojiCategories.keys.first;
+
+  /// 「我的」页签的包过滤（v7）：null = 全部，
+  /// [_mineUngroupedFilter] = 未分组，其余为包 id。
+  String? _minePackFilter;
 
   @override
   void dispose() {
@@ -773,11 +782,30 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     );
   }
 
-  // ---------------- 我的页签（REQ-20） ----------------
+  // ---------------- 我的页签（REQ-20 + v7 素材包） ----------------
 
   Widget _mineTab() {
     final scheme = Theme.of(context).colorScheme;
-    final stickers = context.watch<CustomStickerProvider>().stickers;
+    final provider = context.watch<CustomStickerProvider>();
+    final stickers = provider.stickers;
+    final ungrouped = provider.ungroupedStickers;
+    // 空包不进切换条：面板是挑素材的地方，没有素材的分组没有意义。
+    final packs = [
+      for (final pack in provider.packs)
+        if (provider.stickersOfPack(pack.id).isNotEmpty) pack,
+    ];
+    // 过滤目标已被解散 / 删除时回落到全部（不改 state，下次选择自然修正）。
+    final filter =
+        _minePackFilter != null &&
+            _minePackFilter != _mineUngroupedFilter &&
+            provider.packById(_minePackFilter!) == null
+        ? null
+        : _minePackFilter;
+    final visible = filter == null
+        ? stickers
+        : filter == _mineUngroupedFilter
+        ? ungrouped
+        : provider.stickersOfPack(filter);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -814,8 +842,51 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
             ],
           ),
         ),
+        // 素材包切换条（v7）：与表情页签的类目条同一套交互；
+        // 没有任何含素材的包时保持原来的整页网格。
+        if (packs.isNotEmpty)
+          SizedBox(
+            height: 42,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+              itemCount: 1 + (ungrouped.isNotEmpty ? 1 : 0) + packs.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                if (i == 0) {
+                  return ChoiceChip(
+                    label: const Text('全部', style: TextStyle(fontSize: 12.5)),
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    selected: filter == null,
+                    onSelected: (_) => setState(() => _minePackFilter = null),
+                  );
+                }
+                if (i == 1 && ungrouped.isNotEmpty) {
+                  return ChoiceChip(
+                    label: const Text('未分组', style: TextStyle(fontSize: 12.5)),
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    selected: filter == _mineUngroupedFilter,
+                    onSelected: (_) =>
+                        setState(() => _minePackFilter = _mineUngroupedFilter),
+                  );
+                }
+                final pack = packs[i - 1 - (ungrouped.isNotEmpty ? 1 : 0)];
+                return ChoiceChip(
+                  label: Text(pack.name, style: const TextStyle(fontSize: 12.5)),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  selected: filter == pack.id,
+                  onSelected: (_) => setState(() => _minePackFilter = pack.id),
+                );
+              },
+            ),
+          ),
         Expanded(
-          child: stickers.isEmpty ? _mineEmpty(scheme) : _customGrid(stickers),
+          child: stickers.isEmpty
+              ? _mineEmpty(scheme)
+              : _customGrid(visible),
         ),
       ],
     );
@@ -1038,8 +1109,10 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     }
   }
 
-  /// 自定义素材角标菜单：重命名 / 分组 / 删除（REQ-20.4）。
+  /// 自定义素材角标菜单：重命名 / 移动到素材包 / 分组 / 删除（REQ-20.4 + v7）。
   Future<void> _customStickerMenu(CustomSticker sticker) async {
+    final provider = context.read<CustomStickerProvider>();
+    final packName = provider.packById(sticker.packId ?? '')?.name;
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -1052,6 +1125,12 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               title: const Text('重命名'),
               subtitle: Text(sticker.name),
               onTap: () => Navigator.pop(menuContext, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('移动到素材包'),
+              subtitle: Text(packName ?? '未分组'),
+              onTap: () => Navigator.pop(menuContext, 'pack'),
             ),
             ListTile(
               leading: const Icon(Icons.folder_outlined),
@@ -1081,6 +1160,8 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
         final name = await _promptText('重命名素材', '素材名称', sticker.name);
         if (!mounted || name == null) return;
         await context.read<CustomStickerProvider>().rename(sticker.id, name);
+      case 'pack':
+        await moveStickerToPackFlow(context, sticker);
       case 'category':
         final group = await _promptText('素材分组', '分组名称', sticker.category);
         if (!mounted || group == null) return;

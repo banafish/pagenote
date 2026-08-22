@@ -36,6 +36,7 @@ class SharePackData {
     required this.templates,
     required this.stickers,
     required this.stickerBytes,
+    this.packId,
     this.photoBytes = const {},
   });
 
@@ -44,6 +45,10 @@ class SharePackData {
 
   /// 来源署名（pack.json 的 author）；可为空串。
   final String author;
+
+  /// 包内 pack.json 的 id（导出方生成）；老包可能没有。
+  /// 导入端以它做溯源去重：同一个包重复导入归位到同一本地包。
+  final String? packId;
 
   final List<JournalTemplate> templates;
 
@@ -322,6 +327,7 @@ class SharePackService {
     return SharePackData(
       name: (meta['name'] ?? '') as String,
       author: (meta['author'] ?? '') as String,
+      packId: meta['id'] as String?,
       templates: templates,
       stickers: stickers,
       stickerBytes: stickerBytes,

@@ -99,6 +99,7 @@ class CustomSticker {
     this.category = '我的',
     this.keywords = '',
     this.ext = '.png',
+    this.packId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -107,6 +108,10 @@ class CustomSticker {
   String name;
   String category;
   String keywords;
+
+  /// 所属素材包（[StickerPack.id]）；null = 未分组。
+  /// 分享包导入时按包落位，相册单张导入落在未分组。
+  String? packId;
 
   /// 文件扩展名（含点）。
   final String ext;
@@ -131,6 +136,7 @@ class CustomSticker {
     'category': category,
     'keywords': keywords,
     'ext': ext,
+    'packId': packId,
     'createdAt': createdAt.millisecondsSinceEpoch,
   };
 
@@ -140,6 +146,52 @@ class CustomSticker {
     category: (map['category'] ?? '我的') as String,
     keywords: (map['keywords'] ?? '') as String,
     ext: (map['ext'] ?? '.png') as String,
+    packId: map['packId'] as String?,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(
+      (map['createdAt'] ?? 0) as int,
+    ),
+  );
+}
+
+/// 素材包：自定义贴纸的分组容器。
+///
+/// 两条来源：分享包导入（[originId] 记录包内 pack.json 的 id，
+/// 同一个包重复导入时按它归位而不是再建一个同名包，与模板的
+/// originId 同一套溯源语义）与用户在管理页手工新建。
+class StickerPack {
+  StickerPack({
+    required this.id,
+    required this.name,
+    this.author = '',
+    this.originId,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  /// 本机包 id（`pack-<makeId()>` 风格，备份恢复时原样保留）。
+  final String id;
+  String name;
+
+  /// 来源署名（分享包的 author）；手工建的包为空。
+  String author;
+
+  /// 分享包内 pack.json 的 id；手工建的包为 null。
+  final String? originId;
+
+  final DateTime createdAt;
+
+  Map<String, Object?> toMap() => {
+    'id': id,
+    'name': name,
+    'author': author,
+    'originId': originId,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+  };
+
+  static StickerPack fromMap(Map<String, Object?> map) => StickerPack(
+    id: map['id']! as String,
+    name: (map['name'] ?? '') as String,
+    author: (map['author'] ?? '') as String,
+    originId: map['originId'] as String?,
     createdAt: DateTime.fromMillisecondsSinceEpoch(
       (map['createdAt'] ?? 0) as int,
     ),

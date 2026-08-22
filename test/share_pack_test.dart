@@ -202,6 +202,9 @@ void main() {
       final pack = SharePackService.instance.parsePack(bytes);
       expect(pack.name, '秋日旅行模板集');
       expect(pack.author, '阿拾');
+      // pack.json 的 id 原样带回，导入端据此做同包去重（v7）。
+      expect(pack.packId, isNotNull);
+      expect(pack.packId, startsWith('pack-'));
       expect(pack.templates.length, 2);
       expect(pack.templates.map((t) => t.name).toList(), ['秋日跨页', '车票拼贴']);
       expect(pack.templates.first.canvas!.paperId, 'sakura');

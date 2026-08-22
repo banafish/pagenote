@@ -188,6 +188,9 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
     // 尺寸超限或格式无法识别的素材会被跳过（NFR-06），如实告知用户，
     // 否则贴纸静默变少、模板里的引用却退化成缺失占位，无从追查。
     var skipped = 0;
+    // 落位包按需创建：第一张贴纸保存成功才建（纯模板包不产生空包），
+    // 同一个包重复导入时按 pack.json 的 id 归位到既有包。
+    String? packId;
     try {
       // 先落贴纸再装模板：贴纸落库会刷新 CustomStickerIndex,
       // 之后模板里的 `img:<sha1>` 才不会先闪一下占位框。
@@ -197,11 +200,20 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
           skipped++;
           continue;
         }
+        if (packId == null) {
+          final packRecord = await stickerProvider.ensureImportedPack(
+            name: pack.name,
+            author: pack.author,
+            originId: pack.packId,
+          );
+          packId = packRecord.id;
+        }
         final saved = await stickerProvider.importFromBytes(
           bytes,
           name: s.name.trim().isEmpty ? '未命名素材' : s.name,
           category: s.category,
           ext: s.ext,
+          packId: packId,
         );
         if (saved != null) {
           stickerIds.add(saved.id);

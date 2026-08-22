@@ -6,10 +6,14 @@ import '../models/canvas_page.dart';
 import '../models/journal_entry.dart';
 import '../models/sticker_assets.dart';
 import '../models/template.dart' show JournalTemplate;
+import '../utils/journal_id.dart';
 import '../utils/sticker_store.dart';
 
 /// 自定义图片贴纸仓库（REQ-20）：维护 DB 记录、stickers/ 目录文件与
 /// 全局索引 [CustomStickerIndex] 三者同步。
+///
+/// v7 起同时管理素材包（[StickerPack]）：分享包导入与手工新建的贴纸分组，
+/// 贴纸经 [CustomSticker.packId] 挂到包上，null 为未分组。
 class CustomStickerProvider extends ChangeNotifier {
   CustomStickerProvider({AppDatabase? database})
     : _db = database ?? AppDatabase.instance;
@@ -17,10 +21,22 @@ class CustomStickerProvider extends ChangeNotifier {
   final AppDatabase _db;
 
   List<CustomSticker> _backing = [];
+  List<StickerPack> _packBacking = [];
   bool loaded = false;
 
   /// 全部自定义贴纸，新导入的在前。
   List<CustomSticker> get stickers => List.unmodifiable(_backing);
+
+  /// 全部素材包，新建的在前。
+  List<StickerPack> get packs => List.unmodifiable(_packBacking);
+
+  /// 未分组（packId 为 null）的贴纸。
+  List<CustomSticker> get ungroupedStickers =>
+      [for (final s in _backing) if (s.packId == null) s];
+
+  /// 指定包内的贴纸（包不存在时为空）。
+  List<CustomSticker> stickersOfPack(String packId) =>
+      [for (final s in _backing) if (s.packId == packId) s];
 
   /// 现有分组（REQ-20.4「我的」页签按此分段）。
   List<String> get categories {
@@ -31,11 +47,19 @@ class CustomStickerProvider extends ChangeNotifier {
   CustomSticker? byId(String id) =>
       _backing.where((s) => s.id == id).firstOrNull;
 
+  StickerPack? packById(String id) =>
+      _packBacking.where((p) => p.id == id).firstOrNull;
+
+  StickerPack? packByOriginId(String? originId) => originId == null
+      ? null
+      : _packBacking.where((p) => p.originId == originId).firstOrNull;
+
   /// 读 DB 并刷新全局索引。渲染端（CanvasView / 分享长图）拿不到 Provider，
   /// 一律经 [CustomStickerIndex] 取路径，因此增删改后都要同步这份索引。
   Future<void> load() async {
     await StickerStore.ensureDir();
     _backing = await _db.getAllCustomStickers();
+    _packBacking = await _db.getAllStickerPacks();
     _syncIndex();
     loaded = true;
     notifyListeners();
@@ -58,6 +82,7 @@ class CustomStickerProvider extends ChangeNotifier {
   /// 因此模板里的 `img:<sha1>` 引用无需重映射；
   /// 只有超限被压缩过的图 sha1 会变，其引用退化为缺失占位（FIX-03）。
   ///
+  /// [packId] 指定落位素材包（分享包导入按包落位）；null 为未分组。
   /// 返回 null 表示**这一张被跳过**：空字节、格式无法识别、尺寸超上限或解码失败。
   /// 不抛异常，调用方按返回值计数并继续导入其余素材，不中断整包。
   Future<CustomSticker?> importFromBytes(
@@ -65,6 +90,7 @@ class CustomStickerProvider extends ChangeNotifier {
     required String name,
     String category = '我的',
     String ext = '.png',
+    String? packId,
   }) async {
     final stored = await StickerStore.persistNormalizedBytes(bytes, ext: ext);
     if (stored == null) return null;
@@ -74,6 +100,7 @@ class CustomStickerProvider extends ChangeNotifier {
         name: name,
         category: category,
         ext: stored.ext,
+        packId: packId,
       ),
     );
   }
@@ -101,6 +128,15 @@ class CustomStickerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 把贴纸移入素材包；packId 为 null 即移回未分组。
+  Future<void> moveStickerToPack(String stickerId, String? packId) async {
+    final sticker = byId(stickerId);
+    if (sticker == null || sticker.packId == packId) return;
+    sticker.packId = packId;
+    await _db.setCustomStickerPack(stickerId, packId);
+    notifyListeners();
+  }
+
   /// 删除记录与文件（REQ-20.4）；被引用时由调用方先做二次确认，
   /// 删除后引用处退化为缺失占位（FIX-03）。
   Future<void> delete(String id) async {
@@ -113,11 +149,101 @@ class CustomStickerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 清空全部自定义贴纸（备份覆盖导入前调用）。
+  /// 清空全部自定义贴纸与素材包（备份覆盖导入前调用）。
   Future<void> clearAll() async {
     await _db.deleteAllCustomStickers();
+    await _db.deleteAllStickerPacks();
     await StickerStore.clearAll();
     _backing = [];
+    _packBacking = [];
+    _syncIndex();
+    notifyListeners();
+  }
+
+  // ---------------- 素材包（v7） ----------------
+
+  /// 手工新建素材包；名称为空时不建。
+  Future<StickerPack?> createPack(String name, {String author = ''}) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    final pack = StickerPack(id: 'pack-${makeId()}', name: trimmed, author: author.trim());
+    await _db.insertStickerPack(pack);
+    _packBacking = [pack, ..._packBacking];
+    notifyListeners();
+    return pack;
+  }
+
+  /// 重命名包。
+  Future<void> renamePack(String packId, String name) async {
+    final pack = packById(packId);
+    final trimmed = name.trim();
+    if (pack == null || trimmed.isEmpty || pack.name == trimmed) return;
+    pack.name = trimmed;
+    await _db.insertStickerPack(pack);
+    notifyListeners();
+  }
+
+  /// 分享包导入的落位包（REQ-21.3）：同一个包（pack.json 的 id 相同）
+  /// 重复导入时归位到既有包，而不是再建一个同名包——与模板 installTemplates
+  /// 的 originId 溯源同一套语义。包名缺省时退回「未命名素材包」。
+  Future<StickerPack> ensureImportedPack({
+    required String name,
+    String author = '',
+    String? originId,
+  }) async {
+    final existing = packByOriginId(originId);
+    if (existing != null) return existing;
+    final trimmed = name.trim();
+    final pack = StickerPack(
+      id: 'pack-${makeId()}',
+      name: trimmed.isEmpty ? '未命名素材包' : trimmed,
+      author: author.trim(),
+      originId: originId,
+    );
+    await _db.insertStickerPack(pack);
+    _packBacking = [pack, ..._packBacking];
+    notifyListeners();
+    return pack;
+  }
+
+  /// 备份恢复前确保包记录存在（v7 备份带 sticker_packs.json；
+  /// 老备份没有包，贴纸的 packId 也不会有，自然全部落未分组）。
+  /// 已有同 id 的包保留本机版本，不覆盖（合并恢复语义）。
+  Future<void> ensurePacksExist(Iterable<StickerPack> packs) async {
+    var changed = false;
+    for (final pack in packs) {
+      if (packById(pack.id) != null) continue;
+      await _db.insertStickerPack(pack);
+      _packBacking = [pack, ..._packBacking];
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// 解散包：贴纸全部移回未分组，包记录删除，素材与引用不受影响。
+  Future<void> dissolvePack(String packId) async {
+    final pack = packById(packId);
+    if (pack == null) return;
+    for (final sticker in stickersOfPack(packId)) {
+      sticker.packId = null;
+      await _db.setCustomStickerPack(sticker.id, null);
+    }
+    await _db.deleteStickerPack(packId);
+    _packBacking = _packBacking.where((p) => p.id != packId).toList();
+    notifyListeners();
+  }
+
+  /// 删除包与包内全部素材（含文件）；被引用时由调用方先做二次确认。
+  Future<void> deletePack(String packId) async {
+    final pack = packById(packId);
+    if (pack == null) return;
+    for (final sticker in stickersOfPack(packId)) {
+      await _db.deleteCustomSticker(sticker.id);
+      await StickerStore.delete(StickerStore.pathOf(sticker.id, sticker.ext));
+      _backing = _backing.where((s) => s.id != sticker.id).toList();
+    }
+    await _db.deleteStickerPack(packId);
+    _packBacking = _packBacking.where((p) => p.id != packId).toList();
     _syncIndex();
     notifyListeners();
   }

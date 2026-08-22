@@ -8,6 +8,7 @@ import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
 import '../providers/template_provider.dart';
 import '../utils/sticker_store.dart';
+import '../widgets/sticker_pack_sheet.dart';
 
 /// 素材格子的目标宽度与比例（图 + 一行名字），窄屏自动减列。
 const _cellExtent = 110.0;
@@ -60,7 +61,8 @@ class StickerManagerBody extends StatefulWidget {
   final Future<void> Function() onImport;
 
   /// 导出为素材包（REQ-21.2）：素材菜单的单个导出也走这里。
-  final void Function(List<CustomSticker> targets) onExport;
+  /// [pack] 非空表示整包导出，宿主用它预填包名与署名。
+  final void Function(List<CustomSticker> targets, StickerPack? pack) onExport;
 
   @override
   State<StickerManagerBody> createState() => _StickerManagerBodyState();
@@ -105,11 +107,10 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
   /// 拿不到 context 时退几帧再试，仍拿不到就放弃滚动，只保留描边。
   void _scrollToHighlight([int attempt = 0]) {
     if (!mounted || _highlightIds.isEmpty) return;
+    final provider = context.read<CustomStickerProvider>();
     final ordered = [
-      for (final group in _grouped(
-        context.read<CustomStickerProvider>().stickers,
-      ))
-        for (final sticker in group.items)
+      for (final section in _sections(provider))
+        for (final sticker in section.items)
           if (_highlightIds.contains(sticker.id)) sticker,
     ];
     if (ordered.isEmpty) return;
@@ -140,8 +141,10 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
 
   // ---------------- 单个素材的操作（REQ-20.4） ----------------
 
-  /// 素材操作菜单：重命名 / 分组 / 导出 / 删除。
+  /// 素材操作菜单：重命名 / 移动到素材包 / 分组 / 导出 / 删除。
   Future<void> _stickerMenu(CustomSticker sticker) async {
+    final provider = context.read<CustomStickerProvider>();
+    final packName = provider.packById(sticker.packId ?? '')?.name;
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -154,6 +157,12 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
               title: const Text('重命名'),
               subtitle: Text(sticker.name),
               onTap: () => Navigator.pop(menuContext, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('移动到素材包'),
+              subtitle: Text(packName ?? '未分组'),
+              onTap: () => Navigator.pop(menuContext, 'pack'),
             ),
             ListTile(
               leading: const Icon(Icons.folder_outlined),
@@ -188,6 +197,8 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
         final name = await _promptText('重命名素材', '素材名称', sticker.name);
         if (!mounted || name == null) return;
         await context.read<CustomStickerProvider>().rename(sticker.id, name);
+      case 'pack':
+        if (mounted) await moveStickerToPackFlow(context, sticker);
       case 'category':
         final group = await _promptText('素材分组', '分组名称', sticker.category);
         if (!mounted || group == null) return;
@@ -196,7 +207,7 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
           group,
         );
       case 'export':
-        widget.onExport([sticker]);
+        widget.onExport([sticker], null);
       case 'delete':
         await _delete(sticker);
     }
@@ -271,9 +282,130 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
     if (widget.selectedIds.remove(sticker.id)) widget.onSelectionChanged();
   }
 
+  // ---------------- 素材包的操作（v7） ----------------
+
+  /// 包操作菜单：重命名 / 导出整包 / 解散（素材移入未分组）/ 删除（连素材）。
+  Future<void> _packMenu(StickerPack pack) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (menuContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  pack.name,
+                  style: Theme.of(menuContext)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline_rounded),
+              title: const Text('重命名素材包'),
+              onTap: () => Navigator.pop(menuContext, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share_rounded),
+              title: const Text('导出整个包'),
+              onTap: () => Navigator.pop(menuContext, 'export'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_open_rounded),
+              title: const Text('解散素材包'),
+              subtitle: const Text('素材保留，移入未分组'),
+              onTap: () => Navigator.pop(menuContext, 'dissolve'),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline,
+                color: Color(0xFFE57373),
+              ),
+              title: const Text(
+                '删除包与素材',
+                style: TextStyle(color: Color(0xFFE57373)),
+              ),
+              onTap: () => Navigator.pop(menuContext, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    final provider = context.read<CustomStickerProvider>();
+    switch (action) {
+      case 'rename':
+        final name = await _promptText('重命名素材包', '包名称', pack.name);
+        if (!mounted || name == null) return;
+        await provider.renamePack(pack.id, name);
+      case 'export':
+        widget.onExport(provider.stickersOfPack(pack.id), pack);
+      case 'dissolve':
+        // 解散不动素材本身，勾选集合无需清理。
+        await provider.dissolvePack(pack.id);
+      case 'delete':
+        await _deletePack(pack);
+    }
+  }
+
+  /// 删除包与包内全部素材；有素材被手账或模板引用时先说明后果再确认。
+  Future<void> _deletePack(StickerPack pack) async {
+    final provider = context.read<CustomStickerProvider>();
+    final items = provider.stickersOfPack(pack.id);
+    final referenced = items
+        .where(
+          (s) => provider.isReferenced(
+            s.id,
+            context.read<JournalProvider>().entries,
+            context.read<TemplateProvider>().templates,
+          ),
+        )
+        .length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除素材包？'),
+        content: Text(
+          referenced > 0
+              ? '「${pack.name}」共 ${items.length} 张素材，其中 $referenced 张正被手账或模板使用，'
+                    '删除后那些位置会显示缺失占位。'
+              : '「${pack.name}」与包内 ${items.length} 张素材将被移除。\n'
+                    '只想去掉分组的话，用「解散素材包」可以保留素材。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE57373),
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await provider.deletePack(pack.id);
+    if (!mounted) return;
+    // 勾选集合由宿主持有，清掉已不存在的素材后请宿主刷新顶栏计数。
+    final before = widget.selectedIds.length;
+    widget.selectedIds.removeWhere((id) => provider.byId(id) == null);
+    if (widget.selectedIds.length != before) widget.onSelectionChanged();
+  }
+
   // ---------------- 布局 ----------------
 
-  /// 按分组切段（与素材面板「我的」页签同一套分组语义）。
+  /// 按分组切段（未分组素材沿用 category 语义，与素材面板「我的」页签一致）。
   List<({String category, List<CustomSticker> items})> _grouped(
     List<CustomSticker> all,
   ) {
@@ -290,17 +422,34 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
     ];
   }
 
+  /// 页面分段（v7）：素材包在前（新包在前，与导入来源一眼对应），
+  /// 未分组按 category 其后。空包也保留一段——分组还在，改名、解散、
+  /// 删除都靠这一段的菜单入口。
+  List<({StickerPack? pack, String? category, List<CustomSticker> items})>
+  _sections(CustomStickerProvider provider) {
+    return [
+      for (final pack in provider.packs)
+        (pack: pack, category: null, items: provider.stickersOfPack(pack.id)),
+      for (final group in _grouped(provider.ungroupedStickers))
+        (pack: null, category: group.category, items: group.items),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final stickers = context.watch<CustomStickerProvider>().stickers;
+    final provider = context.watch<CustomStickerProvider>();
+    final stickers = provider.stickers;
     return stickers.isEmpty
         ? _emptyGuide()
         : CustomScrollView(
             slivers: [
               SliverToBoxAdapter(child: _hintBar()),
-              for (final group in _grouped(stickers)) ...[
-                _sectionLabel(group.category, '共 ${group.items.length} 张'),
-                _grid(group.items),
+              for (final section in _sections(provider)) ...[
+                if (section.pack != null)
+                  _packSectionLabel(section.pack!, section.items.length)
+                else
+                  _sectionLabel(section.category!, '共 ${section.items.length} 张'),
+                _grid(section.items),
               ],
               const SliverToBoxAdapter(child: SizedBox(height: 28)),
             ],
@@ -314,7 +463,7 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
       child: Text(
         widget.selecting
             ? '点素材勾选，选好后点右上角导出为素材包'
-            : '点素材可重命名 / 分组 / 删除，长按进入多选',
+            : '点素材可重命名 / 移动到素材包 / 删除，长按进入多选',
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
       ),
     );
@@ -343,6 +492,60 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
             Text(
               hint,
               style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 素材包分段标题：包名 + 张数 + 来源署名，尾部菜单进包操作。
+  /// 与普通分组标题的区别只在行首的包图标，视觉上一眼可分。
+  Widget _packSectionLabel(StickerPack pack, int count) {
+    final scheme = Theme.of(context).colorScheme;
+    final author = pack.author.trim();
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          _gridPadding + 4,
+          14,
+          _gridPadding,
+          8,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.inventory_2_rounded,
+              size: 15,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                pack.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              author.isEmpty ? '共 $count 张' : '来自 $author · 共 $count 张',
+              style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: '素材包操作',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                Icons.more_horiz_rounded,
+                size: 19,
+                color: scheme.onSurfaceVariant,
+              ),
+              onPressed: () => _packMenu(pack),
             ),
           ],
         ),

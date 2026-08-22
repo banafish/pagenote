@@ -387,6 +387,135 @@ void main() {
     expect(small.bytes, lessThanOrEqualTo(StickerStore.maxBytes));
   });
 
+  test('素材包全周期：建包 / 移入移出 / 解散保留素材 / 删包连素材（v7）', () async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    final provider = await newProvider(database: db);
+    final a = (await provider.importFromFile(fileOf(pngOf(40, 40), '甲.png')))!;
+    final b = (await provider.importFromFile(
+      fileOf(pngOf(40, 40, seed: 3), '乙.png'),
+    ))!;
+    expect(provider.ungroupedStickers.length, 2, reason: '相册导入默认未分组');
+
+    final pack = (await provider.createPack(' 旅行包 '))!;
+    expect(pack.name, '旅行包', reason: '包名去掉首尾空白');
+    await provider.moveStickerToPack(a.id, pack.id);
+    await provider.moveStickerToPack(b.id, pack.id);
+    expect(provider.stickersOfPack(pack.id).length, 2);
+    expect(provider.ungroupedStickers, isEmpty);
+    expect(provider.packById(pack.id)!.name, '旅行包');
+
+    // 重新读库确认归属落盘。
+    final reopened = await newProvider(database: db);
+    expect(reopened.packs.single.id, pack.id);
+    expect(reopened.byId(a.id)!.packId, pack.id);
+    expect(reopened.stickersOfPack(pack.id).length, 2);
+
+    // 移回未分组后再解散：素材与文件都保留，只剩包记录消失。
+    await provider.moveStickerToPack(a.id, null);
+    await provider.renamePack(pack.id, '空包');
+    await provider.dissolvePack(pack.id);
+    expect(provider.packs, isEmpty);
+    expect(provider.byId(b.id), isNotNull, reason: '解散不动素材');
+    expect(provider.byId(b.id)!.packId, isNull);
+    expect(
+      File(StickerStore.pathOf(b.id, b.ext)).existsSync(),
+      isTrue,
+      reason: '解散不动文件',
+    );
+
+    // 删包则连素材带文件一起清。
+    final pack2 = (await provider.createPack('待删包'))!;
+    await provider.moveStickerToPack(a.id, pack2.id);
+    await provider.moveStickerToPack(b.id, pack2.id);
+    await provider.deletePack(pack2.id);
+    expect(provider.stickers, isEmpty);
+    expect(provider.packs, isEmpty);
+    expect(File(StickerStore.pathOf(a.id, a.ext)).existsSync(), isFalse);
+    final afterDelete = await newProvider(database: db);
+    expect(afterDelete.stickers, isEmpty);
+    expect(afterDelete.packs, isEmpty);
+  });
+
+  test('ensureImportedPack：同一分享包重复导入归位到同一本地包（v7）', () async {
+    final provider = await newProvider();
+    final first = await provider.ensureImportedPack(
+      name: '春日贴纸',
+      author: '阿ban',
+      originId: 'pack-abc',
+    );
+    final again = await provider.ensureImportedPack(
+      name: '春日贴纸',
+      author: '阿ban',
+      originId: 'pack-abc',
+    );
+    expect(again.id, first.id, reason: 'originId 相同即同一包，不建重复包');
+    expect(provider.packs.length, 1);
+    expect(provider.packs.single.author, '阿ban');
+
+    // 老包没有 pack.json id（originId 为 null）时不去重，各建各的。
+    final legacy1 = await provider.ensureImportedPack(name: '老包');
+    final legacy2 = await provider.ensureImportedPack(name: '老包');
+    expect(legacy1.id, isNot(legacy2.id));
+    expect(
+      (await provider.ensureImportedPack(name: '  ')).name,
+      '未命名素材包',
+      reason: '空包名退回默认名，仍可落位',
+    );
+  });
+
+  test('备份包带上素材包清单，恢复侧 ensurePacksExist 重建后 packId 有落位（v7）', () async {
+    final provider = await newProvider();
+    final sticker = (await provider.importFromFile(
+      fileOf(pngOf(48, 48), '包内素材.png'),
+    ))!;
+    final pack = (await provider.createPack('备份的包', author: '作者'))!;
+    await provider.moveStickerToPack(sticker.id, pack.id);
+
+    final zip = await BackupService.instance.buildZip(
+      entries: const [],
+      templates: const [],
+      customStickers: provider.stickers,
+      stickerBytes: await provider.exportBytes(),
+      stickerPacks: provider.packs,
+    );
+    final archive = ZipDecoder().decodeBytes(zip);
+    expect(archive.findFile('sticker_packs.json'), isNotNull, reason: '包清单入包');
+
+    final data = BackupService.instance.parseBackup(zip);
+    expect(data.stickerPacks.single.id, pack.id);
+    expect(data.stickerPacks.single.author, '作者');
+    expect(data.customStickers.single.packId, pack.id);
+
+    // 恢复侧：先重建包记录再落贴纸，归属不丢（覆盖恢复路径）。
+    final restored = await newProvider();
+    await restored.clearAll();
+    await restored.ensurePacksExist(data.stickerPacks);
+    await restored.importFromBytes(
+      data.stickerBytes[sticker.fileName]!,
+      name: sticker.name,
+      category: sticker.category,
+      ext: sticker.ext,
+      packId: sticker.packId,
+    );
+    expect(restored.packs.single.id, pack.id);
+    expect(restored.stickers.single.packId, pack.id);
+
+    // 老备份没有包清单：降级为空，贴纸全部未分组，不得抛异常。
+    final legacy = await BackupService.instance.buildZip(
+      entries: const [],
+      templates: const [],
+      customStickers: provider.stickers,
+      stickerBytes: await provider.exportBytes(),
+    );
+    expect(
+      ZipDecoder().decodeBytes(legacy).findFile('sticker_packs.json'),
+      isNull,
+    );
+    final bare = BackupService.instance.parseBackup(legacy);
+    expect(bare.stickerPacks, isEmpty);
+  });
+
   test('包内伪造的扩展名不能写出素材目录（NFR-06 路径消毒）', () async {
     // stickers.json 里的 ext 与 zip 条目名是两回事，不经条目名校验，
     // 直接拼进文件名就能用 ../ 逃出 stickers/ 覆盖任意文件。

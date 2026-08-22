@@ -4,6 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/canvas_page.dart';
+import 'package:pagenote/models/sticker_assets.dart';
 
 void main() {
   setUpAll(() {
@@ -29,6 +30,14 @@ void main() {
         await sqlite.rawQuery('PRAGMA table_info(templates)');
     expect(templateColumns.map((c) => c['name']), containsAll(
         ['id', 'name', 'title', 'content', 'tags', 'builtin', 'canvas']));
+
+    // v7：素材包表与贴纸归属列。
+    final stickerColumns =
+        await sqlite.rawQuery('PRAGMA table_info(custom_stickers)');
+    expect(stickerColumns.map((c) => c['name']), contains('packId'));
+    final packColumns = await sqlite.rawQuery('PRAGMA table_info(sticker_packs)');
+    expect(packColumns.map((c) => c['name']), containsAll(
+        ['id', 'name', 'author', 'originId', 'createdAt']));
 
     await db.close();
   });
@@ -276,6 +285,58 @@ void main() {
             .map((c) => c['name'])
             .toSet();
     expect(templateColumns, contains('canvas'));
+    await appDb.close();
+    await databaseFactory.deleteDatabase(path);
+  });
+
+  test('v6 → v7 迁移：建 sticker_packs 表，custom_stickers 补 packId,旧数据原样保留（v7）', () async {
+    final dir = await databaseFactory.getDatabasesPath();
+    final path = p.join(dir, 'pagenote-migration-test-v6.db');
+    await databaseFactory.deleteDatabase(path);
+
+    // 手工建一个 v6 库：custom_stickers 是无 packId 的老结构。
+    final v6 = await openDatabase(path, version: 6, onCreate: (db, _) async {
+      await db.execute('''
+        CREATE TABLE custom_stickers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL DEFAULT '',
+          keywords TEXT NOT NULL DEFAULT '',
+          ext TEXT NOT NULL DEFAULT '.png',
+          createdAt INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+          "INSERT INTO custom_stickers VALUES ('abc123', '旧素材', '我的', '', '.png', 1700000000000)");
+    });
+    await v6.close();
+
+    final appDb = AppDatabase.atPath(path);
+    final stickers = await appDb.getAllCustomStickers();
+    expect(stickers.single.id, 'abc123');
+    expect(stickers.single.name, '旧素材');
+    expect(stickers.single.packId, isNull, reason: '存量贴纸归入未分组');
+
+    // 新列可写可读：建包、挂贴纸、读回。
+    await appDb.insertStickerPack(
+      StickerPack(id: 'pack-1', name: '迁移后的包'),
+    );
+    await appDb.setCustomStickerPack('abc123', 'pack-1');
+    expect((await appDb.getAllCustomStickers()).single.packId, 'pack-1');
+    expect((await appDb.getAllStickerPacks()).single.name, '迁移后的包');
+
+    final sqlite = await appDb.database;
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
+    final stickerColumns =
+        (await sqlite.rawQuery('PRAGMA table_info(custom_stickers)'))
+            .map((c) => c['name'])
+            .toSet();
+    expect(stickerColumns, contains('packId'));
+    final packColumns =
+        (await sqlite.rawQuery('PRAGMA table_info(sticker_packs)'))
+            .map((c) => c['name'])
+            .toSet();
+    expect(packColumns, containsAll(['id', 'name', 'author', 'originId', 'createdAt']));
     await appDb.close();
     await databaseFactory.deleteDatabase(path);
   });

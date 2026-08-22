@@ -92,6 +92,7 @@ class _WebDavPageState extends State<WebDavPage> {
       templates: templates.templates,
       customStickers: stickers.stickers,
       stickerBytes: await stickers.exportBytes(),
+      stickerPacks: stickers.packs,
     );
   }
 
@@ -163,12 +164,15 @@ class _WebDavPageState extends State<WebDavPage> {
 
   /// 恢复备份内的自定义图片贴纸（REQ-20.6）,返回落地张数与跳过张数。
   /// 覆盖模式先清空既有素材,与手账、模板的覆盖语义保持一致。
+  /// 素材包记录先行重建（v7）,贴纸的 packId 才有落位；
+  /// 合并模式下同 id 的包保留本机版本。
   Future<({int saved, int skipped})> _restoreStickers(
     CustomStickerProvider stickers,
     BackupData data, {
     required bool overwrite,
   }) async {
     if (overwrite) await stickers.clearAll();
+    await stickers.ensurePacksExist(data.stickerPacks);
     var count = 0;
     var skipped = 0;
     for (final sticker in data.customStickers) {
@@ -182,6 +186,7 @@ class _WebDavPageState extends State<WebDavPage> {
         name: sticker.name,
         category: sticker.category,
         ext: sticker.ext,
+        packId: sticker.packId,
       );
       if (saved != null) {
         count++;

@@ -32,6 +32,7 @@ class BackupData {
     required this.attachments,
     this.customStickers = const [],
     this.stickerBytes = const {},
+    this.stickerPacks = const [],
   });
 
   final List<JournalEntry> entries;
@@ -43,6 +44,9 @@ class BackupData {
 
   /// 贴纸文件名（`<sha1><ext>`）→ 字节内容（REQ-20.6）。
   final Map<String, Uint8List> stickerBytes;
+
+  /// 素材包清单（v7）；旧备份没有该项时为空，贴纸全部落未分组。
+  final List<StickerPack> stickerPacks;
 }
 
 /// 数据导出与导入（REQ-03）：单个 zip，内含 entries.json 与 attachments/ 目录。
@@ -54,6 +58,7 @@ class BackupService {
   static const formatVersion = 1;
   static const _entriesFileName = 'entries.json';
   static const _stickersFileName = 'stickers.json';
+  static const _packsFileName = 'sticker_packs.json';
 
   /// 解包上限（NFR-06 防解压炸弹）：包内条目数与解压后总字节。
   static const _maxArchiveFiles = 20000;
@@ -72,6 +77,7 @@ class BackupService {
     required List<JournalTemplate> templates,
     List<CustomSticker> customStickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
+    List<StickerPack> stickerPacks = const [],
   }) async {
     final archive = Archive();
     final attachmentBytes = <String, Uint8List>{};
@@ -159,6 +165,19 @@ class BackupService {
       archive.addFile(ArchiveFile.bytes('stickers/$name', bytes));
     });
 
+    // 素材包清单（v7）：恢复时按它先重建包记录，贴纸的 packId 才有落位。
+    if (stickerPacks.isNotEmpty) {
+      final packsJson = const JsonEncoder.withIndent(
+        '  ',
+      ).convert([for (final p in stickerPacks) p.toMap()]);
+      archive.addFile(
+        ArchiveFile.bytes(
+          _packsFileName,
+          Uint8List.fromList(utf8.encode(packsJson)),
+        ),
+      );
+    }
+
     final encoder = ZipEncoder();
     return encoder.encodeBytes(archive);
   }
@@ -171,12 +190,14 @@ class BackupService {
     required List<JournalTemplate> templates,
     List<CustomSticker> customStickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
+    List<StickerPack> stickerPacks = const [],
   }) async {
     final bytes = await buildZip(
       entries: entries,
       templates: templates,
       customStickers: customStickers,
       stickerBytes: stickerBytes,
+      stickerPacks: stickerPacks,
     );
     final name =
         'pagenote-backup-${DateTime.now().toIso8601String().substring(0, 10)}.zip';
@@ -292,12 +313,28 @@ class BackupService {
       throw BackupFormatException('备份中的自定义贴纸数据格式不正确');
     }
 
+    // 素材包清单（v7）：旧备份没有 sticker_packs.json，降级为空。
+    List<StickerPack> stickerPacks;
+    try {
+      final packsFile = archive.findFile(_packsFileName);
+      final raw = packsFile == null
+          ? const []
+          : jsonDecode(utf8.decode(packsFile.content as List<int>)) as List;
+      stickerPacks = [
+        for (final m in raw)
+          StickerPack.fromMap((m as Map).cast<String, Object?>()),
+      ];
+    } catch (_) {
+      throw BackupFormatException('备份中的素材包数据格式不正确');
+    }
+
     return BackupData(
       entries: entries,
       templates: templates,
       attachments: attachments,
       customStickers: customStickers,
       stickerBytes: stickerBytes,
+      stickerPacks: stickerPacks,
     );
   }
 

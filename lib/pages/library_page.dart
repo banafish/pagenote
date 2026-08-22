@@ -153,10 +153,16 @@ class _LibraryPageState extends State<LibraryPage> {
 
   /// 把选中的素材打成 kind = sticker 的分享包（REQ-21.2）：
   /// 只带素材文件，不带任何模板，接收方装完即可在「我的」页签里用。
-  Future<void> _exportStickers(List<CustomSticker> targets) async {
+  /// [pack] 非空表示从包菜单发起的整包导出，包名与署名直接预填。
+  Future<void> _exportStickers(
+    List<CustomSticker> targets,
+    StickerPack? pack,
+  ) async {
     if (targets.isEmpty) return;
     final meta = await _askPackMeta(
-      targets.length == 1 ? targets.first.name : '我的素材包',
+      pack?.name ??
+          (targets.length == 1 ? targets.first.name : '我的素材包'),
+      defaultAuthor: pack?.author ?? '',
     );
     if (meta == null || !mounted) return;
     final destination = await askPackExportDestination(context);
@@ -191,10 +197,11 @@ class _LibraryPageState extends State<LibraryPage> {
 
   /// 包名与署名（附录 pack.json 的 name / author）；署名可留空。
   Future<({String name, String author})?> _askPackMeta(
-    String defaultName,
-  ) async {
+    String defaultName, {
+    String defaultAuthor = '',
+  }) async {
     final nameController = TextEditingController(text: defaultName);
-    final authorController = TextEditingController();
+    final authorController = TextEditingController(text: defaultAuthor);
     final meta = await showDialog<({String name, String author})>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -518,7 +525,7 @@ class _LibraryPageState extends State<LibraryPage> {
               : _exportStickers([
                   for (final s in stickers)
                     if (selectedIds.contains(s.id)) s,
-                ]),
+                ], null),
         ),
         const SizedBox(width: 4),
       ],

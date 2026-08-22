@@ -16,6 +16,8 @@ import '../models/template.dart';
 /// - v5：entries 新增 canvas（画布元素树）；templates 新增 canvas（整页版式模板）。
 /// - v6：templates 新增 originId / lastUsedAt / sortIndex（分享包安装与排序，
 ///   FIX-02 + REQ-18）；新建 custom_stickers 表（自定义图片贴纸，REQ-20）。
+/// - v7：新建 sticker_packs 表（素材包）；custom_stickers 新增 packId
+///   （素材按包归组，存量数据 packId 为 NULL 即未分组）。
 class AppDatabase {
   AppDatabase._();
 
@@ -39,7 +41,7 @@ class AppDatabase {
   }
 
   static const _dbName = 'pagenote.db';
-  static const dbVersion = 6;
+  static const dbVersion = 7;
 
   Database? _db;
   bool _inMemory = false;
@@ -106,7 +108,12 @@ class AppDatabase {
       await db.execute(
         'ALTER TABLE templates ADD COLUMN sortIndex INTEGER NOT NULL DEFAULT 0',
       );
-      await _createCustomStickersTable(db);
+      // 迁移链上建的是 v6 时期的老结构（无 packId），由 v7 补加。
+      await _createCustomStickersTable(db, withPack: false);
+    },
+    7: (db) async {
+      await _createStickerPacksTable(db);
+      await db.execute('ALTER TABLE custom_stickers ADD COLUMN packId TEXT');
     },
   };
 
@@ -135,6 +142,7 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_entries_date ON entries(date)');
     await _createTemplatesTable(db);
     await _createCustomStickersTable(db);
+    await _createStickerPacksTable(db);
   }
 
   /// [withCanvas] 为 false 时建 v3 时期的老结构（迁移链上 canvas 由 v5 补加）；
@@ -161,7 +169,11 @@ class AppDatabase {
   }
 
   /// 自定义图片贴纸（REQ-20）：id 为文件内容 sha1，天然跨设备稳定。
-  static Future<void> _createCustomStickersTable(Database db) async {
+  /// [withPack] 为 false 时建 v6 时期的老结构（迁移链上 packId 由 v7 补加）。
+  static Future<void> _createCustomStickersTable(
+    Database db, {
+    bool withPack = true,
+  }) async {
     await db.execute('''
       CREATE TABLE custom_stickers (
         id TEXT PRIMARY KEY,
@@ -169,6 +181,20 @@ class AppDatabase {
         category TEXT NOT NULL DEFAULT '',
         keywords TEXT NOT NULL DEFAULT '',
         ext TEXT NOT NULL DEFAULT '.png',
+        ${withPack ? 'packId TEXT,' : ''}
+        createdAt INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  /// 素材包（v7）：分享包导入与用户手工建的贴纸分组容器。
+  static Future<void> _createStickerPacksTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE sticker_packs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT '',
+        originId TEXT,
         createdAt INTEGER NOT NULL
       )
     ''');
@@ -320,5 +346,43 @@ class AppDatabase {
   Future<void> deleteAllCustomStickers() async {
     final db = await database;
     await db.delete('custom_stickers');
+  }
+
+  /// 把一张贴纸移入指定包；packId 为 null 即移回未分组。
+  Future<void> setCustomStickerPack(String id, String? packId) async {
+    final db = await database;
+    await db.update(
+      'custom_stickers',
+      {'packId': packId},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // ---------------- 素材包（v7） ----------------
+
+  Future<List<StickerPack>> getAllStickerPacks() async {
+    final db = await database;
+    final rows = await db.query('sticker_packs', orderBy: 'createdAt DESC');
+    return rows.map(StickerPack.fromMap).toList();
+  }
+
+  Future<void> insertStickerPack(StickerPack pack) async {
+    final db = await database;
+    await db.insert(
+      'sticker_packs',
+      pack.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteStickerPack(String id) async {
+    final db = await database;
+    await db.delete('sticker_packs', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteAllStickerPacks() async {
+    final db = await database;
+    await db.delete('sticker_packs');
   }
 }
