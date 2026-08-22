@@ -30,6 +30,8 @@ void main() {
         await sqlite.rawQuery('PRAGMA table_info(templates)');
     expect(templateColumns.map((c) => c['name']), containsAll(
         ['id', 'name', 'title', 'content', 'tags', 'builtin', 'canvas']));
+    // v8：模板归属列。
+    expect(templateColumns.map((c) => c['name']), contains('packId'));
 
     // v7：素材包表与贴纸归属列。
     final stickerColumns =
@@ -294,8 +296,25 @@ void main() {
     final path = p.join(dir, 'pagenote-migration-test-v6.db');
     await databaseFactory.deleteDatabase(path);
 
-    // 手工建一个 v6 库：custom_stickers 是无 packId 的老结构。
+    // 手工建一个 v6 库：custom_stickers 是无 packId 的老结构，
+    // templates 是 v6 结构（有 canvas 与溯源列、无 packId）。
     final v6 = await openDatabase(path, version: 6, onCreate: (db, _) async {
+      await db.execute('''
+        CREATE TABLE templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL DEFAULT '',
+          tags TEXT NOT NULL DEFAULT '',
+          builtin INTEGER NOT NULL DEFAULT 0,
+          canvas TEXT NOT NULL DEFAULT '',
+          originId TEXT,
+          lastUsedAt INTEGER,
+          sortIndex INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL
+        )
+      ''');
       await db.execute('''
         CREATE TABLE custom_stickers (
           id TEXT PRIMARY KEY,
@@ -337,6 +356,71 @@ void main() {
             .map((c) => c['name'])
             .toSet();
     expect(packColumns, containsAll(['id', 'name', 'author', 'originId', 'createdAt']));
+    await appDb.close();
+    await databaseFactory.deleteDatabase(path);
+  });
+
+  test('v7 → v8 迁移：templates 补 packId,旧数据原样保留（v8）', () async {
+    final dir = await databaseFactory.getDatabasesPath();
+    final path = p.join(dir, 'pagenote-migration-test-v7.db');
+    await databaseFactory.deleteDatabase(path);
+
+    // 手工建一个 v7 库：templates 是无 packId 的 v7 结构。
+    final v7 = await openDatabase(path, version: 7, onCreate: (db, _) async {
+      await db.execute('''
+        CREATE TABLE sticker_packs (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          author TEXT NOT NULL DEFAULT '',
+          originId TEXT,
+          createdAt INTEGER NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL DEFAULT '',
+          tags TEXT NOT NULL DEFAULT '',
+          builtin INTEGER NOT NULL DEFAULT 0,
+          canvas TEXT NOT NULL DEFAULT '',
+          originId TEXT,
+          lastUsedAt INTEGER,
+          sortIndex INTEGER NOT NULL DEFAULT 0,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+          "INSERT INTO sticker_packs VALUES ('pack-1', '老包', '阿拾', 'pack-old', 1)");
+      await db.execute(
+          "INSERT INTO templates VALUES ('t7', '旧模板', '', '内容', '', 0, '', 'tpl-origin', NULL, 0, 1, 2)");
+    });
+    await v7.close();
+
+    final appDb = AppDatabase.atPath(path);
+    final templates = await appDb.getAllTemplates();
+    expect(templates.single.name, '旧模板');
+    expect(templates.single.originId, 'tpl-origin');
+    expect(templates.single.packId, isNull, reason: '存量模板归入未分组');
+
+    // 新列可写可读：挂包、读回、整包解除。
+    final t = templates.single;
+    t.packId = 'pack-1';
+    await appDb.insertTemplate(t);
+    expect((await appDb.getAllTemplates()).single.packId, 'pack-1');
+    await appDb.clearTemplatePack('pack-1');
+    expect((await appDb.getAllTemplates()).single.packId, isNull);
+    expect((await appDb.getAllStickerPacks()).single.id, 'pack-1');
+
+    final sqlite = await appDb.database;
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
+    final columns =
+        (await sqlite.rawQuery('PRAGMA table_info(templates)'))
+            .map((c) => c['name'])
+            .toSet();
+    expect(columns, contains('packId'));
     await appDb.close();
     await databaseFactory.deleteDatabase(path);
   });

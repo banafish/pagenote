@@ -106,6 +106,10 @@ class SharePackService {
 
   /// 组装分享包 zip 字节（REQ-21.1/21.2）。
   ///
+  /// [packId] 为包的稳定分享 id（整包导出时传包的 originId）：
+  /// 导入端按它把同一个包的重复导入归位到同一本地包。
+  /// 不传则现场生成——散选内容拼的临时包没有持续身份，每次导出都是新包。
+  ///
   /// [includePhotos] 决定模板画布里的照片怎么处理，两条路都不会留下本机绝对路径
   /// ——REQ-21.4 是硬约束，不能只靠调用方自觉，因此这里对副本再处理一遍，
   /// 且不影响调用方内存里的模板对象：
@@ -123,6 +127,7 @@ class SharePackService {
     List<CustomSticker> stickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
     bool includePhotos = false,
+    String? packId,
   }) async {
     final photoBytes = <String, Uint8List>{};
     final templateMaps = <Map<String, Object?>>[];
@@ -159,7 +164,7 @@ class SharePackService {
       'app': 'pagenote',
       'format': formatVersion,
       'kind': _kindOf(templates.isNotEmpty, stickers.isNotEmpty),
-      'id': 'pack-${makeId()}',
+      'id': packId ?? 'pack-${makeId()}',
       'name': packName,
       'author': author,
       'version': 1,
@@ -189,7 +194,7 @@ class SharePackService {
   /// 导出分享包到用户选择的位置（REQ-21.5）。
   /// [destination] 仅移动端生效：saveToFolder 走系统文件选择器由用户挑文件夹直接落盘，
   /// systemShare 写入临时文件后拉起系统分享；桌面端始终是系统保存对话框。
-  /// 返回导出文件路径，用户取消返回 null。
+  /// [packId] 为包的稳定分享 id，语义同 [buildPack]。返回导出文件路径，用户取消返回 null。
   Future<String?> exportPack({
     required String packName,
     required String author,
@@ -197,6 +202,7 @@ class SharePackService {
     List<CustomSticker> stickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
     bool includePhotos = false,
+    String? packId,
     PackExportDestination destination = PackExportDestination.systemShare,
   }) async {
     final bytes = await buildPack(
@@ -206,6 +212,7 @@ class SharePackService {
       stickers: stickers,
       stickerBytes: stickerBytes,
       includePhotos: includePhotos,
+      packId: packId,
     );
     // 文件名含包名与日期（REQ-21.5）；扩展名固定 .zip，
     // 自创扩展名会让微信 / QQ 的「用其他应用打开」失效。

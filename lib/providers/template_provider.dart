@@ -67,6 +67,24 @@ class TemplateProvider extends ChangeNotifier {
   List<JournalTemplate> get userTemplates =>
       _backing.where((t) => !t.builtin).toList();
 
+  /// 指定素材包内的模板（v8；模板随分享包整包落位）。
+  List<JournalTemplate> templatesOfPack(String packId) =>
+      [for (final t in _backing) if (!t.builtin && t.packId == packId) t];
+
+  /// 解除一个包下全部模板的归属（包解散/删除时由素材侧调用）：
+  /// 模板本身保留，回到「我的模板」的未分组。
+  Future<void> detachPack(String packId) async {
+    var touched = false;
+    for (final t in _backing) {
+      if (t.packId == null || t.packId != packId) continue;
+      t.packId = null;
+      touched = true;
+    }
+    if (!touched) return;
+    await _db.clearTemplatePack(packId);
+    notifyListeners();
+  }
+
   /// 首次启动补种内置模板（已存在则跳过）。
   /// 内置模板升级出整页版式后（canvas 列）,存量安装也自动补上版式,
   /// 但保留用户改过的名字等字段。
@@ -228,16 +246,45 @@ class TemplateProvider extends ChangeNotifier {
     await load();
   }
 
-  /// 安装**分享包**中的模板（REQ-21.8，安装语义）：
-  /// 一律重新分配本地 id、原 id 落为 `originId`、`builtin = false`，
+  /// 安装**分享包**中的模板（REQ-21.8，安装语义）。
+  ///
+  /// v8 起随 [packId] 整包落位。同一个包重复导入时按包内稳定 id
+  /// （originId，老包缺失时回退 id）识别「同一模板的新版本」并原位更新：
+  /// 内容换成包里的新版本，本地 id、改名、使用记录与手动排序都保留，
+  /// 先前散落在未分组的同一模板也借此归位回包；
+  /// 用户已把它挪进其它包的，归属保持不变。
+  /// 全新模板仍一律重新分配本地 id、`builtin = false`，
   /// 同名默认保留两者（自动加后缀）。返回实际写入的模板。
   Future<List<JournalTemplate>> installTemplates(
     List<JournalTemplate> incoming, {
     Map<String, Uint8List> attachments = const {},
     bool overwriteSameName = false,
+    String? packId,
   }) async {
     final installed = <JournalTemplate>[];
     for (final raw in incoming) {
+      // 包内稳定 id：优先 originId——转发过几手的包里各自的本机 id 不同，
+      // 只有它不变。回退 id 覆盖从未进过包的模板（如自己导出又导回）。
+      final key = raw.originId ?? raw.id;
+      final existing = _backing
+          .where((t) => !t.builtin && (t.originId == key || t.id == key))
+          .firstOrNull;
+      if (existing != null) {
+        // 同一模板的新版本：名字是用户自己的标签，不跟包走；
+        // 其余内容以包内版本为准，照片按附件重映射到本机。
+        existing
+          ..title = raw.title
+          ..content = raw.content
+          ..tags = List.of(raw.tags)
+          ..canvas = raw.canvas?.clone()
+          ..originId = key
+          ..packId = existing.packId ?? packId
+          ..updatedAt = DateTime.now();
+        await _remapTemplatePhotos(existing, attachments);
+        await _db.insertTemplate(existing);
+        installed.add(existing);
+        continue;
+      }
       final sameName = _backing
           .where((t) => !t.builtin && t.name == raw.name)
           .firstOrNull;
@@ -247,8 +294,8 @@ class TemplateProvider extends ChangeNotifier {
       }
       final t = raw.copyAsNew(
         name: overwriteSameName ? raw.name : _uniqueName(raw.name),
-        originId: raw.originId ?? raw.id,
-      );
+        originId: key,
+      )..packId = packId;
       await _remapTemplatePhotos(t, attachments);
       await _db.insertTemplate(t);
       _backing.add(t);

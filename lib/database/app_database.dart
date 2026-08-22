@@ -18,6 +18,8 @@ import '../models/template.dart';
 ///   FIX-02 + REQ-18）；新建 custom_stickers 表（自定义图片贴纸，REQ-20）。
 /// - v7：新建 sticker_packs 表（素材包）；custom_stickers 新增 packId
 ///   （素材按包归组，存量数据 packId 为 NULL 即未分组）。
+/// - v8：templates 新增 packId（模板同样按素材包归组；分享包导入时
+///   随整包落位，存量数据 packId 为 NULL 即未分组）。
 class AppDatabase {
   AppDatabase._();
 
@@ -41,7 +43,7 @@ class AppDatabase {
   }
 
   static const _dbName = 'pagenote.db';
-  static const dbVersion = 7;
+  static const dbVersion = 8;
 
   Database? _db;
   bool _inMemory = false;
@@ -81,7 +83,12 @@ class AppDatabase {
       await db.execute(
         "ALTER TABLE entries ADD COLUMN activities TEXT NOT NULL DEFAULT ''",
       );
-      await _createTemplatesTable(db, withCanvas: false, withSharing: false);
+      await _createTemplatesTable(
+        db,
+        withCanvas: false,
+        withSharing: false,
+        withPack: false,
+      );
     },
     4: (db) async {
       await db.execute(
@@ -115,6 +122,9 @@ class AppDatabase {
       await _createStickerPacksTable(db);
       await db.execute('ALTER TABLE custom_stickers ADD COLUMN packId TEXT');
     },
+    8: (db) async {
+      await db.execute('ALTER TABLE templates ADD COLUMN packId TEXT');
+    },
   };
 
   static Future<void> _createAll(Database db) async {
@@ -146,11 +156,13 @@ class AppDatabase {
   }
 
   /// [withCanvas] 为 false 时建 v3 时期的老结构（迁移链上 canvas 由 v5 补加）；
-  /// [withSharing] 为 false 时不含 v6 的 originId / lastUsedAt / sortIndex。
+  /// [withSharing] 为 false 时不含 v6 的 originId / lastUsedAt / sortIndex；
+  /// [withPack] 为 false 时不含 v8 的 packId（迁移链上由 v8 补加）。
   static Future<void> _createTemplatesTable(
     Database db, {
     bool withCanvas = true,
     bool withSharing = true,
+    bool withPack = true,
   }) async {
     await db.execute('''
       CREATE TABLE templates (
@@ -162,6 +174,7 @@ class AppDatabase {
         builtin INTEGER NOT NULL DEFAULT 0,
         ${withCanvas ? "canvas TEXT NOT NULL DEFAULT ''," : ''}
         ${withSharing ? 'originId TEXT, lastUsedAt INTEGER, sortIndex INTEGER NOT NULL DEFAULT 0,' : ''}
+        ${withPack ? 'packId TEXT,' : ''}
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
       )
@@ -319,6 +332,17 @@ class AppDatabase {
       orderBy: 'builtin DESC, updatedAt DESC',
     );
     return rows.map(JournalTemplate.fromMap).toList();
+  }
+
+  /// 把一批模板移出指定素材包（packId 置 NULL，包解散/删除时调用）。
+  Future<void> clearTemplatePack(String packId) async {
+    final db = await database;
+    await db.update(
+      'templates',
+      {'packId': null},
+      where: 'packId = ?',
+      whereArgs: [packId],
+    );
   }
 
   // ---------------- 自定义贴纸（REQ-20） ----------------

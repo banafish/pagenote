@@ -464,6 +464,30 @@ void main() {
     );
   });
 
+  test('ensurePackOriginId：手工包首次整包导出时分配稳定分享 id 并落库（v8）', () async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    final provider = await newProvider(database: db);
+    final manual = (await provider.createPack('手工包'))!;
+    expect(manual.originId, isNull, reason: '手工包在首次导出前没有分享 id');
+
+    final first = await provider.ensurePackOriginId(manual.id);
+    final second = await provider.ensurePackOriginId(manual.id);
+    expect(first, startsWith('pack-'));
+    expect(second, first, reason: '分配过就稳定，后续导出复用同一个 id');
+
+    // 落了库才作数：重读后仍是同一个 id，接收方按它归位回这个包。
+    final reopened = await newProvider(database: db);
+    expect(await reopened.ensurePackOriginId(manual.id), first);
+
+    // 导入来的包保持包内原 id，不会被改写。
+    final imported = await provider.ensureImportedPack(
+      name: '朋友包',
+      originId: 'pack-friend',
+    );
+    expect(await provider.ensurePackOriginId(imported.id), 'pack-friend');
+  });
+
   test('备份包带上素材包清单，恢复侧 ensurePacksExist 重建后 packId 有落位（v7）', () async {
     final provider = await newProvider();
     final sticker = (await provider.importFromFile(

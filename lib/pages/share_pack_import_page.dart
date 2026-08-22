@@ -188,9 +188,21 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
     // 尺寸超限或格式无法识别的素材会被跳过（NFR-06），如实告知用户，
     // 否则贴纸静默变少、模板里的引用却退化成缺失占位，无从追查。
     var skipped = 0;
-    // 落位包按需创建：第一张贴纸保存成功才建（纯模板包不产生空包），
-    // 同一个包重复导入时按 pack.json 的 id 归位到既有包。
+    // 落位包按需创建：第一张贴纸或第一批模板落库前建——纯模板包也建包，
+    // 否则它的模板永远散在「我的模板」里（v8）。同一个包重复导入时
+    // 按 pack.json 的 id 归位到既有包，不另建同名包。
     String? packId;
+    Future<String> ensurePack() async {
+      if (packId != null) return packId!;
+      final packRecord = await stickerProvider.ensureImportedPack(
+        name: pack.name,
+        author: pack.author,
+        originId: pack.packId,
+      );
+      packId = packRecord.id;
+      return packId!;
+    }
+
     try {
       // 先落贴纸再装模板：贴纸落库会刷新 CustomStickerIndex,
       // 之后模板里的 `img:<sha1>` 才不会先闪一下占位框。
@@ -200,20 +212,12 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
           skipped++;
           continue;
         }
-        if (packId == null) {
-          final packRecord = await stickerProvider.ensureImportedPack(
-            name: pack.name,
-            author: pack.author,
-            originId: pack.packId,
-          );
-          packId = packRecord.id;
-        }
         final saved = await stickerProvider.importFromBytes(
           bytes,
           name: s.name.trim().isEmpty ? '未命名素材' : s.name,
           category: s.category,
           ext: s.ext,
-          packId: packId,
+          packId: await ensurePack(),
         );
         if (saved != null) {
           stickerIds.add(saved.id);
@@ -221,13 +225,15 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
           skipped++;
         }
       }
-      // 新 id + originId + builtin = false 由 installTemplates 保证（REQ-21.8）。
+      // 新 id + originId + builtin = false 由 installTemplates 保证（REQ-21.8）；
+      // packId 让模板随包落位，重复导入同一包时按 originId 原位更新。
       // photos/ 里的照片交给 attachments，模板画布内的路径按文件名重映射到本机，
       // 不传就会全部退化成占位框（FIX-01.2 / FIX-01.3）。
       final installed = await templateProvider.installTemplates(
         templates,
         attachments: pack.photoBytes,
         overwriteSameName: _overwriteSameName,
+        packId: templates.isEmpty ? null : await ensurePack(),
       );
       if (!mounted) return;
       if (skipped > 0) {

@@ -151,14 +151,27 @@ class _LibraryPageState extends State<LibraryPage> {
     if (mounted && _templateSelecting) _exitTemplateSelection();
   }
 
-  /// 把选中的素材打成 kind = sticker 的分享包（REQ-21.2）：
-  /// 只带素材文件，不带任何模板，接收方装完即可在「我的」页签里用。
-  /// [pack] 非空表示从包菜单发起的整包导出，包名与署名直接预填。
+  /// 把选中的素材打成分享包（REQ-21.2）：只带素材文件时不带任何模板，
+  /// 接收方装完即可在「我的」页签里用。
+  /// [packTemplates] 与 [pack] 非空表示从包菜单发起的整包导出：
+  /// 包内模板一并带上（v8），包名与署名直接预填，pack.json 的 id
+  /// 用包的稳定 originId——接收方导入后归位到同一个包，
+  /// 而不是每次转发都裂出一个新包。
   Future<void> _exportStickers(
     List<CustomSticker> targets,
+    List<JournalTemplate> packTemplates,
     StickerPack? pack,
   ) async {
-    if (targets.isEmpty) return;
+    if (targets.isEmpty && packTemplates.isEmpty) return;
+    final withPhotos = packTemplates
+        .where((t) => t.canvas?.hasImagePaths ?? false)
+        .toList();
+    var includePhotos = false;
+    if (withPhotos.isNotEmpty) {
+      final choice = await askIncludeTemplatePhotos(context, withPhotos);
+      if (choice == null || !mounted) return;
+      includePhotos = choice;
+    }
     final meta = await _askPackMeta(
       pack?.name ??
           (targets.length == 1 ? targets.first.name : '我的素材包'),
@@ -171,14 +184,31 @@ class _LibraryPageState extends State<LibraryPage> {
     final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<CustomStickerProvider>();
     try {
+      // 包身份：整包导出复用包的稳定 originId（手工包首次导出时分配并落库）。
+      final shareId = pack == null
+          ? null
+          : await provider.ensurePackOriginId(pack.id);
+      // 带照片时把原始模板交给 buildPack（照片入包 + 路径改写为纯文件名），
+      // 不带时先在这里清干净；两条路都不会把本机绝对路径带进包（REQ-21.4）。
+      final packedTemplates = includePhotos
+          ? packTemplates
+          : [for (final t in packTemplates) templateWithoutPhotos(t)];
+      // 包内模板引用到的贴纸一并带上（REQ-21.3：接收方开箱即用）。
+      final ids = {
+        for (final s in targets) s.id,
+        ...referencedStickerIds(packedTemplates),
+      };
       final path = await SharePackService.instance.exportPack(
         packName: meta.name,
         author: meta.author,
-        templates: const <JournalTemplate>[],
-        stickers: targets,
-        stickerBytes: await provider.exportBytes(
-          ids: [for (final s in targets) s.id],
-        ),
+        templates: packedTemplates,
+        stickers: [
+          for (final s in provider.stickers)
+            if (ids.contains(s.id)) s,
+        ],
+        stickerBytes: await provider.exportBytes(ids: ids),
+        includePhotos: includePhotos,
+        packId: shareId,
         destination: destination,
       );
       // 用户在系统对话框里取消时返回 null，不打扰。
@@ -525,7 +555,7 @@ class _LibraryPageState extends State<LibraryPage> {
               : _exportStickers([
                   for (final s in stickers)
                     if (selectedIds.contains(s.id)) s,
-                ], null),
+                ], const <JournalTemplate>[], null),
         ),
         const SizedBox(width: 4),
       ],

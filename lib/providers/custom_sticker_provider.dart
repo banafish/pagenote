@@ -12,8 +12,9 @@ import '../utils/sticker_store.dart';
 /// 自定义图片贴纸仓库（REQ-20）：维护 DB 记录、stickers/ 目录文件与
 /// 全局索引 [CustomStickerIndex] 三者同步。
 ///
-/// v7 起同时管理素材包（[StickerPack]）：分享包导入与手工新建的贴纸分组，
-/// 贴纸经 [CustomSticker.packId] 挂到包上，null 为未分组。
+/// v7 起同时管理素材包（[StickerPack]）：分享包导入与手工新建的分组容器，
+/// 贴纸经 [CustomSticker.packId]、模板经 `JournalTemplate.packId`（v8）
+/// 挂到包上，null 为未分组。
 class CustomStickerProvider extends ChangeNotifier {
   CustomStickerProvider({AppDatabase? database})
     : _db = database ?? AppDatabase.instance;
@@ -207,7 +208,7 @@ class CustomStickerProvider extends ChangeNotifier {
   }
 
   /// 备份恢复前确保包记录存在（v7 备份带 sticker_packs.json；
-  /// 老备份没有包，贴纸的 packId 也不会有，自然全部落未分组）。
+  /// 老备份没有包，贴纸与模板的 packId 也不会有，自然全部落未分组）。
   /// 已有同 id 的包保留本机版本，不覆盖（合并恢复语义）。
   Future<void> ensurePacksExist(Iterable<StickerPack> packs) async {
     var changed = false;
@@ -220,7 +221,22 @@ class CustomStickerProvider extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// 取包的稳定分享 id（整包导出时写进 pack.json 的 id）：
+  /// 导入来的包直接用它的 originId；手工建的包首次导出时现场分配并落库。
+  /// 此后这个包无论经几手转发，导回任何设备（包括本机）都按它归位到
+  /// 同一个包，而不是每次导出都变成一个新包。
+  Future<String> ensurePackOriginId(String packId) async {
+    final pack = packById(packId);
+    if (pack == null) return 'pack-${makeId()}';
+    if (pack.originId != null) return pack.originId!;
+    pack.originId = 'pack-${makeId()}';
+    await _db.insertStickerPack(pack);
+    return pack.originId!;
+  }
+
   /// 解散包：贴纸全部移回未分组，包记录删除，素材与引用不受影响。
+  /// 包内还挂有模板（v8）时，调用方需接着 `TemplateProvider.detachPack`
+  /// 把模板也移回未分组。
   Future<void> dissolvePack(String packId) async {
     final pack = packById(packId);
     if (pack == null) return;
@@ -233,7 +249,8 @@ class CustomStickerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 删除包与包内全部素材（含文件）；被引用时由调用方先做二次确认。
+  /// 删除包与包内全部贴纸（含文件）；被引用时由调用方先做二次确认。
+  /// 包内模板不跟随删除，调用方需 `TemplateProvider.detachPack` 移回未分组。
   Future<void> deletePack(String packId) async {
     final pack = packById(packId);
     if (pack == null) return;

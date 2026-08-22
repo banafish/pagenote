@@ -153,11 +153,13 @@ class CustomSticker {
   );
 }
 
-/// 素材包：自定义贴纸的分组容器。
+/// 素材包：模板（v8 起）与自定义贴纸共用的分组容器。
 ///
-/// 两条来源：分享包导入（[originId] 记录包内 pack.json 的 id，
-/// 同一个包重复导入时按它归位而不是再建一个同名包，与模板的
+/// 两条来源：分享包导入（[originId] 记录包内 pack.json 的 id,
+/// 同一个包重复导入时按它归位而不是再建一个同名包,与模板的
 /// originId 同一套溯源语义）与用户在管理页手工新建。
+/// 手工包首次整包导出时也会补配一个 originId 并落库,
+/// 保证包身份在转发链上稳定。
 class StickerPack {
   StickerPack({
     required this.id,
@@ -174,8 +176,8 @@ class StickerPack {
   /// 来源署名（分享包的 author）；手工建的包为空。
   String author;
 
-  /// 分享包内 pack.json 的 id；手工建的包为 null。
-  final String? originId;
+  /// 分享包内 pack.json 的 id；手工包在首次整包导出前为 null。
+  String? originId;
 
   final DateTime createdAt;
 

@@ -14,6 +14,7 @@ class JournalTemplate {
     this.builtin = false,
     this.canvas,
     this.originId,
+    this.packId,
     this.lastUsedAt,
     this.sortIndex = 0,
     DateTime? createdAt,
@@ -42,8 +43,13 @@ class JournalTemplate {
   final bool builtin;
 
   /// 分享包安装而来的模板：原包内 id（FIX-02.2）。
-  /// 本地 id 一律重新分配,originId 用于识别「同一模板的新版本」。
+  /// 本地 id 一律重新分配,originId 用于识别「同一模板的新版本」——
+  /// 重复导入同一分享包时按它原位更新,而不是再装一份。
   String? originId;
+
+  /// 所属素材包（[StickerPack.id]，v8）；null = 未分组。
+  /// 分享包导入时随整包落位；重复导入会把先前散落的同一模板归位回包。
+  String? packId;
 
   /// 最近一次套用时间（REQ-18.4 排序用）；null 为从未使用。
   DateTime? lastUsedAt;
@@ -66,6 +72,7 @@ class JournalTemplate {
     'builtin': builtin ? 1 : 0,
     'canvas': encodeCanvas(canvas),
     'originId': originId,
+    'packId': packId,
     'lastUsedAt': lastUsedAt?.millisecondsSinceEpoch,
     'sortIndex': sortIndex,
     'createdAt': createdAt.millisecondsSinceEpoch,
@@ -83,6 +90,7 @@ class JournalTemplate {
     builtin: (map['builtin'] ?? 0) as int == 1,
     canvas: decodeCanvas((map['canvas'] ?? '') as String),
     originId: map['originId'] as String?,
+    packId: map['packId'] as String?,
     lastUsedAt: map['lastUsedAt'] == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(map['lastUsedAt']! as int),
@@ -107,6 +115,7 @@ class JournalTemplate {
       builtin: trusted,
       canvas: parsed.canvas,
       originId: parsed.originId,
+      packId: parsed.packId,
       lastUsedAt: parsed.lastUsedAt,
       sortIndex: parsed.sortIndex,
       createdAt: parsed.createdAt,
@@ -118,6 +127,8 @@ class JournalTemplate {
 
   /// 复制为一份新的用户模板（REQ-18.2「复制一份」/ REQ-18.3「复制内置模板」）。
   /// 新 id + `builtin = false`,因此副本可自由改名、编辑与删除。
+  /// 副本不继承 originId / packId：它是用户自己的新模板,
+  /// 不再跟随原包做版本更新,也不出现在原包分组里。
   JournalTemplate copyAsNew({String? name, String? originId}) =>
       JournalTemplate(
         id: newTemplateId(),
@@ -126,7 +137,7 @@ class JournalTemplate {
         content: content,
         tags: List.of(tags),
         canvas: canvas?.clone(),
-        originId: originId ?? this.originId,
+        originId: originId,
       );
 }
 

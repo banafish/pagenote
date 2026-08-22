@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/sticker_assets.dart';
+import '../models/template.dart' show JournalTemplate;
 import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
 import '../providers/template_provider.dart';
@@ -61,8 +62,13 @@ class StickerManagerBody extends StatefulWidget {
   final Future<void> Function() onImport;
 
   /// 导出为素材包（REQ-21.2）：素材菜单的单个导出也走这里。
-  /// [pack] 非空表示整包导出，宿主用它预填包名与署名。
-  final void Function(List<CustomSticker> targets, StickerPack? pack) onExport;
+  /// [packTemplates] 与 [pack] 非空表示整包导出——包内模板一并带上（v8），
+  /// 宿主用它预填包名与署名，并复用包的稳定 id。
+  final void Function(
+    List<CustomSticker> targets,
+    List<JournalTemplate> packTemplates,
+    StickerPack? pack,
+  ) onExport;
 
   @override
   State<StickerManagerBody> createState() => _StickerManagerBodyState();
@@ -207,7 +213,7 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
           group,
         );
       case 'export':
-        widget.onExport([sticker], null);
+        widget.onExport([sticker], const <JournalTemplate>[], null);
       case 'delete':
         await _delete(sticker);
     }
@@ -340,34 +346,48 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
     );
     if (!mounted || action == null) return;
     final provider = context.read<CustomStickerProvider>();
+    final templates = context.read<TemplateProvider>();
     switch (action) {
       case 'rename':
         final name = await _promptText('重命名素材包', '包名称', pack.name);
         if (!mounted || name == null) return;
         await provider.renamePack(pack.id, name);
       case 'export':
-        widget.onExport(provider.stickersOfPack(pack.id), pack);
+        // 整包导出带上包内模板（v8），接收方导入后仍是同一个包。
+        widget.onExport(
+          provider.stickersOfPack(pack.id),
+          templates.templatesOfPack(pack.id),
+          pack,
+        );
       case 'dissolve':
-        // 解散不动素材本身，勾选集合无需清理。
+        // 解散不动素材与模板本身，勾选集合无需清理；
+        // 模板同步移回未分组，否则会挂着已删除的包 id。
         await provider.dissolvePack(pack.id);
+        await templates.detachPack(pack.id);
       case 'delete':
         await _deletePack(pack);
     }
   }
 
   /// 删除包与包内全部素材；有素材被手账或模板引用时先说明后果再确认。
+  /// 包内模板不跟随删除——移回未分组保留（v8）。
   Future<void> _deletePack(StickerPack pack) async {
     final provider = context.read<CustomStickerProvider>();
+    final templates = context.read<TemplateProvider>();
     final items = provider.stickersOfPack(pack.id);
+    final packTemplates = templates.templatesOfPack(pack.id);
     final referenced = items
         .where(
           (s) => provider.isReferenced(
             s.id,
             context.read<JournalProvider>().entries,
-            context.read<TemplateProvider>().templates,
+            templates.templates,
           ),
         )
         .length;
+    final templateNote = packTemplates.isEmpty
+        ? ''
+        : '\n包内 ${packTemplates.length} 套模板会保留，移回未分组。';
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -375,8 +395,8 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
         content: Text(
           referenced > 0
               ? '「${pack.name}」共 ${items.length} 张素材，其中 $referenced 张正被手账或模板使用，'
-                    '删除后那些位置会显示缺失占位。'
-              : '「${pack.name}」与包内 ${items.length} 张素材将被移除。\n'
+                    '删除后那些位置会显示缺失占位。$templateNote'
+              : '「${pack.name}」与包内 ${items.length} 张素材将被移除。$templateNote\n'
                     '只想去掉分组的话，用「解散素材包」可以保留素材。',
         ),
         actions: [
@@ -396,6 +416,8 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
     );
     if (ok != true || !mounted) return;
     await provider.deletePack(pack.id);
+    // 模板保留，只解除对已删包的归属。
+    await templates.detachPack(pack.id);
     if (!mounted) return;
     // 勾选集合由宿主持有，清掉已不存在的素材后请宿主刷新顶栏计数。
     final before = widget.selectedIds.length;
@@ -446,7 +468,14 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
               SliverToBoxAdapter(child: _hintBar()),
               for (final section in _sections(provider)) ...[
                 if (section.pack != null)
-                  _packSectionLabel(section.pack!, section.items.length)
+                  _packSectionLabel(
+                    section.pack!,
+                    section.items.length,
+                    context
+                        .read<TemplateProvider>()
+                        .templatesOfPack(section.pack!.id)
+                        .length,
+                  )
                 else
                   _sectionLabel(section.category!, '共 ${section.items.length} 张'),
                 _grid(section.items),
@@ -499,11 +528,16 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
     );
   }
 
-  /// 素材包分段标题：包名 + 张数 + 来源署名，尾部菜单进包操作。
+  /// 素材包分段标题：包名 + 内容计数 + 来源署名，尾部菜单进包操作。
   /// 与普通分组标题的区别只在行首的包图标，视觉上一眼可分。
-  Widget _packSectionLabel(StickerPack pack, int count) {
+  /// 包内还挂有模板时（v8）一并计数——模板本体在「模板」页签里展示。
+  Widget _packSectionLabel(StickerPack pack, int stickerCount, int templateCount) {
     final scheme = Theme.of(context).colorScheme;
     final author = pack.author.trim();
+    final counts = [
+      '$stickerCount 张贴纸',
+      if (templateCount > 0) '$templateCount 套模板',
+    ].join(' · ');
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -533,7 +567,7 @@ class _StickerManagerBodyState extends State<StickerManagerBody>
             ),
             const SizedBox(width: 8),
             Text(
-              author.isEmpty ? '共 $count 张' : '来自 $author · 共 $count 张',
+              author.isEmpty ? '共 $counts' : '来自 $author · 共 $counts',
               style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
             ),
             const Spacer(),

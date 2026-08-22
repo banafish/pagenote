@@ -226,6 +226,37 @@ void main() {
       expect((meta['counts']! as Map)['stickers'], 2);
     });
 
+    test('整包导出复用包的稳定 id,不传则现场生成（v8）', () async {
+      // 整包导出传包的 originId：包无论经几手转发，接收方都按它归位到同一个包。
+      final bytes = await SharePackService.instance.buildPack(
+        packName: '稳定身份包',
+        author: '',
+        templates: [templateOf('tpl-stable', name: '模板')],
+        packId: 'pack-stable-id',
+      );
+      expect(packJsonOf(bytes)['id'], 'pack-stable-id');
+      expect(
+        SharePackService.instance.parsePack(bytes).packId,
+        'pack-stable-id',
+      );
+
+      // 散选内容拼的临时包没有持续身份，每次导出都是新 id。
+      final adhoc1 = await SharePackService.instance.buildPack(
+        packName: '散选包',
+        author: '',
+        templates: [templateOf('tpl-pick', name: '模板')],
+      );
+      final adhoc2 = await SharePackService.instance.buildPack(
+        packName: '散选包',
+        author: '',
+        templates: [templateOf('tpl-pick', name: '模板')],
+      );
+      final id1 = packJsonOf(adhoc1)['id']! as String;
+      final id2 = packJsonOf(adhoc2)['id']! as String;
+      expect(id1, isNot(id2));
+      expect(id1, startsWith('pack-'));
+    });
+
     test('kind 按内容取 template / sticker / mixed（附录设计约束 1）', () async {
       final bytes = pngOf(3);
       final sticker = stickerOf(bytes, '小花');
@@ -427,6 +458,127 @@ void main() {
       expect(provider.byId(old.id), isNull);
       expect(provider.byId(fresh.id)!.originId, 'tpl-v2');
       expect(fresh.builtin, isFalse);
+    });
+
+    test('模板随包落位：installTemplates 挂 packId（v8）', () async {
+      final provider = await newProvider();
+      final pack = SharePackService.instance.parsePack(
+        rawPack(templates: [templateMap('tpl-in-pack', name: '包内模板')]),
+      );
+      final installed = await provider.installTemplates(
+        pack.templates,
+        packId: 'pack-local-1',
+      );
+      expect(installed.single.packId, 'pack-local-1');
+      expect(
+        provider.templatesOfPack('pack-local-1').single.originId,
+        'tpl-in-pack',
+      );
+      expect(provider.userTemplates.single.packId, 'pack-local-1');
+    });
+
+    test('同一分享包重复导入：模板按 originId 原位更新,不重复装（v8）', () async {
+      final provider = await newProvider();
+      final first = SharePackService.instance.parsePack(
+        rawPack(templates: [templateMap('tpl-v1', name: '朋友的模板')]),
+      );
+      final installed = (await provider.installTemplates(
+        first.templates,
+        packId: 'pack-a',
+      )).single;
+      // 用户把模板改成自己的标签，并留下使用记录与手动排序。
+      installed
+        ..name = '我的复盘'
+        ..lastUsedAt = DateTime(2026, 8, 1)
+        ..sortIndex = 5;
+      await provider.saveTemplate(installed);
+
+      // 同一个包的新版本：包内 id（originId）不变，内容更新。
+      final upgraded = templateMap('tpl-v1', name: '朋友的模板')
+        ..['content'] = '新版本正文';
+      final second = SharePackService.instance.parsePack(
+        rawPack(templates: [upgraded]),
+      );
+      final updated = (await provider.installTemplates(
+        second.templates,
+        packId: 'pack-a',
+      )).single;
+
+      expect(provider.userTemplates.length, 1, reason: '同一个模板原位更新');
+      expect(updated.id, installed.id, reason: '本地 id 稳定,套用记录不丢');
+      expect(updated.content, '新版本正文', reason: '内容换成包内新版本');
+      expect(updated.name, '我的复盘', reason: '名字是用户自己的标签,不跟包走');
+      expect(updated.lastUsedAt, DateTime(2026, 8, 1), reason: '使用记录保留');
+      expect(updated.sortIndex, 5, reason: '手动排序保留');
+      expect(updated.packId, 'pack-a');
+    });
+
+    test('先前散落的同一模板在重复导入时归位回包（v8 升级存量场景）', () async {
+      final provider = await newProvider();
+      // v8 之前导入的模板：originId 有记录,但没有包归属。
+      final legacy = SharePackService.instance.parsePack(
+        rawPack(templates: [templateMap('tpl-old', name: '老包模板')]),
+      );
+      final scattered = (await provider.installTemplates(
+        legacy.templates,
+      )).single;
+      expect(scattered.packId, isNull);
+
+      // 升级后重复导入同一个包：归位回包,不改名不加后缀。
+      final again = (await provider.installTemplates(
+        legacy.templates,
+        packId: 'pack-back',
+      )).single;
+      expect(again.id, scattered.id);
+      expect(again.packId, 'pack-back', reason: '未分组的同一模板归位回包');
+      expect(again.name, '老包模板', reason: '归位不是重装,不动名字');
+      expect(provider.userTemplates.length, 1);
+    });
+
+    test('用户挪进其它包的模板不被重复导入抢回（v8）', () async {
+      final provider = await newProvider();
+      final pack = SharePackService.instance.parsePack(
+        rawPack(templates: [templateMap('tpl-mine', name: '挪走的模板')]),
+      );
+      final installed = (await provider.installTemplates(
+        pack.templates,
+        packId: 'pack-a',
+      )).single;
+      installed.packId = 'pack-b';
+      await provider.saveTemplate(installed);
+
+      final again = (await provider.installTemplates(
+        pack.templates,
+        packId: 'pack-a',
+      )).single;
+      expect(again.id, installed.id);
+      expect(again.packId, 'pack-b', reason: '已有的归属优先于导入包的落位');
+    });
+
+    test('复制出的副本不继承 originId / packId,不跟随包更新（v8）', () async {
+      final provider = await newProvider();
+      final pack = SharePackService.instance.parsePack(
+        rawPack(templates: [templateMap('tpl-dup', name: '可复制的模板')]),
+      );
+      final installed = (await provider.installTemplates(
+        pack.templates,
+        packId: 'pack-a',
+      )).single;
+      final copy = await provider.duplicateTemplate(installed);
+      expect(copy.originId, isNull, reason: '副本是用户自己的新模板');
+      expect(copy.packId, isNull);
+      expect(provider.userTemplates.length, 2);
+
+      // 包更新只碰原件,副本保持独立,也不会被误判成重复。
+      final upgraded = templateMap('tpl-dup', name: '可复制的模板')
+        ..['content'] = '新版本正文';
+      final second = SharePackService.instance.parsePack(
+        rawPack(templates: [upgraded]),
+      );
+      await provider.installTemplates(second.templates, packId: 'pack-a');
+      expect(provider.userTemplates.length, 2, reason: '副本不参与 originId 去重');
+      expect(provider.byId(copy.id)!.content, '正文tpl-dup');
+      expect(provider.byId(installed.id)!.content, '新版本正文');
     });
   });
 
