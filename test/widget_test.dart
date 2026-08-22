@@ -9,6 +9,7 @@ import 'package:pagenote/app.dart';
 import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/models/mood.dart';
+import 'package:pagenote/models/template.dart';
 import 'package:pagenote/pages/calendar_page.dart';
 import 'package:pagenote/pages/library_page.dart';
 import 'package:pagenote/pages/settings_page.dart';
@@ -221,15 +222,17 @@ void main() {
     // 时光：默认首页（一级入口 1）。
     expect(find.text('写下你的第一页').hitTestable(), findsOneWidget);
 
-    // 素材：默认落在「模板」子页签——内置模板保证首屏不为空（REQ-23.2）。
+    // 素材：包列表首页——置顶固定入口保证首屏不为空（REQ-26.1）。
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
 
-    // 切到「贴纸」子页签（REQ-23：素材内两个子页签可达）。
-    await tester.tap(find.text('贴纸'));
+    // 「未分组」固定入口可达：散装贴纸 + 自建模板的详情页（REQ-26.2）。
+    await tester.tap(find.text('未分组'));
     await tester.pumpAndSettle();
-    expect(find.text('还没有自己的素材').hitTestable(), findsOneWidget);
+    expect(find.text('散装素材都住这里').hitTestable(), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     // 回顾：默认落在「日历」（REQ-24.2），高频项不为合并多付一次点击。
     // 默认 800 宽减去侧栏 81 后日历列仅 719（<760），当日列表在折叠线
@@ -300,17 +303,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 素材 → 贴纸子页签，离开再回来时仍停在贴纸（REQ-23.3）。
+    // 素材 → 未分组详情，离开再回来时首页仍在（详情页是独立路由，
+    // REQ-26.9；一级入口切换不打断它之上的浏览状态）。
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('贴纸'));
+    await tester.tap(find.text('未分组'));
+    await tester.pumpAndSettle();
+    expect(find.text('散装素材都住这里').hitTestable(), findsOneWidget);
+    await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('还没有自己的素材').hitTestable(), findsNothing);
+    expect(find.text('内置模板').hitTestable(), findsNothing);
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('还没有自己的素材').hitTestable(), findsOneWidget);
+    expect(find.text('内置模板').hitTestable(), findsOneWidget);
+    expect(find.text('还没有素材包').hitTestable(), findsOneWidget);
 
     // 回顾 → 日历里选中 15 号，切到统计再切回，选中日期不变（REQ-24.5）。
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
@@ -451,15 +459,14 @@ void main() {
     expect(find.text('设置'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsOneWidget);
 
-    // 素材：默认落在「模板」子页签，可切到「贴纸」——结构与窄屏一致。
+    // 素材：包列表首页——置顶固定入口 + 空包引导，结构与窄屏一致（REQ-26）。
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
+    expect(find.text('未分组').hitTestable(), findsOneWidget);
+    expect(find.text('还没有素材包').hitTestable(), findsOneWidget);
     // 写手账 FAB 只在时光首页提供，其余一级入口不显示。
     expect(find.byType(FloatingActionButton), findsNothing);
-    await tester.tap(find.text('贴纸'));
-    await tester.pumpAndSettle();
-    expect(find.text('还没有自己的素材').hitTestable(), findsOneWidget);
 
     // 回顾：宽屏（≥900dp）下日历与统计并排同屏（REQ-24.2 宽屏形态）——
     // 左栏日历含当日列表、右栏统计卡组，无需切换即同时可见。
@@ -469,39 +476,50 @@ void main() {
     expect(find.text('总篇数').hitTestable(), findsOneWidget);
   });
 
-  testWidgets('素材管理的独立整页形态仍可用（REQ-23.5/23.6、NFR-12）', (tester) async {    final journal = JournalProviderForTest();
+  testWidgets('素材首页与详情页的独立整页形态可用（REQ-26.9、NFR-12）', (tester) async {    final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
     final templates = TemplateProvider(database: AppDatabase.inMemory());
     await templates.load();
+    await templates.saveTemplate(
+      JournalTemplate(id: 'detail-user-1', name: '未分组模板甲', content: '测试'),
+    );
 
-    // 素材包导入回跳打开的模板管理整页（main.dart / 设置页手动导入）：
-    // 不带子页签栏，标题与高亮定位行为与一级入口形态一致。
+    // 编辑器贴纸面板「管理我的素材」以整页打开素材首页（canvas_tool_sheets.dart）。
     await tester.pumpWidget(
       _wrap(
-        child: const TemplateManagerPage(),
+        child: const LibraryPage(),
         journal: journal,
         settings: settings,
         templates: templates,
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('手账模板'), findsOneWidget);
+    expect(find.text('素材'), findsOneWidget);
+    // 首屏永不为空：内置模板固定入口永远存在（REQ-26.1）。
     expect(find.text('内置模板'), findsOneWidget);
-    expect(find.text('模板'), findsNothing, reason: '整页形态不渲染子页签栏');
+    expect(find.text('未分组'), findsOneWidget);
 
-    // 编辑器贴纸面板「管理」打开的素材管理整页（canvas_tool_sheets.dart）。
-    await tester.pumpWidget(
-      _wrap(
-        child: const StickerManagerPage(),
-        journal: journal,
-        settings: settings,
-        templates: templates,
-      ),
-    );
+    // 点固定入口进入详情页：内置模板 = builtin 网格（只读 + 复制）。
+    await tester.tap(find.text('内置模板'));
     await tester.pumpAndSettle();
-    expect(find.text('我的素材'), findsOneWidget);
-    expect(find.text('还没有自己的素材'), findsOneWidget);
+    expect(find.text('内置模板'), findsWidgets);
+    expect(templates.builtinTemplates, isNotEmpty);
+    for (final t in templates.builtinTemplates.take(2)) {
+      expect(find.text(t.name), findsWidgets, reason: '内置模板 ${t.name} 应可见');
+    }
+    // 内置详情没有多选以外的整页操作入口，也没有未分组的排序条。
+    expect(find.text('最近使用'), findsNothing);
+
+    // 未分组入口：自建模板三档排序条仍在（REQ-26.2）。
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('未分组'));
+    await tester.pumpAndSettle();
+    expect(find.text('最近使用'), findsOneWidget);
+    expect(find.text('创建时间'), findsOneWidget);
+    expect(find.text('手动排序'), findsOneWidget);
+    expect(find.text('未分组模板甲'), findsOneWidget);
   });
 }
 

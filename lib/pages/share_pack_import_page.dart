@@ -13,6 +13,7 @@ import '../providers/custom_sticker_provider.dart';
 import '../providers/template_provider.dart';
 import '../services/share_pack_service.dart';
 import '../utils/date_utils.dart';
+import '../utils/pack_cover_store.dart';
 import '../widgets/canvas/canvas_view.dart';
 
 /// 缩略图用的预览条目：与模板管理页同一套渲染,组件元素从它读展示数据。
@@ -37,11 +38,12 @@ const _templateRatio = 0.62;
 const _stickerExtent = 84.0;
 const _stickerRatio = 0.78;
 
-/// 分享包导入结果（REQ-21.9）：由调用方据此跳转到模板管理页 / 素材面板并高亮。
+/// 分享包导入结果（REQ-21.9 + REQ-26.4）：调用方据此直达包详情页并高亮。
 class SharePackImportResult {
   const SharePackImportResult({
     required this.templateIds,
     required this.stickerIds,
+    this.packId,
   });
 
   /// 本机新写入的模板 id —— installTemplates 重新分配过,不是包内的原 id。
@@ -49,6 +51,10 @@ class SharePackImportResult {
 
   /// 本机新写入的自定义贴纸 id（内容 sha1）。
   final List<String> stickerIds;
+
+  /// 内容最终落位的本机包 id（REQ-26.4）：导入必建包,回跳直达该包详情页。
+  /// 全部素材被尺寸闸拦下时可能为 null。
+  final String? packId;
 
   bool get isEmpty => templateIds.isEmpty && stickerIds.isEmpty;
 }
@@ -235,6 +241,18 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
         overwriteSameName: _overwriteSameName,
         packId: templates.isEmpty ? null : await ensurePack(),
       );
+      // 包内封面（REQ-27.5）：cover.png 存为本机封面。字节过 PackCoverStore
+      // 的尺寸闸与压缩（NFR-06 / NFR-14），无效或超限时静默跳过，
+      // 不让一张坏封面打断整包导入。重复导入同一包时以包内版本更新。
+      final landedPackId = packId;
+      if (landedPackId != null && pack.coverBytes != null) {
+        final coverName = await PackCoverStore.importFromBytes(
+          pack.coverBytes!,
+        );
+        if (coverName != null) {
+          await stickerProvider.setPackCover(landedPackId, coverName);
+        }
+      }
       if (!mounted) return;
       if (skipped > 0) {
         messenger
@@ -248,6 +266,7 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
         SharePackImportResult(
           templateIds: [for (final t in installed) t.id],
           stickerIds: stickerIds,
+          packId: packId,
         ),
       );
     } catch (_) {

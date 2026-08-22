@@ -40,6 +40,8 @@ void main() {
     final packColumns = await sqlite.rawQuery('PRAGMA table_info(sticker_packs)');
     expect(packColumns.map((c) => c['name']), containsAll(
         ['id', 'name', 'author', 'originId', 'createdAt']));
+    // v9：包手动排序与封面列。
+    expect(packColumns.map((c) => c['name']), containsAll(['sortIndex', 'coverPath']));
 
     await db.close();
   });
@@ -421,6 +423,64 @@ void main() {
             .map((c) => c['name'])
             .toSet();
     expect(columns, contains('packId'));
+    await appDb.close();
+    await databaseFactory.deleteDatabase(path);
+  });
+
+  test('v8 → v9 迁移：包表补 sortIndex / coverPath，存量包按 createdAt 倒序赋初始顺序（REQ-26.5/27.1）', () async {
+    final dir = await databaseFactory.getDatabasesPath();
+    final path = p.join(dir, 'pagenote-migration-test-v8.db');
+    await databaseFactory.deleteDatabase(path);
+
+    // 手工建一个 v8 库：sticker_packs 是无 sortIndex / coverPath 的 v8 结构。
+    // createdAt 逆序写入（旧→新），迁移后应得 2、1、0 的初始 sortIndex。
+    final v8 = await openDatabase(path, version: 8, onCreate: (db, _) async {
+      await db.execute('''
+        CREATE TABLE sticker_packs (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          author TEXT NOT NULL DEFAULT '',
+          originId TEXT,
+          createdAt INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+          "INSERT INTO sticker_packs VALUES ('pack-old', '最老的包', '', NULL, 1)");
+      await db.execute(
+          "INSERT INTO sticker_packs VALUES ('pack-mid', '中间的包', '', NULL, 2)");
+      await db.execute(
+          "INSERT INTO sticker_packs VALUES ('pack-new', '最新的包', '', NULL, 3)");
+    });
+    await v8.close();
+
+    final appDb = AppDatabase.atPath(path);
+    // 初始顺序 = createdAt 倒序（最新在前），与迁移前的展示顺序一致。
+    final packs = await appDb.getAllStickerPacks();
+    expect(packs.map((p) => p.id).toList(), [
+      'pack-new',
+      'pack-mid',
+      'pack-old',
+    ]);
+    expect(packs.map((p) => p.sortIndex).toList(), [0, 1, 2]);
+    expect(packs.every((p) => p.coverPath == null), isTrue,
+        reason: '存量包无封面，回落占位样式');
+
+    // 新列可写可读：改封面、重排序、读回。
+    final newest = packs.first;
+    newest.coverPath = 'abc.png';
+    await appDb.insertStickerPack(newest);
+    expect(
+      (await appDb.getAllStickerPacks()).first.coverPath,
+      'abc.png',
+    );
+
+    final sqlite = await appDb.database;
+    expect(await sqlite.getVersion(), AppDatabase.dbVersion);
+    final packColumns =
+        (await sqlite.rawQuery('PRAGMA table_info(sticker_packs)'))
+            .map((c) => c['name'])
+            .toSet();
+    expect(packColumns, containsAll(['sortIndex', 'coverPath']));
     await appDb.close();
     await databaseFactory.deleteDatabase(path);
   });

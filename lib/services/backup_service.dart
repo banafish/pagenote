@@ -33,6 +33,7 @@ class BackupData {
     this.customStickers = const [],
     this.stickerBytes = const {},
     this.stickerPacks = const [],
+    this.packCoverBytes = const {},
   });
 
   final List<JournalEntry> entries;
@@ -47,6 +48,10 @@ class BackupData {
 
   /// 素材包清单（v7）；旧备份没有该项时为空，贴纸全部落未分组。
   final List<StickerPack> stickerPacks;
+
+  /// 包封面文件名 → 字节内容（REQ-27.7，pack_covers/ 目录）；
+  /// 旧备份没有该项时为空，恢复后封面回落为占位样式。
+  final Map<String, Uint8List> packCoverBytes;
 }
 
 /// 数据导出与导入（REQ-03）：单个 zip，内含 entries.json 与 attachments/ 目录。
@@ -59,6 +64,7 @@ class BackupService {
   static const _entriesFileName = 'entries.json';
   static const _stickersFileName = 'stickers.json';
   static const _packsFileName = 'sticker_packs.json';
+  static const _packCoversDir = 'pack_covers/';
 
   /// 解包上限（NFR-06 防解压炸弹）：包内条目数与解压后总字节。
   static const _maxArchiveFiles = 20000;
@@ -78,6 +84,7 @@ class BackupService {
     List<CustomSticker> customStickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
     List<StickerPack> stickerPacks = const [],
+    Map<String, Uint8List> packCoverBytes = const {},
   }) async {
     final archive = Archive();
     final attachmentBytes = <String, Uint8List>{};
@@ -166,6 +173,7 @@ class BackupService {
     });
 
     // 素材包清单（v7）：恢复时按它先重建包记录，贴纸的 packId 才有落位。
+    // v9 起 toMap 携带 sortIndex / coverPath，老版本 fromMap 忽略未知键。
     if (stickerPacks.isNotEmpty) {
       final packsJson = const JsonEncoder.withIndent(
         '  ',
@@ -177,6 +185,12 @@ class BackupService {
         ),
       );
     }
+
+    // 包封面位图（REQ-27.7）：与贴纸的 stickers/ 分目录存放，
+    // 恢复时按文件名重映射到落地后的新文件名。
+    packCoverBytes.forEach((name, bytes) {
+      archive.addFile(ArchiveFile.bytes('$_packCoversDir$name', bytes));
+    });
 
     final encoder = ZipEncoder();
     return encoder.encodeBytes(archive);
@@ -191,6 +205,7 @@ class BackupService {
     List<CustomSticker> customStickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
     List<StickerPack> stickerPacks = const [],
+    Map<String, Uint8List> packCoverBytes = const {},
   }) async {
     final bytes = await buildZip(
       entries: entries,
@@ -198,6 +213,7 @@ class BackupService {
       customStickers: customStickers,
       stickerBytes: stickerBytes,
       stickerPacks: stickerPacks,
+      packCoverBytes: packCoverBytes,
     );
     final name =
         'pagenote-backup-${DateTime.now().toIso8601String().substring(0, 10)}.zip';
@@ -261,15 +277,19 @@ class BackupService {
 
     final attachments = <String, Uint8List>{};
     final stickerBytes = <String, Uint8List>{};
+    final packCoverBytes = <String, Uint8List>{};
     for (final f in archive) {
       if (!f.isFile) continue;
       final name = p.basename(f.name);
       if (name.isEmpty) continue;
-      // 条目附件与自定义贴纸位图分属两个目录（REQ-20.6）。
+      // 条目附件、自定义贴纸位图与包封面分属三个目录
+      // （REQ-20.6 / REQ-27.7）。
       if (f.name.startsWith('attachments/')) {
         attachments[name] = Uint8List.fromList(f.content as List<int>);
       } else if (f.name.startsWith('stickers/')) {
         stickerBytes[name] = Uint8List.fromList(f.content as List<int>);
+      } else if (f.name.startsWith(_packCoversDir)) {
+        packCoverBytes[name] = Uint8List.fromList(f.content as List<int>);
       }
     }
 
@@ -335,6 +355,7 @@ class BackupService {
       customStickers: customStickers,
       stickerBytes: stickerBytes,
       stickerPacks: stickerPacks,
+      packCoverBytes: packCoverBytes,
     );
   }
 

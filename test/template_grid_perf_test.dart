@@ -8,7 +8,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/models/template.dart';
-import 'package:pagenote/pages/library_page.dart';
+import 'package:pagenote/pages/pack_detail_page.dart';
+import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
@@ -76,6 +77,10 @@ void main() {
         providers: [
           ChangeNotifierProvider.value(value: templates),
           ChangeNotifierProvider.value(value: settings),
+          // 详情页同时 watch 贴纸仓库（未分组节的贴纸数据源）。
+          ChangeNotifierProvider.value(
+            value: CustomStickerProvider(database: AppDatabase.inMemory()),
+          ),
         ],
         child: MaterialApp(
           theme: AppTheme.light(settings.seedColor),
@@ -85,7 +90,9 @@ void main() {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: const TemplateManagerPage(),
+          // 未分组详情承载全部自建模板的网格（REQ-26.2），
+          // 懒渲染与重绘隔离的断言在这条路径上仍然成立。
+          home: const PackDetailPage.ungrouped(),
         ),
       );
 
@@ -169,8 +176,8 @@ void main() {
       lessThan(total ~/ 2),
       reason: '滚动过程中同时存活 $peak/$total 张缩略图，说明离屏卡片没有被回收',
     );
-    // 回到顶部后内置模板仍在，滚动没把列表滚丢。
-    expect(find.text('内置模板'), findsOneWidget);
+    // 回到顶部后模板节仍在，滚动没把列表滚丢。
+    expect(find.text('模板'), findsOneWidget);
   });
 
   testWidgets('每张可见缩略图都被 RepaintBoundary 隔离（REQ-18.6）', (tester) async {

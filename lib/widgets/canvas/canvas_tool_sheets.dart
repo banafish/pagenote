@@ -830,12 +830,13 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               ),
               // 打包导出等批量操作在素材管理页（REQ-21.2）：
               // 面板本身是编辑器的常驻抽屉,不适合塞多选与导出流程。
+              // REQ-26.9：整页打开素材首页（固定入口 + 包列表）。
               IconButton(
                 tooltip: '管理我的素材',
                 icon: const Icon(Icons.tune_rounded, size: 20),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const StickerManagerPage(),
+                    builder: (_) => const LibraryPage(),
                   ),
                 ),
               ),

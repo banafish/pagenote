@@ -92,6 +92,14 @@ class StickerStore {
     }
   }
 
+  /// 压缩到 [maxEdge] / [maxBytes] 上限内的 PNG（REQ-20.5）：
+  /// 与贴纸导入同一条归一化链，包封面（REQ-27.4）复用同一约束。
+  /// 先经 [withinDecodeLimit] 过闸再调用；无法解码返回 null。
+  /// 在后台 isolate 执行，避免大图卡住界面。
+  static Future<Uint8List?> normalizeToPng(Uint8List bytes) {
+    return compute(_toPng, bytes);
+  }
+
   /// 不可信字节的归一化落盘（NFR-06 + REQ-20.5），备份恢复与分享包安装共用：
   /// 先读文件头过尺寸闸，再保证落盘结果不超出 [maxEdge] / [maxBytes]。
   ///

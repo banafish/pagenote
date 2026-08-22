@@ -15,7 +15,9 @@ import 'package:pagenote/models/journal_entry.dart';
 import 'package:pagenote/models/sticker_assets.dart';
 import 'package:pagenote/models/template.dart';
 import 'package:pagenote/providers/custom_sticker_provider.dart';
+import 'package:pagenote/services/backup_restore.dart';
 import 'package:pagenote/services/backup_service.dart';
+import 'package:pagenote/utils/pack_cover_store.dart';
 import 'package:pagenote/utils/sticker_store.dart';
 
 void main() {
@@ -574,5 +576,127 @@ void main() {
     expect(StickerStore.safeExt('.PNG'), '.PNG');
     expect(StickerStore.safeExt(''), '.png');
     expect(StickerStore.safeExt(r'..\evil'), '.png');
+  });
+
+  test('包封面：上传落 pack_covers/，更换与移除清理旧文件（REQ-27.2/27.3/27.8）', () async {
+    final provider = await newProvider();
+    final pack = (await provider.createPack('封面包'))!;
+
+    final coverOrNull = await PackCoverStore.importFromBytes(
+      pngOf(64, 64, seed: 11),
+    );
+    expect(coverOrNull, isNotNull);
+    final cover = coverOrNull!;
+    await provider.setPackCover(pack.id, cover);
+    expect(provider.packById(pack.id)!.coverPath, cover);
+    // 与贴纸的 stickers/ 分目录存放，不污染自定义贴纸索引。
+    expect(p.basename(PackCoverStore.pathOf(cover)), cover);
+    expect(
+      await File(PackCoverStore.pathOf(cover)).exists(),
+      isTrue,
+      reason: '封面文件应真实落盘',
+    );
+    expect(
+      p.basename(p.dirname(PackCoverStore.pathOf(cover))),
+      'pack_covers',
+    );
+
+    // 更换封面：旧文件清理，DB 指向新文件。
+    final nextOrNull = await PackCoverStore.importFromBytes(
+      pngOf(64, 64, seed: 12),
+    );
+    final next = nextOrNull!;
+    await provider.setPackCover(pack.id, next);
+    expect(await File(PackCoverStore.pathOf(cover)).exists(), isFalse);
+    expect(provider.packById(pack.id)!.coverPath, next);
+
+    // 移除封面：置空并清理文件。
+    await provider.setPackCover(pack.id, null);
+    expect(provider.packById(pack.id)!.coverPath, isNull);
+    expect(await File(PackCoverStore.pathOf(next)).exists(), isFalse);
+  });
+
+  test('解散与删除包时封面文件一并清理（REQ-27.8）', () async {
+    final provider = await newProvider();
+    final dissolved = (await provider.createPack('要解散的包'))!;
+    final deleted = (await provider.createPack('要删除的包'))!;
+    final coverA =
+        (await PackCoverStore.importFromBytes(pngOf(48, 48, seed: 21)))!;
+    final coverB =
+        (await PackCoverStore.importFromBytes(pngOf(48, 48, seed: 22)))!;
+    await provider.setPackCover(dissolved.id, coverA);
+    await provider.setPackCover(deleted.id, coverB);
+
+    await provider.dissolvePack(dissolved.id);
+    expect(await File(PackCoverStore.pathOf(coverA)).exists(), isFalse);
+    await provider.deletePack(deleted.id);
+    expect(await File(PackCoverStore.pathOf(coverB)).exists(), isFalse);
+  });
+
+  test('封面尺寸闸与压缩：巨图拒收、超限压到上限内（REQ-27.4、NFR-14）', () async {
+    // 单边超过解码上限的图直接拒，不做压缩挽救（NFR-06 同一套闸）。
+    expect(await PackCoverStore.importFromBytes(pngOf(8600, 20)), isNull);
+    // 长边超 1024 的正常图压缩落盘，长边进上限。
+    final stored =
+        (await PackCoverStore.importFromBytes(pngOf(2000, 1000)))!;
+    final saved = await File(PackCoverStore.pathOf(stored)).readAsBytes();
+    final decoded = img.decodeImage(saved)!;
+    expect(decoded.width, lessThanOrEqualTo(PackCoverStore.maxEdge));
+    expect(decoded.height, lessThanOrEqualTo(PackCoverStore.maxEdge));
+  });
+
+  test('备份带包封面：pack_covers/ 入包，恢复按文件名重映射（REQ-27.7）', () async {
+    final provider = await newProvider();
+    final pack = (await provider.createPack('有封面的包'))!;
+    await provider.importFromBytes(
+      pngOf(30, 30, seed: 31),
+      name: '贴纸',
+      packId: pack.id,
+    );
+    final cover =
+        (await PackCoverStore.importFromBytes(pngOf(64, 64, seed: 32)))!;
+    await provider.setPackCover(pack.id, cover);
+
+    final zip = await BackupService.instance.buildZip(
+      entries: const [],
+      templates: const [],
+      customStickers: provider.stickers,
+      stickerBytes: await provider.exportBytes(),
+      stickerPacks: provider.packs,
+      packCoverBytes: await provider.exportCoverBytes(),
+    );
+    expect(
+      ZipDecoder().decodeBytes(zip).findFile('pack_covers/$cover'),
+      isNotNull,
+      reason: '封面文件入包',
+    );
+    final data = BackupService.instance.parseBackup(zip);
+    expect(data.packCoverBytes.keys, {cover});
+
+    // 覆盖恢复：包记录重建、封面按落盘后的文件名重映射、贴纸归位。
+    final restored = await newProvider();
+    final counts = await restoreStickerAssets(restored, data, overwrite: true);
+    expect(counts.saved, 1);
+    final restoredPack = restored.packById(pack.id);
+    expect(restoredPack, isNotNull);
+    expect(restoredPack!.coverPath, isNotNull, reason: '封面应恢复');
+    expect(
+      await File(PackCoverStore.pathOf(restoredPack.coverPath!)).exists(),
+      isTrue,
+    );
+
+    // 老备份没有 pack_covers/：恢复后封面为空，回落占位样式，不得抛异常。
+    final legacy = BackupService.instance.parseBackup(
+      await BackupService.instance.buildZip(
+        entries: const [],
+        templates: const [],
+        customStickers: provider.stickers,
+        stickerBytes: await provider.exportBytes(),
+        stickerPacks: provider.packs,
+      ),
+    );
+    final bareRestored = await newProvider();
+    await restoreStickerAssets(bareRestored, legacy, overwrite: true);
+    expect(bareRestored.packById(pack.id)!.coverPath, isNull);
   });
 }

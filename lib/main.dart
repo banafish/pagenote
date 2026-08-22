@@ -10,7 +10,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'app.dart';
 import 'pages/editor_page.dart';
-import 'pages/library_page.dart';
+import 'pages/pack_detail_page.dart';
 import 'pages/share_pack_import_page.dart';
 import 'providers/custom_sticker_provider.dart';
 import 'providers/journal_provider.dart';
@@ -72,6 +72,8 @@ Future<void> main() async {
         templates: templates.templates,
         customStickers: customStickers.stickers,
         stickerBytes: await customStickers.exportBytes(),
+        stickerPacks: customStickers.packs,
+        packCoverBytes: await customStickers.exportCoverBytes(),
       ),
     ),
   );
@@ -232,20 +234,17 @@ class _SharePackGateState extends State<_SharePackGate>
       ),
     );
     if (result == null || result.isEmpty || !mounted) return;
-    // REQ-21.9：导入完成后落到对应位置并高亮新装的内容。
-    // 两样都有时先看模板、退出后接着看素材，与设置页的手动导入同一条路径。
-    if (result.templateIds.isNotEmpty) {
+    // REQ-26.4：导入完成直达对应包详情页并高亮新装的内容——
+    // 包有了自己的页面,回跳有了天然落点,不再连续 push 两个管理页。
+    // 极端情况下（素材全部被尺寸闸拦下）没有落位包,留在当前页即可。
+    if (result.packId != null) {
       await navigator.push(
         MaterialPageRoute<void>(
-          builder: (_) => TemplateManagerPage(highlightIds: result.templateIds),
-        ),
-      );
-    }
-    if (result.stickerIds.isNotEmpty) {
-      await navigator.push(
-        MaterialPageRoute<void>(
-          builder: (_) =>
-              StickerManagerPage(highlightStickerIds: result.stickerIds),
+          builder: (_) => PackDetailPage.pack(
+            result.packId!,
+            highlightTemplateIds: result.templateIds,
+            highlightStickerIds: result.stickerIds,
+          ),
         ),
       );
     }

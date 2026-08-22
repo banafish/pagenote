@@ -7,6 +7,7 @@ import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/template_provider.dart';
+import '../services/backup_restore.dart';
 import '../services/backup_service.dart';
 import '../services/webdav_service.dart';
 import '../widgets/lock_gate.dart';
@@ -93,6 +94,7 @@ class _WebDavPageState extends State<WebDavPage> {
       customStickers: stickers.stickers,
       stickerBytes: await stickers.exportBytes(),
       stickerPacks: stickers.packs,
+      packCoverBytes: await stickers.exportCoverBytes(),
     );
   }
 
@@ -140,7 +142,7 @@ class _WebDavPageState extends State<WebDavPage> {
         overwrite: overwrite,
         attachments: data.attachments,
       );
-      final stickerCount = await _restoreStickers(
+      final stickerCount = await restoreStickerAssets(
         stickers,
         data,
         overwrite: overwrite,
@@ -162,40 +164,8 @@ class _WebDavPageState extends State<WebDavPage> {
     });
   }
 
-  /// 恢复备份内的自定义图片贴纸（REQ-20.6）,返回落地张数与跳过张数。
-  /// 覆盖模式先清空既有素材,与手账、模板的覆盖语义保持一致。
-  /// 素材包记录先行重建（v7）,贴纸的 packId 才有落位；
-  /// 合并模式下同 id 的包保留本机版本。
-  Future<({int saved, int skipped})> _restoreStickers(
-    CustomStickerProvider stickers,
-    BackupData data, {
-    required bool overwrite,
-  }) async {
-    if (overwrite) await stickers.clearAll();
-    await stickers.ensurePacksExist(data.stickerPacks);
-    var count = 0;
-    var skipped = 0;
-    for (final sticker in data.customStickers) {
-      final bytes = data.stickerBytes[sticker.fileName];
-      if (bytes == null) {
-        skipped++;
-        continue;
-      }
-      final saved = await stickers.importFromBytes(
-        bytes,
-        name: sticker.name,
-        category: sticker.category,
-        ext: sticker.ext,
-        packId: sticker.packId,
-      );
-      if (saved != null) {
-        count++;
-      } else {
-        skipped++;
-      }
-    }
-    return (saved: count, skipped: skipped);
-  }
+  /// 恢复备份内的素材资产（REQ-20.6 / REQ-27.7）交由共享的
+  /// [restoreStickerAssets]（与设置页恢复同一套语义）。
 
   Future<String?> _pickImportMode(BackupData data) {
     return showDialog<String>(

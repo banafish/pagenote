@@ -38,6 +38,7 @@ class SharePackData {
     required this.stickerBytes,
     this.packId,
     this.photoBytes = const {},
+    this.coverBytes,
   });
 
   /// 包名（pack.json 的 name）。
@@ -63,6 +64,11 @@ class SharePackData {
   /// 调用方直接把它交给 `TemplateProvider.installTemplates` 的 attachments 参数，
   /// 由那边按文件名落盘并重映射为本机路径（FIX-01.3）。
   final Map<String, Uint8List> photoBytes;
+
+  /// 包封面 cover.png 的原始字节（REQ-27.5，附录中的可选字段）；
+  /// 老包与不带封面的包为 null。这是不可信字节，落盘前仍要过
+  /// PackCoverStore 的解码尺寸闸与压缩（NFR-06 / NFR-14）。
+  final Uint8List? coverBytes;
 }
 
 /// 移动端导出去向（REQ-21.5）：直接存进用户挑的文件夹，或拉起系统分享。
@@ -87,6 +93,7 @@ class SharePackService {
   static const _packFileName = 'pack.json';
   static const _templatesFileName = 'templates.json';
   static const _stickersFileName = 'stickers.json';
+  static const _coverFileName = 'cover.png';
   static const _assetsDir = 'assets/';
   static const _photosDir = 'photos/';
 
@@ -110,6 +117,10 @@ class SharePackService {
   /// 导入端按它把同一个包的重复导入归位到同一本地包。
   /// 不传则现场生成——散选内容拼的临时包没有持续身份，每次导出都是新包。
   ///
+  /// [coverBytes] 为包封面（REQ-27.6）：整包导出时若有封面则写入顶层
+  /// cover.png。该字段在附录格式中本就可选，格式不升版；
+  /// 老版本按 NFR-07 忽略未知条目，不受影响。
+  ///
   /// [includePhotos] 决定模板画布里的照片怎么处理，两条路都不会留下本机绝对路径
   /// ——REQ-21.4 是硬约束，不能只靠调用方自觉，因此这里对副本再处理一遍，
   /// 且不影响调用方内存里的模板对象：
@@ -128,6 +139,7 @@ class SharePackService {
     Map<String, Uint8List> stickerBytes = const {},
     bool includePhotos = false,
     String? packId,
+    Uint8List? coverBytes,
   }) async {
     final photoBytes = <String, Uint8List>{};
     final templateMaps = <Map<String, Object?>>[];
@@ -183,6 +195,10 @@ class SharePackService {
     stickerBytes.forEach((name, bytes) {
       archive.addFile(ArchiveFile.bytes('$_assetsDir$name', bytes));
     });
+    // 包封面（REQ-27.6）：附录格式中的可选顶层条目，老版本忽略不报错。
+    if (coverBytes != null) {
+      archive.addFile(ArchiveFile.bytes(_coverFileName, coverBytes));
+    }
     // 照片与贴纸分目录存放，导入端才能分别交给贴纸库与模板重映射（FIX-01.2）。
     photoBytes.forEach((name, bytes) {
       archive.addFile(ArchiveFile.bytes('$_photosDir$name', bytes));
@@ -203,6 +219,7 @@ class SharePackService {
     Map<String, Uint8List> stickerBytes = const {},
     bool includePhotos = false,
     String? packId,
+    Uint8List? coverBytes,
     PackExportDestination destination = PackExportDestination.systemShare,
   }) async {
     final bytes = await buildPack(
@@ -213,6 +230,7 @@ class SharePackService {
       stickerBytes: stickerBytes,
       includePhotos: includePhotos,
       packId: packId,
+      coverBytes: coverBytes,
     );
     // 文件名含包名与日期（REQ-21.5）；扩展名固定 .zip，
     // 自创扩展名会让微信 / QQ 的「用其他应用打开」失效。
@@ -320,6 +338,7 @@ class SharePackService {
     // 贴纸位图与模板照片分属两个目录；老包与不带照片的包没有 photos/，降级为空（NFR-07）。
     final stickerBytes = <String, Uint8List>{};
     final photoBytes = <String, Uint8List>{};
+    Uint8List? coverBytes;
     for (final f in archive) {
       if (!f.isFile) continue;
       final name = p.basename(f.name);
@@ -328,6 +347,9 @@ class SharePackService {
         stickerBytes[name] = Uint8List.fromList(f.content as List<int>);
       } else if (f.name.startsWith(_photosDir)) {
         photoBytes[name] = Uint8List.fromList(f.content as List<int>);
+      } else if (f.name == _coverFileName) {
+        // 可选封面（REQ-27.5）：字节原样交给调用方，解码与尺寸闸在落盘时做。
+        coverBytes = Uint8List.fromList(f.content as List<int>);
       }
     }
 
@@ -339,6 +361,7 @@ class SharePackService {
       stickers: stickers,
       stickerBytes: stickerBytes,
       photoBytes: photoBytes,
+      coverBytes: coverBytes,
     );
   }
 

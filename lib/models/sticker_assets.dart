@@ -166,6 +166,8 @@ class StickerPack {
     required this.name,
     this.author = '',
     this.originId,
+    this.sortIndex = 0,
+    this.coverPath,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -179,6 +181,15 @@ class StickerPack {
   /// 分享包内 pack.json 的 id；手工包在首次整包导出前为 null。
   String? originId;
 
+  /// 包列表里的手动顺序（REQ-26.5）：升序排列，越小越靠前。
+  /// 存量包由 v9 迁移按 createdAt 倒序赋初值，
+  /// 新建 / 新导入的包取当前最小值 - 1 落在最前。
+  int sortIndex;
+
+  /// 封面文件名（REQ-27，pack_covers/ 目录内的相对名）；null = 未设置。
+  /// 封面由用户上传或分享包内 cover.png 导入，不从包内容自动合成。
+  String? coverPath;
+
   final DateTime createdAt;
 
   Map<String, Object?> toMap() => {
@@ -186,6 +197,8 @@ class StickerPack {
     'name': name,
     'author': author,
     'originId': originId,
+    'sortIndex': sortIndex,
+    'coverPath': coverPath,
     'createdAt': createdAt.millisecondsSinceEpoch,
   };
 
@@ -194,6 +207,8 @@ class StickerPack {
     name: (map['name'] ?? '') as String,
     author: (map['author'] ?? '') as String,
     originId: map['originId'] as String?,
+    sortIndex: (map['sortIndex'] ?? 0) as int,
+    coverPath: map['coverPath'] as String?,
     createdAt: DateTime.fromMillisecondsSinceEpoch(
       (map['createdAt'] ?? 0) as int,
     ),

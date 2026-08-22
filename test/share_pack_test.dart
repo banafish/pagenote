@@ -16,7 +16,7 @@ import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/models/decoration.dart';
 import 'package:pagenote/models/sticker_assets.dart';
 import 'package:pagenote/models/template.dart';
-import 'package:pagenote/pages/template_manager_page.dart'
+import 'package:pagenote/pages/pack_actions.dart'
     show referencedStickerIds, templateWithoutPhotos;
 import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
@@ -255,6 +255,31 @@ void main() {
       final id2 = packJsonOf(adhoc2)['id']! as String;
       expect(id1, isNot(id2));
       expect(id1, startsWith('pack-'));
+    });
+
+    test('包封面 cover.png 可选往返，格式不升版（REQ-27.6）', () async {
+      final cover = pngOf(7);
+      // 整包导出带上封面：写入顶层 cover.png，format 仍是 1。
+      final withCover = await SharePackService.instance.buildPack(
+        packName: '有封面包',
+        author: '',
+        templates: [templateOf('tpl-cover', name: '模板')],
+        packId: 'pack-cover',
+        coverBytes: cover,
+      );
+      expect(namesOf(withCover), contains('cover.png'));
+      expect(packJsonOf(withCover)['format'], 1, reason: '附录中本就可选，不升版');
+      final parsed = SharePackService.instance.parsePack(withCover);
+      expect(parsed.coverBytes, cover);
+
+      // 不带封面：老包与散选包没有 cover.png，解析端为 null（NFR-07 降级）。
+      final bare = await SharePackService.instance.buildPack(
+        packName: '无封面包',
+        author: '',
+        templates: [templateOf('tpl-bare', name: '模板')],
+      );
+      expect(namesOf(bare), isNot(contains('cover.png')));
+      expect(SharePackService.instance.parsePack(bare).coverBytes, isNull);
     });
 
     test('kind 按内容取 template / sticker / mixed（附录设计约束 1）', () async {

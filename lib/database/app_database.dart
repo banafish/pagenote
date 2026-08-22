@@ -20,6 +20,9 @@ import '../models/template.dart';
 ///   （素材按包归组，存量数据 packId 为 NULL 即未分组）。
 /// - v8：templates 新增 packId（模板同样按素材包归组；分享包导入时
 ///   随整包落位，存量数据 packId 为 NULL 即未分组）。
+/// - v9：sticker_packs 新增 sortIndex（包列表手动排序）与 coverPath
+///   （用户上传的包封面）；存量包按 createdAt 倒序赋初始顺序
+///   （REQ-26.5 / REQ-27.1）。
 class AppDatabase {
   AppDatabase._();
 
@@ -43,7 +46,7 @@ class AppDatabase {
   }
 
   static const _dbName = 'pagenote.db';
-  static const dbVersion = 8;
+  static const dbVersion = 9;
 
   Database? _db;
   bool _inMemory = false;
@@ -119,11 +122,31 @@ class AppDatabase {
       await _createCustomStickersTable(db, withPack: false);
     },
     7: (db) async {
-      await _createStickerPacksTable(db);
+      // 迁移链上建的是 v7 时期的老结构（无 sortIndex / coverPath），由 v9 补加。
+      await _createStickerPacksTable(db, withSorting: false);
       await db.execute('ALTER TABLE custom_stickers ADD COLUMN packId TEXT');
     },
     8: (db) async {
       await db.execute('ALTER TABLE templates ADD COLUMN packId TEXT');
+    },
+    9: (db) async {
+      await db.execute(
+        'ALTER TABLE sticker_packs ADD COLUMN sortIndex INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute('ALTER TABLE sticker_packs ADD COLUMN coverPath TEXT');
+      // 存量包以现有 createdAt 倒序作为初始手动顺序（REQ-26.5）：
+      // 最新导入的包排最前，与 v8 之前的展示顺序一致。
+      final rows = await db.query('sticker_packs', orderBy: 'createdAt DESC');
+      final batch = db.batch();
+      for (var i = 0; i < rows.length; i++) {
+        batch.update(
+          'sticker_packs',
+          {'sortIndex': i},
+          where: 'id = ?',
+          whereArgs: [rows[i]['id']],
+        );
+      }
+      await batch.commit(noResult: true);
     },
   };
 
@@ -201,13 +224,19 @@ class AppDatabase {
   }
 
   /// 素材包（v7）：分享包导入与用户手工建的贴纸分组容器。
-  static Future<void> _createStickerPacksTable(Database db) async {
+  /// [withSorting] 为 false 时建 v7 时期的老结构（迁移链上
+  /// sortIndex / coverPath 由 v9 补加）。
+  static Future<void> _createStickerPacksTable(
+    Database db, {
+    bool withSorting = true,
+  }) async {
     await db.execute('''
       CREATE TABLE sticker_packs (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         author TEXT NOT NULL DEFAULT '',
         originId TEXT,
+        ${withSorting ? 'sortIndex INTEGER NOT NULL DEFAULT 0, coverPath TEXT,' : ''}
         createdAt INTEGER NOT NULL
       )
     ''');
@@ -387,7 +416,10 @@ class AppDatabase {
 
   Future<List<StickerPack>> getAllStickerPacks() async {
     final db = await database;
-    final rows = await db.query('sticker_packs', orderBy: 'createdAt DESC');
+    final rows = await db.query(
+      'sticker_packs',
+      orderBy: 'sortIndex ASC, createdAt DESC',
+    );
     return rows.map(StickerPack.fromMap).toList();
   }
 
