@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -107,6 +109,52 @@ Future<bool?> askIncludeTemplatePhotos(
           ),
         ],
       ),
+    ),
+  );
+}
+
+/// 导出前的去向选择（REQ-21.5）：移动端在导出的最后一步问一次
+/// 「存到文件夹」还是「系统分享」——分享面板由接收方决定落点，
+/// 只有文件选择器才能让用户自己挑保存位置。
+///
+/// 返回所选去向，null 表示用户取消；桌面端本来就能在保存对话框里挑目录，
+/// 不必多问一步，直接按 saveToFolder 走。
+Future<PackExportDestination?> askPackExportDestination(
+  BuildContext context,
+) async {
+  if (!Platform.isAndroid && !Platform.isIOS) {
+    return PackExportDestination.saveToFolder;
+  }
+  return showDialog<PackExportDestination>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: const Text('素材包导出到'),
+      children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(
+            dialogContext,
+            PackExportDestination.saveToFolder,
+          ),
+          child: const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.folder_open_rounded),
+            title: Text('保存到文件夹', style: TextStyle(fontSize: 15)),
+            subtitle: Text('挑选位置，zip 直接存到本机或网盘'),
+          ),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(
+            dialogContext,
+            PackExportDestination.systemShare,
+          ),
+          child: const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.share_outlined),
+            title: Text('系统分享', style: TextStyle(fontSize: 15)),
+            subtitle: Text('发给微信、QQ 好友等'),
+          ),
+        ),
+      ],
     ),
   );
 }

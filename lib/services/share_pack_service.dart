@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart' show FilePicker, FileType;
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -56,6 +58,15 @@ class SharePackData {
   /// 调用方直接把它交给 `TemplateProvider.installTemplates` 的 attachments 参数，
   /// 由那边按文件名落盘并重映射为本机路径（FIX-01.3）。
   final Map<String, Uint8List> photoBytes;
+}
+
+/// 移动端导出去向（REQ-21.5）：直接存进用户挑的文件夹，或拉起系统分享。
+enum PackExportDestination {
+  /// 系统文件选择器里挑文件夹，zip 直接落盘到所选位置。
+  saveToFolder,
+
+  /// 写入临时文件后交给系统分享面板（微信 / QQ 等）。
+  systemShare,
 }
 
 /// 素材 / 模板分享包（REQ-21）：独立于备份包的分发格式。
@@ -171,7 +182,8 @@ class SharePackService {
   }
 
   /// 导出分享包到用户选择的位置（REQ-21.5）。
-  /// Windows：系统保存对话框；Android：写入临时文件后拉起系统分享。
+  /// [destination] 仅移动端生效：saveToFolder 走系统文件选择器由用户挑文件夹直接落盘，
+  /// systemShare 写入临时文件后拉起系统分享；桌面端始终是系统保存对话框。
   /// 返回导出文件路径，用户取消返回 null。
   Future<String?> exportPack({
     required String packName,
@@ -180,6 +192,7 @@ class SharePackService {
     List<CustomSticker> stickers = const [],
     Map<String, Uint8List> stickerBytes = const {},
     bool includePhotos = false,
+    PackExportDestination destination = PackExportDestination.systemShare,
   }) async {
     final bytes = await buildPack(
       packName: packName,
@@ -197,6 +210,21 @@ class SharePackService {
     const zipGroup = XTypeGroup(label: '素材包', extensions: ['zip']);
 
     if (Platform.isAndroid || Platform.isIOS) {
+      if (destination == PackExportDestination.saveToFolder) {
+        try {
+          // SAF「新建文档」选择器：用户挑文件夹（可进下载、网盘等任意目录），
+          // 字节由系统写入所选位置，应用自身不需要任何存储权限。
+          final saved = await FilePicker.platform.saveFile(
+            fileName: name,
+            type: FileType.custom,
+            allowedExtensions: const ['zip'],
+            bytes: bytes,
+          );
+          return saved;
+        } on PlatformException {
+          // 个别机型的文件选择器不可用时退回系统分享，保证导出仍然可用。
+        }
+      }
       final dir = await getTemporaryDirectory();
       final file = File(p.join(dir.path, name));
       await file.writeAsBytes(bytes);

@@ -77,6 +77,11 @@ dependencies:
   # Share card export (REQ-11)
   share_plus: ^11.0.0
   gal: ^2.3.1
+  # 素材包导出时挑选保存文件夹（SAF 新建文档，REQ-21.5）。
+  # 不用 11+/12：它们在 AGP9 下依赖「内置 Kotlin」，与本项目 builtInKotlin=false 冲突，
+  # 会让 FilePickerPlugin 缺类、Android 编译失败；10.x 仍无条件应用 KGP。
+  # （10.3.11 已被官方撤回，取 10.3.10。）
+  file_picker: ^10.3.10
 
 dev_dependencies:
   flutter_test:

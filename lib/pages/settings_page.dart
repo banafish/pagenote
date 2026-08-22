@@ -943,6 +943,9 @@ class _SharePackExportPageState extends State<_SharePackExportPage> {
       if (choice == null || !mounted) return;
       includePhotos = choice;
     }
+    // 最后一步问存到哪（REQ-21.5）：挑文件夹直接落盘，或交给系统分享。
+    final destination = await askPackExportDestination(context);
+    if (destination == null || !mounted) return;
 
     // 带照片时把原始模板交给 buildPack，不带时先在这里清成占位框。
     final packed = includePhotos
@@ -963,6 +966,7 @@ class _SharePackExportPageState extends State<_SharePackExportPage> {
         ],
         stickerBytes: await stickerProvider.exportBytes(ids: ids),
         includePhotos: includePhotos,
+        destination: destination,
       );
       // 用户在系统对话框里取消时返回 null，留在页面上不打扰。
       if (path != null) {

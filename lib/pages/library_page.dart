@@ -113,6 +113,8 @@ class _LibraryPageState extends State<LibraryPage> {
       targets.length == 1 ? targets.first.name : '我的模板包',
     );
     if (meta == null || !mounted) return;
+    final destination = await askPackExportDestination(context);
+    if (destination == null || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     final stickers = context.read<CustomStickerProvider>();
@@ -133,6 +135,7 @@ class _LibraryPageState extends State<LibraryPage> {
         ],
         stickerBytes: await stickers.exportBytes(ids: ids),
         includePhotos: includePhotos,
+        destination: destination,
       );
       // 用户在系统对话框里取消时返回 null，不打扰。
       if (path != null) {
@@ -156,6 +159,8 @@ class _LibraryPageState extends State<LibraryPage> {
       targets.length == 1 ? targets.first.name : '我的素材包',
     );
     if (meta == null || !mounted) return;
+    final destination = await askPackExportDestination(context);
+    if (destination == null || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<CustomStickerProvider>();
@@ -168,6 +173,7 @@ class _LibraryPageState extends State<LibraryPage> {
         stickerBytes: await provider.exportBytes(
           ids: [for (final s in targets) s.id],
         ),
+        destination: destination,
       );
       // 用户在系统对话框里取消时返回 null，不打扰。
       if (path != null) {
