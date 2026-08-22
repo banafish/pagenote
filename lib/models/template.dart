@@ -51,7 +51,7 @@ class JournalTemplate {
   /// 分享包导入时随整包落位；重复导入会把先前散落的同一模板归位回包。
   String? packId;
 
-  /// 最近一次套用时间（REQ-18.4 排序用）；null 为从未使用。
+  /// 最近一次套用时间；null 为从未使用。
   DateTime? lastUsedAt;
 
   /// 手动排序序号，越小越靠前（REQ-18.4）。

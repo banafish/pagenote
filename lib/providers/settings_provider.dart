@@ -78,9 +78,6 @@ class SettingsProvider extends ChangeNotifier {
   static const _keyRecentStickers = 'stickers.recent';
   static const _keyFavoriteStickers = 'stickers.favorite';
 
-  // 模板列表排序方式（REQ-18.4）。
-  static const _keyTemplateSort = 'template.sort';
-
   /// 最近使用素材保留的最大条数（REQ-17.1）。
   static const _recentStickerLimit = 24;
 
@@ -376,16 +373,6 @@ class SettingsProvider extends ChangeNotifier {
   /// 手动拖拽排序后整体覆盖收藏顺序（REQ-17.2）。
   Future<void> reorderFavoriteStickers(List<String> keys) async {
     await _prefs.setString(_keyFavoriteStickers, jsonEncode(keys));
-    notifyListeners();
-  }
-
-  // ---------------- 模板排序（REQ-18.4） ----------------
-
-  /// 模板列表排序方式的枚举名，默认手动排序。
-  String get templateSortName => _prefs.getString(_keyTemplateSort) ?? 'manual';
-
-  Future<void> setTemplateSortName(String name) async {
-    await _prefs.setString(_keyTemplateSort, name);
     notifyListeners();
   }
 }

@@ -10,7 +10,6 @@ import '../models/sticker_assets.dart';
 import '../models/template.dart';
 import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
-import '../providers/settings_provider.dart';
 import '../providers/template_provider.dart';
 import '../utils/pack_cover_store.dart';
 import '../utils/sticker_store.dart';
@@ -139,18 +138,6 @@ class _PackDetailPageState extends State<PackDetailPage>
         _scheduleHighlightFade();
       });
     }
-    // 未分组详情继承模板三档排序（REQ-26.2）：进页面时读回持久化的
-    // 排序方式（REQ-18.4）；放到首帧之后，避免在 build 期间通知监听者。
-    if (widget.source == PackDetailSource.ungrouped) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final name = context.read<SettingsProvider>().templateSortName;
-        context.read<TemplateProvider>().setSort(
-          TemplateSort.values.where((s) => s.name == name).firstOrNull ??
-              TemplateSort.manual,
-        );
-      });
-    }
   }
 
   @override
@@ -243,14 +230,9 @@ class _PackDetailPageState extends State<PackDetailPage>
     };
   }
 
-  // ---------------- 模板排序（未分组继承 REQ-18.4） ----------------
+  // ---------------- 模板手动排序（REQ-18.4） ----------------
 
-  Future<void> _setSort(TemplateSort sort) async {
-    context.read<TemplateProvider>().setSort(sort);
-    await context.read<SettingsProvider>().setTemplateSortName(sort.name);
-  }
-
-  /// 手动模式下拖拽落位：整体重排这批模板并持久化（REQ-18.4）。
+  /// 拖拽落位：整体重排这批模板并持久化（REQ-18.4）。
   /// 只传当前详情页可见的 id——重编号只影响这一节，其余模板的原顺序不动。
   Future<void> _reorder(List<JournalTemplate> users, int from, int to) async {
     final ids = users.map((t) => t.id).toList();
@@ -794,12 +776,11 @@ class _PackDetailPageState extends State<PackDetailPage>
     final stickers = _visibleStickers(stickerProvider);
     final templates = _visibleTemplates(templateProvider);
     final sections = _stickerSections(stickerProvider);
-    // 未分组模板的三档排序与长按拖排整体迁移至此（REQ-26.2）；
+    // 未分组模板的长按拖排迁移至此（REQ-26.2 / REQ-18.4）；
     // 多选态下让出长按手势，两者不同时生效。
     final draggable =
         widget.source == PackDetailSource.ungrouped &&
         !_selecting &&
-        templateProvider.sort == TemplateSort.manual &&
         templates.length > 1;
 
     return Scaffold(
@@ -858,8 +839,6 @@ class _PackDetailPageState extends State<PackDetailPage>
                   _sectionLabel('贴纸', null),
                   SliverToBoxAdapter(child: _noStickerHint()),
                 ],
-                if (widget.source == PackDetailSource.ungrouped)
-                  SliverToBoxAdapter(child: _sortBar(templateProvider.sort)),
                 _sectionLabel(
                   widget.source == PackDetailSource.builtin ? '内置模板' : '模板',
                   templates.isEmpty ? null : '共 ${templates.length} 套',
@@ -1029,30 +1008,6 @@ class _PackDetailPageState extends State<PackDetailPage>
       child: Text(
         '还没有贴纸，点右上角「导入图片」加进来',
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
-      ),
-    );
-  }
-
-  /// 排序切换（REQ-18.4，未分组模板继承）：窄屏可横向滚动，不挤压文案。
-  Widget _sortBar(TemplateSort sort) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(_gridPadding, 6, _gridPadding, 4),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SegmentedButton<TemplateSort>(
-          showSelectedIcon: false,
-          style: const ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12.5)),
-          ),
-          segments: const [
-            ButtonSegment(value: TemplateSort.recent, label: Text('最近使用')),
-            ButtonSegment(value: TemplateSort.created, label: Text('创建时间')),
-            ButtonSegment(value: TemplateSort.manual, label: Text('手动排序')),
-          ],
-          selected: {sort},
-          onSelectionChanged: (values) => _setSort(values.first),
-        ),
       ),
     );
   }

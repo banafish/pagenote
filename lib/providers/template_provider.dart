@@ -10,9 +10,6 @@ import '../models/template.dart'
     show JournalTemplate, isBuiltinTemplateId, newTemplateId;
 import '../utils/attachments.dart';
 
-/// 模板列表排序方式（REQ-18.4）。
-enum TemplateSort { manual, recent, created }
-
 /// 模板引用的、本机缺失的素材（FIX-03.1 / REQ-21.7）。
 class MissingAssetReport {
   const MissingAssetReport({
@@ -53,12 +50,7 @@ class TemplateProvider extends ChangeNotifier {
   List<JournalTemplate> _backing = [];
   bool loaded = false;
 
-  TemplateSort _sort = TemplateSort.manual;
-
-  /// 当前排序方式（REQ-18.4，由设置层持久化后注入）。
-  TemplateSort get sort => _sort;
-
-  /// 全部模板：内置在前，按当前排序方式排列。
+  /// 全部模板：内置在前，用户模板按手动排序序排列。
   List<JournalTemplate> get templates => List.unmodifiable(_backing);
 
   List<JournalTemplate> get builtinTemplates =>
@@ -106,37 +98,18 @@ class TemplateProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 切换排序方式（REQ-18.4）。
-  void setSort(TemplateSort sort) {
-    if (_sort == sort) return;
-    _sort = sort;
-    _backing = _sorted(_backing);
-    notifyListeners();
-  }
-
+  /// 手动序：内置恒在前，用户模板按 [JournalTemplate.sortIndex] 升序，
+  /// 并列时新改动的靠前（REQ-18.4）。
   List<JournalTemplate> _sorted(List<JournalTemplate> list) {
     final sorted = List.of(list);
     sorted.sort((a, b) {
       // 内置模板恒在前，与既有列表习惯一致。
       if (a.builtin != b.builtin) return a.builtin ? -1 : 1;
-      return switch (_sort) {
-        // 从未使用过的排在用过的之后。
-        TemplateSort.recent => _descNullable(a.lastUsedAt, b.lastUsedAt),
-        TemplateSort.created => b.createdAt.compareTo(a.createdAt),
-        TemplateSort.manual =>
-          a.sortIndex != b.sortIndex
-              ? a.sortIndex.compareTo(b.sortIndex)
-              : b.updatedAt.compareTo(a.updatedAt),
-      };
+      return a.sortIndex != b.sortIndex
+          ? a.sortIndex.compareTo(b.sortIndex)
+          : b.updatedAt.compareTo(a.updatedAt);
     });
     return sorted;
-  }
-
-  static int _descNullable(DateTime? a, DateTime? b) {
-    if (a == null && b == null) return 0;
-    if (a == null) return 1;
-    if (b == null) return -1;
-    return b.compareTo(a);
   }
 
   JournalTemplate? byId(String id) =>
@@ -149,13 +122,12 @@ class TemplateProvider extends ChangeNotifier {
     await load();
   }
 
-  /// 记录一次套用（REQ-18.4「按最近使用」排序的数据来源）。
+  /// 记录一次套用，刷新 lastUsedAt；不改变手动排序。
   Future<void> markUsed(String id) async {
     final template = byId(id);
     if (template == null) return;
     template.lastUsedAt = DateTime.now();
     await _db.insertTemplate(template);
-    _backing = _sorted(_backing);
     notifyListeners();
   }
 
@@ -213,7 +185,6 @@ class TemplateProvider extends ChangeNotifier {
       t.sortIndex = i;
       await _db.insertTemplate(t);
     }
-    _sort = TemplateSort.manual;
     await load();
   }
 

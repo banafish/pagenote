@@ -148,7 +148,7 @@ void main() {
   testWidgets('素材首页两个固定入口可达（NFR-15 路径 1）', (tester) async {
     final (journal, settings, templates, stickers) = await bootstrap(tester);
     await seedPack(tester, stickers, templates);
-    // 未分组里放一套自建模板：未分组详情才有内容（三档排序条随之出现）。
+    // 未分组里放一套自建模板：未分组详情才有内容。
     await templates.saveTemplate(
       JournalTemplate(id: 'tpl-loose-1', name: '散装模板', content: '内容'),
     );
@@ -178,11 +178,12 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    // 未分组固定入口 → 未分组详情（三档排序条继承 REQ-26.2）。
+    // 未分组固定入口 → 未分组详情（排序选择已下线，仅保留手动序与拖排）。
     await tester.tap(find.text('未分组'));
     await tester.pumpAndSettle();
     expect(find.byType(PackDetailPage), findsOneWidget);
-    expect(find.text('手动排序'), findsOneWidget);
+    expect(find.text('手动排序'), findsNothing, reason: '排序切换条已移除');
+    expect(find.text('散装模板'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
     // 回到首页仍在，固定入口不受详情页进出影响（NFR-13）。

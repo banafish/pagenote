@@ -508,17 +508,17 @@ void main() {
     for (final t in templates.builtinTemplates.take(2)) {
       expect(find.text(t.name), findsWidgets, reason: '内置模板 ${t.name} 应可见');
     }
-    // 内置详情没有多选以外的整页操作入口，也没有未分组的排序条。
+    // 内置详情没有多选以外的整页操作入口，也没有排序条。
     expect(find.text('最近使用'), findsNothing);
 
-    // 未分组入口：自建模板三档排序条仍在（REQ-26.2）。
+    // 未分组入口：排序选择已下线，各处都不再出现排序条。
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('未分组'));
     await tester.pumpAndSettle();
-    expect(find.text('最近使用'), findsOneWidget);
-    expect(find.text('创建时间'), findsOneWidget);
-    expect(find.text('手动排序'), findsOneWidget);
+    expect(find.text('最近使用'), findsNothing);
+    expect(find.text('创建时间'), findsNothing);
+    expect(find.text('手动排序'), findsNothing);
     expect(find.text('未分组模板甲'), findsOneWidget);
   });
 }

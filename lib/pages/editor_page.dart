@@ -739,7 +739,7 @@ class _EditorPageState extends State<EditorPage> {
     });
     _pushHistory();
     _editorKey.currentState?.clearSelection();
-    // 记一次套用时间，供模板管理页「按最近使用」排序（REQ-18.4）；不阻塞套用。
+    // 记一次套用时间（lastUsedAt）；不阻塞套用。
     context.read<TemplateProvider>().markUsed(template.id);
     if (mounted) {
       ScaffoldMessenger.of(

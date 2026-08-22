@@ -5,7 +5,7 @@ import 'package:pagenote/database/app_database.dart';
 import 'package:pagenote/models/template.dart';
 import 'package:pagenote/providers/template_provider.dart';
 
-/// 模板管理页的数据层（REQ-18）：排序、最近使用、复制、手动拖拽排序。
+/// 模板管理页的数据层（REQ-18）：手动排序、套用记录、复制。
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
@@ -46,7 +46,7 @@ void main() {
   List<String> userNames(TemplateProvider provider) =>
       provider.userTemplates.map((t) => t.name).toList();
 
-  /// 内置模板恒在整表最前（REQ-18.4 三种排序都要满足）。
+  /// 内置模板恒在整表最前（REQ-18.4）。
   void expectBuiltinFirst(TemplateProvider provider) {
     expect(
       provider.templates.take(builtinCount).every((t) => t.builtin),
@@ -55,7 +55,7 @@ void main() {
     );
   }
 
-  test('三种排序各自的次序正确，内置模板恒在最前（REQ-18.4）', () async {
+  test('用户模板按 sortIndex 升序，内置模板恒在最前（REQ-18.4）', () async {
     final provider = await newProvider();
     await addUser(
       provider,
@@ -81,20 +81,11 @@ void main() {
       sortIndex: 1,
     );
 
-    provider.setSort(TemplateSort.created);
-    expect(userNames(provider), ['丙', '乙', '甲'], reason: '新建的在前');
-    expectBuiltinFirst(provider);
-
-    provider.setSort(TemplateSort.recent);
-    expect(userNames(provider), ['甲', '丙', '乙'], reason: '从未使用的排在最后');
-    expectBuiltinFirst(provider);
-
-    provider.setSort(TemplateSort.manual);
     expect(userNames(provider), ['乙', '丙', '甲'], reason: 'sortIndex 升序');
     expectBuiltinFirst(provider);
   });
 
-  test('markUsed 后升到用户模板首位，未用过的仍在最后（REQ-18.4）', () async {
+  test('markUsed 只刷新 lastUsedAt，不改变列表次序（REQ-18.4）', () async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
     final provider = TemplateProvider(database: db);
@@ -104,29 +95,27 @@ void main() {
       'u-jia',
       '甲',
       createdAt: DateTime(2026, 8, 1),
-      lastUsedAt: DateTime(2026, 8, 1),
+      sortIndex: 2,
     );
     await addUser(
       provider,
       'u-yi',
       '乙',
       createdAt: DateTime(2026, 8, 2),
-      lastUsedAt: DateTime(2026, 8, 2),
+      sortIndex: 0,
     );
-    await addUser(provider, 'u-bing', '丙', createdAt: DateTime(2026, 8, 3));
-
-    provider.setSort(TemplateSort.recent);
-    expect(userNames(provider), ['乙', '甲', '丙']);
+    await addUser(provider, 'u-bing', '丙', createdAt: DateTime(2026, 8, 3), sortIndex: 1);
 
     await provider.markUsed('u-jia');
-    expect(userNames(provider), ['甲', '乙', '丙'], reason: '刚套用的排到首位');
+    expect(provider.byId('u-jia')!.lastUsedAt, isNotNull, reason: '套用时间已记录');
+    expect(userNames(provider), ['乙', '丙', '甲'], reason: '套用不改变手动序');
     expectBuiltinFirst(provider);
 
-    // 落库后重新读出，次序不变。
+    // 落库后重新读出，lastUsedAt 与次序都还在。
     final reopened = TemplateProvider(database: db);
     await reopened.load();
-    reopened.setSort(TemplateSort.recent);
-    expect(userNames(reopened), ['甲', '乙', '丙']);
+    expect(reopened.byId('u-jia')!.lastUsedAt, isNotNull);
+    expect(userNames(reopened), ['乙', '丙', '甲']);
   });
 
   test('复制内置模板得到可编辑的副本，画布为深拷贝（REQ-18.3）', () async {
@@ -187,9 +176,7 @@ void main() {
       sortIndex: 2,
     );
 
-    provider.setSort(TemplateSort.created);
     await provider.reorderUserTemplates([c.id, a.id, b.id]);
-    expect(provider.sort, TemplateSort.manual, reason: '拖拽后切回手动排序');
     expect(userNames(provider), ['丙', '甲', '乙']);
 
     // 换一个 provider 重新读库：顺序与 sortIndex 都还在。
