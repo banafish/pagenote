@@ -385,9 +385,19 @@ class CustomStickerProvider extends ChangeNotifier {
   }
 
   /// 已存在同 sha1 则复用既有记录，不重复写库（REQ-20.2 去重）。
+  /// 去重命中时若本次导入带着包（packId 非空），先前散落在未分组的
+  /// 贴纸归位回包——与模板 installTemplates 同一套语义（如自己导出
+  /// 又导回）；用户已把它挪进其它包的，归属保持不变。
   Future<CustomSticker> _put(CustomSticker sticker) async {
     final existing = byId(sticker.id);
-    if (existing != null) return existing;
+    if (existing != null) {
+      if (sticker.packId != null && existing.packId == null) {
+        existing.packId = sticker.packId;
+        await _db.setCustomStickerPack(existing.id, existing.packId);
+        notifyListeners();
+      }
+      return existing;
+    }
     await _db.insertCustomSticker(sticker);
     _backing = [sticker, ..._backing];
     _syncIndex();

@@ -135,6 +135,42 @@ void main() {
     expect((await storedFiles()).length, 2);
   });
 
+  test('带包导入命中去重：未分组贴纸归位回包,已挪进其它包的不被抢回（v8）', () async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    final provider = await newProvider(database: db);
+    final bytes = pngOf(48, 48, seed: 6);
+    final sticker = (await provider.importFromFile(fileOf(bytes, '印章.png')))!;
+    expect(sticker.packId, isNull, reason: '相册导入默认未分组');
+
+    // 未分组的贴纸随分享包导出又导回：去重命中,但归位进包而不是留在未分组。
+    final pack = await provider.ensureImportedPack(name: '印章包', originId: 'pack-x');
+    final again = await provider.importFromBytes(
+      bytes,
+      name: '印章',
+      packId: pack.id,
+    );
+    expect(again!.id, sticker.id, reason: '同 sha1 仍是同一条记录');
+    expect(again.packId, pack.id, reason: '先前散落在未分组的贴纸归位回包');
+    expect(provider.stickers.length, 1, reason: '归位不是重复入库');
+    expect(provider.ungroupedStickers, isEmpty);
+    expect(provider.stickersOfPack(pack.id).single.id, sticker.id);
+
+    // 归位要落库才算数：重读后仍在包里。
+    final reopened = await newProvider(database: db);
+    expect(reopened.byId(sticker.id)!.packId, pack.id);
+
+    // 用户挪进其它包后再次导回：已有的归属优先于导入包的落位。
+    final mine = (await provider.createPack('我的私藏'))!;
+    await provider.moveStickerToPack(sticker.id, mine.id);
+    final third = await provider.importFromBytes(
+      bytes,
+      name: '印章',
+      packId: pack.id,
+    );
+    expect(third!.packId, mine.id, reason: '已有的归属优先于导入包的落位');
+  });
+
   test('超限图片导入后自动压缩到长边 1024px / 2MB 内（REQ-20.5）', () async {
     final provider = await newProvider();
     final sticker = await provider.importFromFile(
