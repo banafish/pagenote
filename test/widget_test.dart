@@ -394,6 +394,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
+    // 写手账 FAB 只在时光首页提供，其余一级入口不显示。
+    expect(find.byType(FloatingActionButton), findsNothing);
 
     // 回顾默认落在「日历」子页签（窄屏下当日列表在折叠线以下，滚过去再断言）。
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
@@ -453,6 +455,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
+    // 写手账 FAB 只在时光首页提供，其余一级入口不显示。
+    expect(find.byType(FloatingActionButton), findsNothing);
     await tester.tap(find.text('贴纸'));
     await tester.pumpAndSettle();
     expect(find.text('还没有自己的素材').hitTestable(), findsOneWidget);

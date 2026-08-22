@@ -7,11 +7,15 @@ class AdaptiveScaffold extends StatefulWidget {
     required this.destinations,
     required this.bodyBuilder,
     this.floatingActionButton,
+    this.floatingActionButtonTabs,
   });
 
   final List<AdaptiveDestination> destinations;
   final Widget Function(int index) bodyBuilder;
   final Widget? floatingActionButton;
+
+  /// 允许显示 [floatingActionButton] 的页签下标；null 表示全部页签都显示。
+  final Set<int>? floatingActionButtonTabs;
 
   @override
   State<AdaptiveScaffold> createState() => _AdaptiveScaffoldState();
@@ -35,6 +39,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
+    final showFab =
+        widget.floatingActionButtonTabs?.contains(_index) ?? true;
+    final fab = showFab ? widget.floatingActionButton : null;
     // 四个一级入口同时挂载、只切换显示层（NFR-09）：滚动位置、选中日期、
     // 当前子页签与排序方式在切换后原样保留，切换本身也不触发任何 provider 重载。
     final body = IndexedStack(
@@ -76,13 +83,13 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             Expanded(child: body),
           ],
         ),
-        floatingActionButton: widget.floatingActionButton,
+        floatingActionButton: fab,
       );
     }
 
     return Scaffold(
       body: body,
-      floatingActionButton: widget.floatingActionButton,
+      floatingActionButton: fab,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),

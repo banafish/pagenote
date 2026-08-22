@@ -91,6 +91,8 @@ class _RootShellState extends State<RootShell> {
         2 => ReviewPage(onOpenEditor: _openEditor),
         _ => const SettingsPage(),
       },
+      // 写作入口只挂在「时光」首页；素材/回顾/设置不出现 FAB。
+      floatingActionButtonTabs: const {0},
       floatingActionButton: wide
           ? FloatingActionButton.extended(
               onPressed: () => _newEntry(context),
