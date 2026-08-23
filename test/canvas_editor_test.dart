@@ -343,4 +343,68 @@ void main() {
       closeTo(0.05 * k, 1e-9),
     );
   });
+
+  testWidgets('画布比例：纸张面板切换 9:16 竖版并等比重排元素', (tester) async {
+    await tester.pumpWidget(await wrap());
+    await tester.pumpAndSettle();
+
+    final editor = tester.state(find.byType(CanvasEditor)) as CanvasEditorState;
+    await tester.tap(find.byTooltip('纸张'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('9:16 竖版'));
+    await tester.pumpAndSettle();
+
+    final canvas = editor.widget.canvas;
+    expect(canvas.height, closeTo(16 / 9, 1e-9), reason: '空白新页切竖版后保持 9:16');
+    final k = (16 / 9) / (4 / 3);
+    expect(
+      canvas.componentOf(ComponentKind.date)!.y,
+      closeTo(0.05 * k, 1e-9),
+    );
+  });
+
+  testWidgets('画布比例：自定义宽高,超范围按上下限收拢', (tester) async {
+    await tester.pumpWidget(await wrap());
+    await tester.pumpAndSettle();
+
+    final editor = tester.state(find.byType(CanvasEditor)) as CanvasEditorState;
+    await tester.tap(find.byTooltip('纸张'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('自定义'));
+    await tester.pumpAndSettle();
+    expect(find.text('自定义画布比例'), findsOneWidget);
+
+    // 输入框预填当前 3:4。
+    expect(find.text('约为 3:4 竖版'), findsOneWidget);
+    final fields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    final confirm = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text('确定'),
+    );
+    await tester.enterText(fields.at(0), '5');
+    await tester.enterText(fields.at(1), '7');
+    await tester.pump();
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(editor.widget.canvas.height, closeTo(1.4, 1e-9));
+
+    // 重新打开面板：自定义 chip 选中并带出当前比例 5:7。
+    await tester.tap(find.byTooltip('纸张'));
+    await tester.pumpAndSettle();
+    expect(find.text('自定义 5:7'), findsOneWidget);
+
+    // 10:1 → 高 0.1 倍页宽,低于下限收到 0.5（预览需提示已限制）。
+    await tester.tap(find.text('自定义 5:7'));
+    await tester.pumpAndSettle();
+    await tester.enterText(fields.at(0), '10');
+    await tester.enterText(fields.at(1), '1');
+    await tester.pump();
+    expect(find.textContaining('已限制在'), findsOneWidget);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(editor.widget.canvas.height, closeTo(0.5, 1e-9));
+  });
 }

@@ -1209,10 +1209,40 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
 /// 画布比例选项（平板/电脑可建横屏手账）：标签 + 页面高度（页宽倍数）。
 const _canvasRatios = [
   ('3:4 竖版', 4 / 3),
+  ('9:16 竖版', 16 / 9),
   ('1:1 方形', 1.0),
   ('4:3 横版', 3 / 4),
   ('16:9 横版', 9 / 16),
 ];
+
+/// 预设比例之外的高度（页宽倍数）视为自定义。
+bool _isPresetHeight(double height) =>
+    _canvasRatios.any((r) => (height - r.$2).abs() < 1e-6);
+
+/// 把页面高度近似成最简的「宽:高」整数比（分母从小的挑,误差最小者优先）,
+/// 供自定义比例的展示与输入框预填：16/9 → (9, 16),1.25 → (4, 5)。
+(int, int) _simplestRatio(double height) {
+  var best = (1, 1);
+  var bestErr = double.infinity;
+  for (var w = 1; w <= 32; w++) {
+    final h = (height * w).round();
+    if (h < 1 || h > 48) continue;
+    final err = (height - h / w).abs();
+    if (err < bestErr - 1e-9) {
+      bestErr = err;
+      best = (w, h);
+    }
+  }
+  var (w, h) = best;
+  // 约分到最简（如 10:16 → 5:8）。
+  var a = w, b = h;
+  while (b != 0) {
+    final t = a % b;
+    a = b;
+    b = t;
+  }
+  return (w ~/ a, h ~/ a);
+}
 
 /// 纸张与画布比例面板：纸样（纹理 / 纯色 / 渐变,含「无」）+ 画布比例。
 /// 返回的两项都随任意一次选择带回（未改动的一项原样返回）。
@@ -1245,12 +1275,19 @@ Future<({String paper, double height})?> showPaperPicker(
 }
 
 /// 画布比例区：切换时元素按新页面高度等比重排（见 JournalCanvas.reshape）。
+/// 预设之外可自定义宽:高（小数也行）,高度限制在 0.5–6 倍页宽内。
 Widget _ratioSection(
   BuildContext context,
   String currentPaper,
   double currentHeight,
 ) {
   final scheme = Theme.of(context).colorScheme;
+  final custom = !_isPresetHeight(currentHeight);
+  var customLabel = '自定义';
+  if (custom) {
+    final (w, h) = _simplestRatio(currentHeight);
+    customLabel = '自定义 $w:$h';
+  }
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1277,6 +1314,20 @@ Widget _ratioSection(
               onSelected: (_) =>
                   Navigator.pop(context, (paper: currentPaper, height: h)),
             ),
+          ChoiceChip(
+            // 选中自定义比例后标签带出当前宽:高,方便确认改的是哪一档。
+            label: Text(customLabel),
+            showCheckmark: false,
+            selected: custom,
+            onSelected: (_) async {
+              final height = await showDialog<double>(
+                context: context,
+                builder: (_) => _CustomRatioDialog(currentHeight: currentHeight),
+              );
+              if (height == null || !context.mounted) return;
+              Navigator.pop(context, (paper: currentPaper, height: height));
+            },
+          ),
         ],
       ),
       const SizedBox(height: 4),
@@ -1289,6 +1340,139 @@ Widget _ratioSection(
       ),
     ],
   );
+}
+
+/// 自定义比例对话框：输入宽与高（支持小数,如 1.618）,实时预览方向与页面高度,
+/// 超出 0.5–6 倍页宽的部分按边界收拢（与 JournalCanvas 的存储上限一致）。
+class _CustomRatioDialog extends StatefulWidget {
+  const _CustomRatioDialog({required this.currentHeight});
+
+  final double currentHeight;
+
+  @override
+  State<_CustomRatioDialog> createState() => _CustomRatioDialogState();
+}
+
+class _CustomRatioDialogState extends State<_CustomRatioDialog> {
+  late final TextEditingController _w;
+  late final TextEditingController _h;
+
+  @override
+  void initState() {
+    super.initState();
+    final (w, h) = _simplestRatio(widget.currentHeight);
+    _w = TextEditingController(text: w.toString());
+    _h = TextEditingController(text: h.toString());
+  }
+
+  @override
+  void dispose() {
+    _w.dispose();
+    _h.dispose();
+    super.dispose();
+  }
+
+  double? get _height {
+    final w = double.tryParse(_w.text.trim());
+    final h = double.tryParse(_h.text.trim());
+    if (w == null || h == null || w <= 0 || h <= 0) return null;
+    return h / w;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final raw = _height;
+    final clamped = raw?.clamp(canvasMinHeight, canvasMaxHeight);
+    var preview = '请输入大于 0 的宽和高';
+    if (clamped != null) {
+      final (w, h) = _simplestRatio(clamped);
+      final orientation =
+          (clamped - 1).abs() < 0.01 ? '方形' : (clamped > 1 ? '竖版' : '横版');
+      preview = '约为 $w:$h $orientation';
+      if ((clamped - raw!).abs() > 1e-9) preview += '（已限制在 0.5–6 倍页宽内）';
+    }
+    return AlertDialog(
+      title: const Text('自定义画布比例'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 92,
+                  child: TextField(
+                    controller: _w,
+                    decoration: const InputDecoration(
+                      labelText: '宽',
+                      isDense: true,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    ':',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                SizedBox(
+                  width: 92,
+                  child: TextField(
+                    controller: _h,
+                    decoration: const InputDecoration(
+                      labelText: '高',
+                      isDense: true,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              preview,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '支持小数，如宽 1 : 高 1.618',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          // 无效输入禁用确定；有效时 clamped 必非空。
+          onPressed: clamped == null
+              ? null
+              : () => Navigator.pop(context, clamped),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
 }
 
 Widget _paperSection(

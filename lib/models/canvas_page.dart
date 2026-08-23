@@ -327,6 +327,9 @@ class StructuredElement extends CanvasElement {
 /// 画布高度下限（页宽倍数）：16:9 横版（9/16 ≈ 0.5625）再留余量。
 const canvasMinHeight = 0.5;
 
+/// 画布高度上限（页宽倍数）：自定义比例的封顶，6 倍页宽的长页足够装长篇手账。
+const canvasMaxHeight = 6.0;
+
 /// 一页手账画布：背景纸张 + 元素列表（调研三阶段元素树）。
 class JournalCanvas {
   JournalCanvas({
@@ -357,7 +360,7 @@ class JournalCanvas {
       if (e is TextElement) eh = math.max(e.h, measureTextHeight(e));
       bottom = math.max(bottom, e.y + eh + 0.06);
     }
-    return bottom.clamp(canvasMinHeight, 6);
+    return bottom.clamp(canvasMinHeight, canvasMaxHeight);
   }
 
   Iterable<TextElement> get texts => elements.whereType<TextElement>();
@@ -389,7 +392,7 @@ class JournalCanvas {
     final canvas = JournalCanvas(
       id: map['id'] as String?,
       paperId: (map['paper'] ?? 'plain') as String,
-      height: _d(map['h'], 4 / 3).clamp(canvasMinHeight, 6),
+      height: _d(map['h'], 4 / 3).clamp(canvasMinHeight, canvasMaxHeight),
     );
     for (final raw in (map['elements'] as List? ?? [])) {
       if (raw is! Map) continue;
@@ -418,7 +421,7 @@ class JournalCanvas {
   /// 版面相对位置不变、内容仍在页内;重排后仍放不下的（如超高文本）
   /// 由 [fitHeight] 兜底把页面拉长。宽度方向的坐标全部不变。
   void reshape(double newHeight) {
-    final target = newHeight.clamp(canvasMinHeight, 6).toDouble();
+    final target = newHeight.clamp(canvasMinHeight, canvasMaxHeight).toDouble();
     final k = target / height;
     for (final e in elements) {
       e.y *= k;
