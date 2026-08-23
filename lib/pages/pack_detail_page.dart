@@ -359,6 +359,8 @@ class _PackDetailPageState extends State<PackDetailPage>
 
   Future<void> _onTemplateAction(String action, JournalTemplate template) async {
     switch (action) {
+      case 'use':
+        await _useTemplate(template);
       case 'edit':
         await _editTemplate(template);
       case 'rename':
@@ -407,6 +409,17 @@ class _PackDetailPageState extends State<PackDetailPage>
         SnackBar(content: Text('已创建模板「$name」✨')),
       );
     }
+  }
+
+  /// 用该模板开一篇新手账（快捷入口）：由模板构造草稿直接进编辑态，
+  /// 保存落手账库；与「编辑模板」共用编辑器但方向相反，不回写模板本身。
+  /// 套用记录（lastUsedAt）由编辑器在进入时登记。
+  Future<void> _useTemplate(JournalTemplate template) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EditorPage(initialTemplate: template),
+      ),
+    );
   }
 
   /// 编辑模板整页版式（就地更新）：复用手账编辑器，保存回写该模板本身。
@@ -546,12 +559,23 @@ class _PackDetailPageState extends State<PackDetailPage>
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('关闭'),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('关闭'),
+                    ),
+                    const SizedBox(width: 6),
+                    // 预览确认版式后直接开写，不用再回卡片找入口。
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        _useTemplate(template);
+                      },
+                      child: const Text('用这个模板写一篇'),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1028,9 +1052,12 @@ class _PackDetailPageState extends State<PackDetailPage>
         _selecting
             ? '点内容勾选（贴纸与模板可混选），选好后点右上角导出'
             : switch (widget.source) {
-                PackDetailSource.builtin => '点模板可预览；复制为我的模板后可自由修改',
-                PackDetailSource.ungrouped => '点贴纸可重命名 / 移动到素材包 / 删除，长按进入多选',
-                PackDetailSource.pack => '点贴纸可重命名 / 移动 / 删除，长按进入多选',
+                PackDetailSource.builtin =>
+                  '点模板可预览；用模板可直接写一篇，复制为我的模板后可自由修改',
+                PackDetailSource.ungrouped =>
+                  '点贴纸可重命名 / 移动到素材包 / 删除，长按进入多选；模板可直接用来写一篇',
+                PackDetailSource.pack =>
+                  '点贴纸可重命名 / 移动 / 删除，长按进入多选；模板可直接用来写一篇',
               },
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
       ),
@@ -1622,23 +1649,23 @@ class _TemplateCard extends StatelessWidget {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
-          // 内置模板的显式复制入口（REQ-18.3）；多选态下让位给勾选。
+          // 多选态下操作按钮让位给勾选。
           if (selecting)
             const SizedBox(width: 8)
           else ...[
-            if (template.builtin)
-              IconButton(
-                tooltip: '复制为我的模板',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                icon: Icon(
-                  Icons.copy_all_outlined,
-                  size: 18,
-                  color: scheme.primary,
-                ),
-                onPressed: () => onAction('duplicate'),
+            // 一键用模板开新篇：内置 / 自建模板都可用的写手账快捷入口。
+            IconButton(
+              tooltip: '用模板写一篇',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+              icon: Icon(
+                Icons.note_add_rounded,
+                size: 19,
+                color: scheme.primary,
               ),
+              onPressed: () => onAction('use'),
+            ),
             PopupMenuButton<String>(
               tooltip: '更多',
               icon: Icon(

@@ -33,7 +33,11 @@ class EditorPage extends StatefulWidget {
     this.entry,
     this.isNew = false,
     this.editingTemplate,
-  });
+    this.initialTemplate,
+  }) : assert(
+         editingTemplate == null || initialTemplate == null,
+         '编辑模板与用模板开新篇是两种互斥的进入方式',
+       );
 
   /// 传入则为编辑已有手账（先进查看态），否则为新建。
   final JournalEntry? entry;
@@ -44,6 +48,10 @@ class EditorPage extends StatefulWidget {
   /// 模板编辑模式（素材页模板卡片「编辑」）：由模板构造草稿，
   /// 保存时回写该模板而不是新增一篇手账。
   final JournalTemplate? editingTemplate;
+
+  /// 用模板开新篇（素材页模板卡片「用模板写一篇」）：由模板构造
+  /// 新手账草稿直接进编辑态，保存落手账库，模板本身不被改动。
+  final JournalTemplate? initialTemplate;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -73,7 +81,15 @@ class _EditorPageState extends State<EditorPage> {
   @override
   void initState() {
     super.initState();
-    final tpl = widget.editingTemplate;
+    final settings = context.read<SettingsProvider>();
+    // 每日一问按「今天」展示（REQ-04.1），与补写日期无关。
+    // 先于草稿初始化：用「今日手账」模板开新篇时预填要用到当日题目。
+    _todayKey = DateUtils2.dateKey(DateTime.now());
+    _promptOffset = settings.promptOffsetFor(_todayKey);
+    _promptRemaining =
+        3 - settings.promptRefreshUsedToday(_todayKey).clamp(0, 3);
+
+    final tpl = widget.editingTemplate ?? widget.initialTemplate;
     _draft =
         widget.entry?.copy() ??
         JournalEntry(
@@ -91,21 +107,29 @@ class _EditorPageState extends State<EditorPage> {
           updatedAt: DateTime.now(),
         );
     _isEditing = widget.entry != null && !widget.isNew;
-    // 查看态只属于打开已有手账；模板编辑（无 entry）直接进可改动态。
+    // 查看态只属于打开已有手账；模板编辑 / 用模板开新篇（无 entry）
+    // 直接进可改动态。
     _viewMode = _isEditing;
     // 旧数据无画布 → 自动合成等价元素（文本框 + 图片 + 组件 + 旧贴纸）。
     _canvas = _draft.canvas ?? synthesizeCanvas(_draft);
     _draft.canvas = _canvas;
+    // 用模板开新篇：进来即算一次「套用」——记 lastUsedAt；
+    // 「今日手账」同样把当日每日一问预填进正文占位（与编辑器内
+    // 套用同一规则）。
+    final initial = widget.initialTemplate;
+    if (initial != null) {
+      context.read<TemplateProvider>().markUsed(initial.id);
+      if (initial.isTodayTemplate) {
+        final body = _canvas.firstOfRole('body');
+        if (body != null && body.text.trim().isEmpty) {
+          body.text = '✨ 今日一问：$_prompt\n\n';
+          body.h = measureTextHeight(body);
+        }
+      }
+    }
     _syncComponents();
     _canvas.fitHeight();
     _pushHistory(markDirty: false);
-
-    final settings = context.read<SettingsProvider>();
-    // 每日一问按「今天」展示（REQ-04.1），与补写日期无关。
-    _todayKey = DateUtils2.dateKey(DateTime.now());
-    _promptOffset = settings.promptOffsetFor(_todayKey);
-    _promptRemaining =
-        3 - settings.promptRefreshUsedToday(_todayKey).clamp(0, 3);
   }
 
   // ---------------- 撤销 / 重做 ----------------
@@ -882,9 +906,10 @@ class _EditorPageState extends State<EditorPage> {
     final isWide = MediaQuery.sizeOf(context).width >= 780;
 
     // 新建且未动笔画布时,引导从整页模板开始（三步成稿）；
-    // 模板编辑模式不走这条引导。
+    // 模板编辑 / 已带着模板进来时不走这条引导。
     final showTemplateChips =
         widget.editingTemplate == null &&
+        widget.initialTemplate == null &&
         !_isEditing &&
         !_dirty &&
         !_hasText &&

@@ -176,7 +176,7 @@ void main() {
     await tester.tap(find.text('内置模板'));
     await tester.pumpAndSettle();
     expect(find.byType(PackDetailPage), findsOneWidget);
-    expect(find.text('点模板可预览；复制为我的模板后可自由修改'), findsOneWidget);
+    expect(find.text('点模板可预览；用模板可直接写一篇，复制为我的模板后可自由修改'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
@@ -409,6 +409,53 @@ void main() {
     expect(find.byType(PackDetailPage), findsOneWidget);
     expect(find.textContaining('已更新模板'), findsOneWidget);
     expect(find.text('待编辑'), findsOneWidget);
+  });
+
+  testWidgets('模板「用模板写一篇」：一键开新篇，保存落手账库不回写模板', (tester) async {
+    final (journal, settings, templates, stickers) = await bootstrap(tester);
+    await templates.saveTemplate(
+      JournalTemplate(
+        id: 'tpl-use-me',
+        name: '旅行版式',
+        title: '出发吧',
+        content: '【行程】',
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        const PackDetailPage.ungrouped(),
+        journal: journal,
+        settings: settings,
+        templates: templates,
+        stickers: stickers,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 卡片底部栏的快捷入口：一键用该模板开一篇新手账。
+    await tester.tap(find.byTooltip('用模板写一篇'));
+    await tester.pumpAndSettle();
+
+    // 编辑器以新手账模式打开（区别于「编辑模板」），画布上已有模板内容。
+    expect(find.byType(EditorPage), findsOneWidget);
+    expect(find.text('写手账'), findsOneWidget);
+    expect(find.byType(CanvasEditor), findsOneWidget);
+    expect(find.text('【行程】'), findsOneWidget);
+    expect(find.text('从模板开始'), findsNothing, reason: '已带着模板进来，不再引导重选模板');
+
+    // 直接保存：落一篇新手账，模板本身保持原样。
+    await tester.tap(find.byTooltip('保存'));
+    await tester.pumpAndSettle();
+
+    expect(journal.entries, hasLength(1));
+    expect(journal.entries.single.content, contains('【行程】'));
+    final template = templates.byId('tpl-use-me')!;
+    expect(template.content, '【行程】', reason: '用模板开新篇不回写模板本身');
+    expect(template.lastUsedAt, isNotNull, reason: '开新篇即记一次套用');
+    // 回到详情页：模板网格仍在。
+    expect(find.byType(PackDetailPage), findsOneWidget);
+    expect(find.text('旅行版式'), findsOneWidget);
   });
 
   testWidgets('内置模板菜单不出现「编辑」，保持只读现状（REQ-26）', (tester) async {
