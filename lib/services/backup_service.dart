@@ -3,8 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart' show FilePicker, FileType;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -197,7 +199,8 @@ class BackupService {
   }
 
   /// 导出备份到用户选择的位置。
-  /// Windows：系统保存对话框；Android：写入临时文件后拉起分享。
+  /// 移动端：系统「新建文档」选择器挑文件夹（含下载、网盘等任意目录）后直接落盘；
+  /// Windows：系统保存对话框。
   /// 返回导出文件路径，用户取消返回 null。
   Future<String?> exportBackup({
     required List<JournalEntry> entries,
@@ -220,6 +223,19 @@ class BackupService {
     const zipGroup = XTypeGroup(label: '备份', extensions: ['zip']);
 
     if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        // SAF「新建文档」选择器：用户挑保存位置，字节由系统写入所选目录，
+        // 应用自身不需要任何存储权限。与素材包导出（REQ-21.5）同一套方案。
+        final saved = await FilePicker.platform.saveFile(
+          fileName: name,
+          type: FileType.custom,
+          allowedExtensions: const ['zip'],
+          bytes: bytes,
+        );
+        return saved;
+      } on PlatformException {
+        // 个别机型的文件选择器不可用时退回系统分享，保证导出仍然可用。
+      }
       final dir = await getTemporaryDirectory();
       final file = File(p.join(dir.path, name));
       await file.writeAsBytes(bytes);
