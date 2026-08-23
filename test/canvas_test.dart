@@ -177,6 +177,50 @@ void main() {
       expect(canvas.effectiveHeight, lessThanOrEqualTo(6));
     });
 
+    test('横版画布：高度可小于 1 并序列化往返（平板/电脑横屏手账）', () {
+      final canvas = JournalCanvas(
+        height: 9 / 16,
+        elements: [StickerElement(key: 'vec:star', x: 0.1, y: 0.1)],
+      );
+      expect(canvas.height, closeTo(9 / 16, 1e-9));
+      expect(
+        canvas.effectiveHeight,
+        closeTo(9 / 16, 1e-9),
+        reason: '元素不出界时保持横版高度',
+      );
+      final restored = decodeCanvas(encodeCanvas(canvas))!;
+      expect(restored.height, closeTo(9 / 16, 1e-9));
+    });
+
+    test('effectiveHeight 下限放宽到 canvasMinHeight（16:9 横版可容纳）', () {
+      final canvas = JournalCanvas(height: 0.2);
+      expect(canvas.effectiveHeight, closeTo(canvasMinHeight, 1e-9));
+      // 反序列化同样按新下限钳制。
+      final restored = JournalCanvas.fromMap({'h': 0.1, 'elements': []});
+      expect(restored.height, closeTo(canvasMinHeight, 1e-9));
+    });
+
+    test('reshape 切比例：元素纵坐标按新旧高度等比重排,宽度不动', () {
+      final canvas = JournalCanvas(
+        height: 4 / 3,
+        elements: [
+          StickerElement(key: 'vec:star', x: 0.2, y: 0.6, w: 0.2, h: 0.2),
+          ImageElement(path: '/tmp/a.jpg', x: 0.5, y: 1.0),
+        ],
+      );
+      canvas.reshape(9 / 16);
+      final k = (9 / 16) / (4 / 3);
+      expect(canvas.height, closeTo(9 / 16, 1e-9));
+      final sticker = canvas.elements.whereType<StickerElement>().single;
+      expect(sticker.x, 0.2, reason: '横向坐标不动');
+      expect(sticker.y, closeTo(0.6 * k, 1e-9));
+      final image = canvas.elements.whereType<ImageElement>().single;
+      expect(image.y, closeTo(1.0 * k, 1e-9));
+      // 高度钳制下限。
+      canvas.reshape(0.1);
+      expect(canvas.height, closeTo(canvasMinHeight, 1e-9));
+    });
+
     test('remapImagePaths 按回调重映射画布图片', () {
       final canvas = JournalCanvas(
         elements: [

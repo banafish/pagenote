@@ -324,6 +324,9 @@ class StructuredElement extends CanvasElement {
       );
 }
 
+/// 画布高度下限（页宽倍数）：16:9 横版（9/16 ≈ 0.5625）再留余量。
+const canvasMinHeight = 0.5;
+
 /// 一页手账画布：背景纸张 + 元素列表（调研三阶段元素树）。
 class JournalCanvas {
   JournalCanvas({
@@ -339,7 +342,8 @@ class JournalCanvas {
   /// 背景纸张 id（models/decoration.dart），空串为不装饰。
   String paperId;
 
-  /// 页面高度（页宽倍数），默认 3:4。
+  /// 页面高度（页宽倍数）。默认 4/3 即 3:4 竖版；
+  /// 小于 1 为横版（4:3 横版 = 3/4，16:9 横版 = 9/16），平板与桌面可建横屏手账。
   double height;
 
   /// 元素列表，顺序即 z 序（末尾在最上层）。
@@ -353,7 +357,7 @@ class JournalCanvas {
       if (e is TextElement) eh = math.max(e.h, measureTextHeight(e));
       bottom = math.max(bottom, e.y + eh + 0.06);
     }
-    return bottom.clamp(4 / 3, 6);
+    return bottom.clamp(canvasMinHeight, 6);
   }
 
   Iterable<TextElement> get texts => elements.whereType<TextElement>();
@@ -385,7 +389,7 @@ class JournalCanvas {
     final canvas = JournalCanvas(
       id: map['id'] as String?,
       paperId: (map['paper'] ?? 'plain') as String,
-      height: _d(map['h'], 4 / 3).clamp(4 / 3, 6),
+      height: _d(map['h'], 4 / 3).clamp(canvasMinHeight, 6),
     );
     for (final raw in (map['elements'] as List? ?? [])) {
       if (raw is! Map) continue;
@@ -408,6 +412,18 @@ class JournalCanvas {
   /// 调整画布高度以容纳全部内容（正文增长时页面自动变长）。
   void fitHeight() {
     height = effectiveHeight;
+  }
+
+  /// 切换画布比例（竖版 ↔ 方形 ↔ 横版）：元素纵坐标按新旧高度等比重排,
+  /// 版面相对位置不变、内容仍在页内;重排后仍放不下的（如超高文本）
+  /// 由 [fitHeight] 兜底把页面拉长。宽度方向的坐标全部不变。
+  void reshape(double newHeight) {
+    final target = newHeight.clamp(canvasMinHeight, 6).toDouble();
+    final k = target / height;
+    for (final e in elements) {
+      e.y *= k;
+    }
+    height = target;
   }
 
   /// 把图片元素路径按 basename 重映射（备份导入后附件路径变化）。

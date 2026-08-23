@@ -17,6 +17,7 @@ import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/utils/date_utils.dart';
 import 'package:pagenote/widgets/canvas/canvas_editor.dart';
 import 'package:pagenote/widgets/canvas/canvas_view.dart';
+import 'package:pagenote/widgets/canvas/canvas_zoom.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -267,5 +268,79 @@ void main() {
     expect(saved.canvas!.firstOfRole('title')!.text, '旧式手账');
     expect(saved.title, '旧式手账');
     expect(saved.content, '纯文本流时代的正文');
+  });
+
+  testWidgets('查看态：整页自适应视口,缩放层替代滚动（免上下滑动）', (tester) async {
+    final now = DateTime.now();
+    final legacy = JournalEntry(
+      id: 'legacy-view',
+      date: DateUtils2.dateKey(now),
+      title: '查看态手账',
+      content: '正文内容',
+      createdAt: now,
+      updatedAt: now,
+    );
+    final journal = JournalProvider(database: db);
+    await journal.saveEntry(legacy);
+    final prefs = await SharedPreferences.getInstance();
+    final templates = TemplateProvider(database: db);
+    await templates.load();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: journal),
+          ChangeNotifierProvider.value(value: SettingsProvider(prefs)),
+          ChangeNotifierProvider.value(value: templates),
+        ],
+        child: MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: EditorPage(entry: journal.entries.single),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 查看态:整页由 CanvasZoom 适配视口,不再是纵向滚动视图。
+    final zoom = tester.state(find.byType(CanvasZoom)) as CanvasZoomState;
+    expect(zoom.widget.fitToViewport, isTrue);
+    expect(zoom.widget.wheelMode, CanvasWheelMode.zoom);
+    // 竖版 3:4 页面在 800×600 视口内按高度适配（小于 1 倍基准 720 宽）。
+    await tester.pumpAndSettle();
+    expect(zoom.scale, lessThan(1.0));
+
+    // 切到编辑态同样有缩放层（空白处双指缩放画布）。
+    await tester.tap(find.byTooltip('编辑'));
+    await tester.pumpAndSettle();
+    final editZoom = tester.state(find.byType(CanvasZoom)) as CanvasZoomState;
+    expect(editZoom.widget.fitToViewport, isFalse);
+  });
+
+  testWidgets('画布比例：纸张面板切换 16:9 横版并等比重排元素', (tester) async {
+    await tester.pumpWidget(await wrap());
+    await tester.pumpAndSettle();
+
+    final editor = tester.state(find.byType(CanvasEditor)) as CanvasEditorState;
+    expect(editor.widget.canvas.height, closeTo(4 / 3, 1e-9));
+
+    await tester.tap(find.byTooltip('纸张'));
+    await tester.pumpAndSettle();
+    expect(find.text('画布比例'), findsOneWidget);
+    await tester.tap(find.text('16:9 横版'));
+    await tester.pumpAndSettle();
+
+    final canvas = editor.widget.canvas;
+    expect(canvas.height, closeTo(9 / 16, 1e-9), reason: '空白新页切横版后保持 16:9');
+    // 元素纵坐标按新旧高度等比压缩（synthesizeCanvas 日期组件 y=0.05）。
+    final k = (9 / 16) / (4 / 3);
+    expect(
+      canvas.componentOf(ComponentKind.date)!.y,
+      closeTo(0.05 * k, 1e-9),
+    );
   });
 }

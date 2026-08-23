@@ -16,8 +16,10 @@ import '../utils/attachments.dart';
 import '../utils/date_utils.dart';
 import '../widgets/activity_selector.dart';
 import '../widgets/canvas/canvas_editor.dart';
-import '../widgets/canvas/canvas_view.dart';
 import '../widgets/canvas/canvas_tool_sheets.dart';
+import '../widgets/canvas/canvas_view.dart';
+import '../widgets/canvas/canvas_zoom.dart';
+import '../widgets/canvas/image_crop_dialog.dart';
 import '../widgets/daily_prompt_card.dart';
 import '../widgets/emoji_selector.dart';
 import '../widgets/tag_editor.dart';
@@ -467,21 +469,38 @@ class _EditorPageState extends State<EditorPage> {
       remaining: Attachments.maxImages - existing,
     );
     if (paths.isEmpty || !mounted) return;
-    setState(() {
-      var i = 0;
-      for (final path in paths) {
-        _canvas.elements.add(
-          ImageElement(
-            path: path,
-            x: 0.1 + (i % 2) * 0.45,
-            y: _canvas.effectiveHeight - 0.4 + (i ~/ 2) * 0.36,
-            w: 0.4,
-            h: 0.32,
-          ),
-        );
-        i++;
+    final added = <ImageElement>[];
+    for (final path in paths) {
+      if (!mounted) break;
+      // 每张先进裁剪框：默认即整张原图（保持原比例）,可自由裁剪后添加。
+      final cropped = await showImageCropDialog(context, path);
+      if (cropped == null) {
+        // 取消的照片不留中间文件。
+        await Attachments.delete(path);
+        continue;
       }
-    });
+      if (cropped.path != path) await Attachments.delete(path);
+      // 尺寸按照片真实宽高比来：默认保持原比例,不再强行塞进 4:3 框。
+      var w = 0.42;
+      var h = w * cropped.aspect;
+      if (h > 0.62) {
+        h = 0.62;
+        w = h / cropped.aspect;
+      }
+      final eh = _canvas.effectiveHeight;
+      final i = added.length;
+      added.add(
+        ImageElement(
+          path: cropped.path,
+          x: (0.12 + 0.06 * i).clamp(0.0, math.max(0.0, 1 - w)),
+          y: (eh - h - 0.08 + 0.06 * i).clamp(0.0, math.max(0.0, eh - h + 0.06)),
+          w: w,
+          h: h,
+        ),
+      );
+    }
+    if (added.isEmpty || !mounted) return;
+    setState(() => _canvas.elements.addAll(added));
     _commit();
   }
 
@@ -500,11 +519,21 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   Future<void> _pickPaper() async {
-    final id = await showPaperPicker(context, _canvas.paperId);
-    if (id == null || !mounted) return;
+    final pick = await showPaperPicker(context, _canvas.paperId, _canvas.height);
+    if (pick == null || !mounted) return;
+    final paperChanged = pick.paper != _canvas.paperId;
+    final ratioChanged = (pick.height - _canvas.height).abs() > 1e-6;
+    if (!paperChanged && !ratioChanged) return;
     setState(() {
-      _canvas.paperId = id;
-      _draft.paper = id;
+      if (paperChanged) {
+        _canvas.paperId = pick.paper;
+        _draft.paper = pick.paper;
+      }
+      if (ratioChanged) {
+        // 切比例：元素按新旧高度等比重排,放不下的由 fitHeight 兜底加长。
+        _canvas.reshape(pick.height);
+        _canvas.fitHeight();
+      }
     });
     _commit();
   }
@@ -924,12 +953,10 @@ class _EditorPageState extends State<EditorPage> {
             borderRadius: BorderRadius.circular(10),
             child:
                 _viewMode
-                    // 查看态：静态渲染,只读浏览。
-                    ? SingleChildScrollView(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: CanvasView(canvas: _canvas, entry: _draft),
-                    )
-                    // 画布编辑器自带纵向滚动与选中操作条;底部工具栏悬浮其上。
+                    // 查看态：整页自适应视口（平板/电脑免上下滑动）,
+                    // 双指捏合 / 滚轮 / Ctrl+滚轮 缩放,双击复位。
+                    ? _viewCanvas()
+                    // 画布编辑器自带缩放平移与选中操作条;底部工具栏悬浮其上。
                     : CanvasEditor(
                       key: _editorKey,
                       canvas: _canvas,
@@ -1088,6 +1115,24 @@ class _EditorPageState extends State<EditorPage> {
           ],
         ),
         body: body,
+      ),
+    );
+  }
+
+  /// 查看态画布：以 720 为基准宽度布局,CanvasZoom 把整页适配进视口 ——
+  /// 平板/电脑上不用上下滑动即可看整页,超出时可捏合/滚轮缩放与拖动。
+  Widget _viewCanvas() {
+    const base = 720.0;
+    final pageHeight = _canvas.effectiveHeight * base;
+    return CanvasZoom(
+      fitToViewport: true,
+      wheelMode: CanvasWheelMode.zoom,
+      doubleTapReset: true,
+      childSize: Size(base, pageHeight),
+      child: SizedBox(
+        width: base,
+        height: pageHeight,
+        child: CanvasView(canvas: _canvas, entry: _draft),
       ),
     );
   }

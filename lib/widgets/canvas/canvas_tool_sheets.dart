@@ -1206,27 +1206,88 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
   }
 }
 
-/// 纸张选择面板：纹理 / 纯色 / 渐变,含「无」。
-Future<String?> showPaperPicker(BuildContext context, String current) {
-  return showModalBottomSheet<String>(
+/// 画布比例选项（平板/电脑可建横屏手账）：标签 + 页面高度（页宽倍数）。
+const _canvasRatios = [
+  ('3:4 竖版', 4 / 3),
+  ('1:1 方形', 1.0),
+  ('4:3 横版', 3 / 4),
+  ('16:9 横版', 9 / 16),
+];
+
+/// 纸张与画布比例面板：纸样（纹理 / 纯色 / 渐变,含「无」）+ 画布比例。
+/// 返回的两项都随任意一次选择带回（未改动的一项原样返回）。
+Future<({String paper, double height})?> showPaperPicker(
+  BuildContext context,
+  String current,
+  double currentHeight,
+) {
+  return showModalBottomSheet<({String paper, double height})>(
     context: context,
     showDragHandle: true,
     builder: (sheetContext) => SafeArea(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 420),
+        constraints: const BoxConstraints(maxHeight: 480),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
           children: [
+            _ratioSection(sheetContext, current, currentHeight),
             for (final (title, kind) in [
               ('纹理', PaperKind.texture),
               ('纯色', PaperKind.solid),
               ('渐变', PaperKind.gradient),
             ])
-              _paperSection(sheetContext, title, kind, current),
+              _paperSection(sheetContext, title, kind, current, currentHeight),
           ],
         ),
       ),
     ),
+  );
+}
+
+/// 画布比例区：切换时元素按新页面高度等比重排（见 JournalCanvas.reshape）。
+Widget _ratioSection(
+  BuildContext context,
+  String currentPaper,
+  double currentHeight,
+) {
+  final scheme = Theme.of(context).colorScheme;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 8),
+        child: Text(
+          '画布比例',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final (label, h) in _canvasRatios)
+            ChoiceChip(
+              label: Text(label),
+              showCheckmark: false,
+              selected: (currentHeight - h).abs() < 1e-6,
+              onSelected: (_) =>
+                  Navigator.pop(context, (paper: currentPaper, height: h)),
+            ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(
+        '切换比例时,画布上的元素会按新页面等比重排',
+        style: TextStyle(
+          fontSize: 11.5,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+        ),
+      ),
+    ],
   );
 }
 
@@ -1235,6 +1296,7 @@ Widget _paperSection(
   String title,
   PaperKind kind,
   String current,
+  double currentHeight,
 ) {
   final scheme = Theme.of(context).colorScheme;
   return Column(
@@ -1263,10 +1325,15 @@ Widget _paperSection(
             // 纹理组首位为「无」（恢复默认背景）,其余组直接铺纸样。
             final offset = kind == PaperKind.texture ? 1 : 0;
             if (i == 0 && offset == 1) {
-              return _paperSwatch(context, null, current);
+              return _paperSwatch(context, null, current, currentHeight);
             }
             final papers = paperStyles.where((p) => p.kind == kind).toList();
-            return _paperSwatch(context, papers[i - offset], current);
+            return _paperSwatch(
+              context,
+              papers[i - offset],
+              current,
+              currentHeight,
+            );
           },
         ),
       ),
@@ -1274,11 +1341,19 @@ Widget _paperSection(
   );
 }
 
-Widget _paperSwatch(BuildContext context, PaperStyle? paper, String current) {
+Widget _paperSwatch(
+  BuildContext context,
+  PaperStyle? paper,
+  String current,
+  double currentHeight,
+) {
   final scheme = Theme.of(context).colorScheme;
   final selected = paper == null ? current.isEmpty : current == paper.id;
   return GestureDetector(
-    onTap: () => Navigator.pop(context, paper?.id ?? ''),
+    onTap: () => Navigator.pop(
+      context,
+      (paper: paper?.id ?? '', height: currentHeight),
+    ),
     child: Tooltip(
       message: paper?.name ?? '无',
       child: AnimatedContainer(

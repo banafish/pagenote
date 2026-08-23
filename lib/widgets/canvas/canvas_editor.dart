@@ -7,6 +7,7 @@ import '../../models/journal_entry.dart';
 import '../../models/sticker_assets.dart';
 import 'canvas_tool_sheets.dart';
 import 'canvas_view.dart';
+import 'canvas_zoom.dart';
 
 /// 画布编辑层（调研二/三阶段）：静态渲染之上叠加手势与选择态。
 ///
@@ -15,6 +16,8 @@ import 'canvas_view.dart';
 /// - 选中后单指拖动 → 移动；双指捏合 → 缩放 + 旋转
 /// - 角点手柄拖动 → 单指调整大小（文本/胶带调宽,其余等比缩放）
 /// - 再次点按已选中的文本/图片/贴纸/组件 → 打开对应编辑面板
+/// - 空白处双指捏合 / Ctrl+滚轮 → 缩放整个画布,双击空白复位
+///   （选中元素时双指手势优先作用于元素本身）
 /// - 选中素材本机缺失的贴纸 → 提示缺失并可替换/删除（FIX-03.3）
 /// - 从素材面板长按拖入的元素落在指针位置（REQ-17.5）
 ///
@@ -54,12 +57,34 @@ class CanvasEditorState extends State<CanvasEditor> {
   /// 页面矩形：拖拽落点由全局坐标换算成页宽归一化坐标时用（REQ-17.5）。
   final _pageKey = GlobalKey();
 
+  /// 画布缩放层：空白处双指缩放/平移（元素手势优先,见 CanvasZoom 注释）。
+  final _zoomKey = GlobalKey<CanvasZoomState>();
+
+  /// 空白处双击复位缩放：手工计时判定,不给点按手势引入双击延迟。
+  DateTime? _lastBackgroundTap;
+
   CanvasElement? get _selected =>
       widget.canvas.elements.where((e) => e.id == _selectedId).firstOrNull;
+
+  /// 当前画布缩放倍率：屏幕位移换算成页宽归一化坐标时要除以它。
+  double get _zoom => _zoomKey.currentState?.scale ?? 1.0;
 
   void select(String? id) => setState(() => _selectedId = id);
 
   void clearSelection() => setState(() => _selectedId = null);
+
+  /// 空白点按：320ms 内第二次 → 复位缩放,否则取消选中。
+  void _tapBackground() {
+    final now = DateTime.now();
+    final last = _lastBackgroundTap;
+    _lastBackgroundTap = now;
+    if (last != null && now.difference(last) < const Duration(milliseconds: 320)) {
+      _lastBackgroundTap = null;
+      _zoomKey.currentState?.reset();
+      return;
+    }
+    clearSelection();
+  }
 
   // 手势起始基线（onScaleUpdate 的 scale/rotation 是相对起点的累计值）。
   double _baseW = 0,
@@ -75,10 +100,9 @@ class CanvasEditorState extends State<CanvasEditor> {
   }
 
   void _scaleUpdate(CanvasElement e, Size pageSize, ScaleUpdateDetails d) {
-    // focalPointDelta 是「本帧」增量,须累加到当前位置（基线仅用于
-    // 双指缩放的 scale/rotation 等相对起点的累计值）。
-    final dx = d.focalPointDelta.dx / pageSize.width;
-    final dy = d.focalPointDelta.dy / pageSize.width;
+    // focalPointDelta 是「本帧」屏幕增量,先除以画布缩放,再按页宽归一化。
+    final dx = d.focalPointDelta.dx / _zoom / pageSize.width;
+    final dy = d.focalPointDelta.dy / _zoom / pageSize.width;
     // clamp 上限不得低于下限（超宽元素拉满时 1.05 - w 可为负）。
     final maxX = math.max(-0.1, 1.05 - e.w);
     final maxY = math.max(-0.05, widget.canvas.effectiveHeight - e.h + 0.1);
@@ -272,11 +296,11 @@ class CanvasEditorState extends State<CanvasEditor> {
                   placeholderImages: true,
                 ),
               ),
-              // 点按空白处取消选中（位于元素层之下,不抢元素手势）。
+              // 点按空白处取消选中、双击复位缩放（位于元素层之下,不抢元素手势）。
               Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onTap: clearSelection,
+                  onTap: _tapBackground,
                 ),
               ),
               // 空白提示（标题/正文占位）。
@@ -314,16 +338,26 @@ class CanvasEditorState extends State<CanvasEditor> {
           ),
         );
 
-        // 操作条固定在编辑区视口底部,不随页面滚动,
+        // 操作条固定在编辑区视口底部,不随画布缩放/平移,
         // 也不会被页面级底部工具栏遮挡（EditorPage 中本组件位于其上方）。
         // 整块同时是素材面板的拖拽落区（REQ-17.5）。
         return DragTarget<CanvasElement>(
           onAcceptWithDetails: (details) => _dropElement(details, pageWidth),
           builder: (context, candidate, _) => Stack(
             children: [
-              SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 120),
-                child: page,
+              // 缩放/平移层：单指拖空白平移、双指捏合缩放、滚轮滚动、
+              // Ctrl+滚轮缩放;元素手势是子级,竞技场中优先于本层。
+              CanvasZoom(
+                key: _zoomKey,
+                childSize: Size(
+                  pageWidth,
+                  widget.canvas.effectiveHeight * pageWidth + 120,
+                ),
+                child: Padding(
+                  // 底部留白给悬浮工具栏（缩放后也保证页面底部可滚出）。
+                  padding: const EdgeInsets.only(bottom: 120),
+                  child: page,
+                ),
               ),
               // 拖拽悬停时描边,提示「松手就落在这」。
               if (candidate.isNotEmpty)
@@ -439,14 +473,15 @@ class CanvasEditorState extends State<CanvasEditor> {
                 size: 22,
                 onScale: (delta) {
                   setState(() {
+                    // 屏幕位移先除以画布缩放再按页宽归一化。
+                    final dw = delta.dx / _zoom / pageSize.width;
                     if (e is TextElement || e is TapeElement) {
                       // 文本与胶带：手柄只调宽度。
-                      e.w = (e.w + delta.dx / pageSize.width).clamp(0.15, 1.0);
+                      e.w = (e.w + dw).clamp(0.15, 1.0);
                       if (e is TextElement) {
                         e.h = math.max(e.h, measureTextHeight(e));
                       }
                     } else {
-                      final dw = delta.dx / pageSize.width;
                       final aspect = e.h / e.w;
                       e.w = (e.w + dw).clamp(0.05, 1.2);
                       e.h = (e.w * aspect).clamp(0.03, 1.2);

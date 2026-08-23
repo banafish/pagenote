@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -115,6 +115,9 @@ class PageNoteApp extends StatelessWidget {
             onGenerateTitle: (context) => '拾页',
             debugShowCheckedModeBanner: false,
             navigatorKey: NotificationService.instance.navigatorKey,
+            // 桌面端允许鼠标左键按住拖动滚动列表（如素材面板的横滑条）。
+            // Flutter 默认 dragDevices 不含鼠标,桌面端按住拖动无法滚动。
+            scrollBehavior: const _MouseDragScrollBehavior(),
             theme: AppTheme.light(settings.seedColor),
             darkTheme: AppTheme.dark(settings.seedColor),
             themeMode: settings.themeMode,
@@ -258,4 +261,20 @@ class _SharePackGateState extends State<_SharePackGate>
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// 桌面端滚动行为：鼠标左键按住拖动即可滚动（含横向列表）。
+/// 默认行为只认触摸/触笔,电脑上素材面板的横滑条（配色、类别、纸样等）
+/// 只能靠滚轮或拖滚动条,鼠标拖拽毫无反应。
+class _MouseDragScrollBehavior extends MaterialScrollBehavior {
+  const _MouseDragScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.mouse,
+  };
 }
