@@ -1,8 +1,5 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
-import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,17 +9,11 @@ import '../../models/decoration.dart';
 import '../../models/sticker_assets.dart';
 import '../../pages/library_page.dart';
 import '../../providers/custom_sticker_provider.dart';
-import '../../providers/journal_provider.dart';
 import '../../providers/settings_provider.dart';
-import '../../providers/template_provider.dart';
 import '../../utils/sticker_store.dart';
-import '../sticker_pack_sheet.dart';
+import '../pack_cover.dart';
 
 /// 画布工具面板（调研一/二阶段）：素材与属性编辑的底部弹层集合。
-
-/// 「我的」页签的未分组过滤值（packId 为 null 的贴纸）。
-/// 包 id 由 makeId 生成，不会与该哨兵值撞车。
-const _mineUngroupedFilter = '__ungrouped__';
 
 /// 文字可选墨色。
 const textInkColors = <int>[
@@ -145,14 +136,18 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
   /// 表情页签当前类目（REQ-17.7）。
   String _emojiCategory = emojiCategories.keys.first;
 
-  /// 「我的」页签的包过滤（v7）：null = 全部，
-  /// [_mineUngroupedFilter] = 未分组，其余为包 id。
-  String? _minePackFilter;
+  /// 「我的」页签各素材包分节标题的 key：
+  /// 预览条点击后靠它把对应分节滚到列表顶部。
+  final Map<String, GlobalKey> _mineSectionKeys = {};
+
+  /// 预览条横滑控制器：驱动两侧渐隐提示。
+  final ScrollController _mineStripScroll = ScrollController();
 
   @override
   void dispose() {
     _tabs.dispose();
     _search.dispose();
+    _mineStripScroll.dispose();
     super.dispose();
   }
 
@@ -843,107 +838,220 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     final provider = context.watch<CustomStickerProvider>();
     final stickers = provider.stickers;
     final ungrouped = provider.ungroupedStickers;
-    // 空包不进切换条：面板是挑素材的地方，没有素材的分组没有意义。
+    // 空包不进预览条：面板是挑素材的地方，没有素材的分组没有意义。
     final packs = [
       for (final pack in provider.packs)
         if (provider.stickersOfPack(pack.id).isNotEmpty) pack,
     ];
-    // 过滤目标已被解散 / 删除时回落到全部（不改 state，下次选择自然修正）。
-    final filter =
-        _minePackFilter != null &&
-            _minePackFilter != _mineUngroupedFilter &&
-            provider.packById(_minePackFilter!) == null
-        ? null
-        : _minePackFilter;
-    final visible = filter == null
-        ? stickers
-        : filter == _mineUngroupedFilter
-        ? ungrouped
-        : provider.stickersOfPack(filter);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              FilledButton.tonalIcon(
-                onPressed: _importCustomStickers,
-                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                label: const Text('导入图片'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '点右上角管理素材，长按可拖到画布',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              // 打包导出等批量操作在素材管理页（REQ-21.2）：
-              // 面板本身是编辑器的常驻抽屉,不适合塞多选与导出流程。
-              // REQ-26.9：整页打开素材首页（固定入口 + 包列表）。
-              IconButton(
-                tooltip: '管理我的素材',
-                icon: const Icon(Icons.tune_rounded, size: 20),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const LibraryPage(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // 素材包切换条（v7）：与表情页签的类目条同一套交互；
-        // 没有任何含素材的包时保持原来的整页网格。
-        if (packs.isNotEmpty)
-          SizedBox(
-            height: 42,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-              itemCount: 1 + (ungrouped.isNotEmpty ? 1 : 0) + packs.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                if (i == 0) {
-                  return ChoiceChip(
-                    label: const Text('全部', style: TextStyle(fontSize: 12.5)),
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    selected: filter == null,
-                    onSelected: (_) => setState(() => _minePackFilter = null),
-                  );
-                }
-                if (i == 1 && ungrouped.isNotEmpty) {
-                  return ChoiceChip(
-                    label: const Text('未分组', style: TextStyle(fontSize: 12.5)),
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    selected: filter == _mineUngroupedFilter,
-                    onSelected: (_) =>
-                        setState(() => _minePackFilter = _mineUngroupedFilter),
-                  );
-                }
-                final pack = packs[i - 1 - (ungrouped.isNotEmpty ? 1 : 0)];
-                return ChoiceChip(
-                  label: Text(pack.name, style: const TextStyle(fontSize: 12.5)),
-                  showCheckmark: false,
-                  visualDensity: VisualDensity.compact,
-                  selected: filter == pack.id,
-                  onSelected: (_) => setState(() => _minePackFilter = pack.id),
-                );
-              },
-            ),
-          ),
+        _minePackStrip(packs),
         Expanded(
           child: stickers.isEmpty
               ? _mineEmpty(scheme)
-              : _customGrid(visible),
+              : SingleChildScrollView(
+                  // 与贴纸页签同一套分节样式：标题 + 收缩网格；
+                  // 未分组贴纸不属于任何包，固定放在最顶上一节。
+                  // 整列直建（不懒加载）,预览条点击才能定位到任意分节。
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (ungrouped.isNotEmpty) ...[
+                        _mineSectionHeader('未分组', ungrouped.length),
+                        _customGrid(
+                          ungrouped,
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                      for (final pack in packs) ...[
+                        _mineSectionHeader(
+                          pack.name,
+                          provider.stickersOfPack(pack.id).length,
+                          key: _mineSectionKeys.putIfAbsent(
+                            pack.id,
+                            () => GlobalKey(),
+                          ),
+                        ),
+                        _customGrid(
+                          provider.stickersOfPack(pack.id),
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
         ),
       ],
+    );
+  }
+
+  /// 我的页签第一行：首位是素材管理入口（原「导入图片」行最右端的图标）,
+  /// 其后为素材包封面预览,点击滚到对应分节标题。
+  /// 纯图标、无名称,尺寸与贴纸页签的配色条一致；
+  /// 内容超出时两侧渐隐提示可横滑。
+  Widget _minePackStrip(List<StickerPack> packs) {
+    return SizedBox(
+      height: 40,
+      // 滚动中由控制器通知刷新渐隐；静止时的初值在 shaderCallback 里
+      // 按 paint 时刻的真实滚动量计算,首帧与内容尺寸变化也正确。
+      child: ListenableBuilder(
+        listenable: _mineStripScroll,
+        child: ListView.separated(
+          controller: _mineStripScroll,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 3, 16, 3),
+          itemCount: 1 + packs.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            if (i == 0) {
+              // REQ-26.9：整页打开素材首页（固定入口 + 包列表）。
+              return _mineStripTile(
+                tooltip: '管理我的素材',
+                icon: Icons.tune_rounded,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const LibraryPage()),
+                ),
+              );
+            }
+            final pack = packs[i - 1];
+            return _mineStripTile(
+              tooltip: pack.name,
+              cover: PackCoverImage(pack: pack),
+              onTap: () => _scrollToMinePack(pack.id),
+            );
+          },
+        ),
+        builder: (context, child) => ShaderMask(
+          shaderCallback: _mineStripFadeShader,
+          blendMode: BlendMode.dstIn,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  /// 预览条两侧的渐隐 shader：只看 alpha,不依赖面板背景色。
+  /// 单侧渐隐宽 20px,随剩余滚动量在 32px 内渐显 / 收掉。
+  Shader _mineStripFadeShader(Rect bounds) {
+    const fade = 20.0;
+    const reveal = 32.0;
+    var left = 0.0;
+    var right = 0.0;
+    if (_mineStripScroll.hasClients) {
+      final position = _mineStripScroll.position;
+      final max = position.maxScrollExtent;
+      if (max > 0) {
+        left = fade * (position.pixels / reveal).clamp(0.0, 1.0);
+        right = fade * ((max - position.pixels) / reveal).clamp(0.0, 1.0);
+      }
+    }
+    final width = bounds.width;
+    final l = width <= 0 ? 0.0 : (left / width).clamp(0.0, 0.45);
+    final r = width <= 0 ? 0.0 : (right / width).clamp(0.0, 0.45);
+    return LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: const [
+        Color(0x00FFFFFF),
+        Color(0xFFFFFFFF),
+        Color(0xFFFFFFFF),
+        Color(0x00FFFFFF),
+      ],
+      // l、r 各自封顶 0.45,保证 stops 单调不交叉。
+      stops: [0.0, l, 1 - r, 1.0],
+    ).createShader(bounds);
+  }
+
+  /// 预览条单元：封面（或管理图标）,28×28 与配色栏色点同尺寸,
+  /// 名称移到 Tooltip 里。
+  Widget _mineStripTile({
+    required String tooltip,
+    required VoidCallback onTap,
+    Widget? cover,
+    IconData? icon,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasCover = cover != null;
+    return Center(
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: hasCover ? null : scheme.surfaceContainerHighest,
+              border: hasCover
+                  ? Border.all(
+                      color: scheme.outlineVariant.withValues(alpha: 0.5),
+                    )
+                  : null,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: hasCover
+                ? SizedBox.expand(child: cover)
+                : Center(
+                    child: Icon(
+                      icon,
+                      size: 16,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 点击预览图定位：把对应素材包的分节标题滚到列表顶部。
+  void _scrollToMinePack(String packId) {
+    final target = _mineSectionKeys[packId]?.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      alignment: 0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  /// 我的页签分节标题：名称 + 张数,样式与贴纸页签的类目标题一致。
+  Widget _mineSectionHeader(String title, int count, {Key? key}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count 张',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -970,7 +1078,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
             ),
             const SizedBox(height: 6),
             Text(
-              '从相册导入喜欢的图片，就能像内置贴纸一样贴到手账上',
+              '点上方「管理」去素材页导入喜欢的图片，就能像内置贴纸一样贴到手账上',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
@@ -980,12 +1088,16 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     );
   }
 
-  Widget _customGrid(List<CustomSticker> stickers, {bool shrinkWrap = false}) {
+  Widget _customGrid(
+    List<CustomSticker> stickers, {
+    bool shrinkWrap = false,
+    EdgeInsetsGeometry padding = const EdgeInsets.fromLTRB(16, 8, 16, 20),
+  }) {
     return GridView.count(
       crossAxisCount: 5,
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+      padding: padding,
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
       children: [for (final sticker in stickers) _customCell(sticker)],
@@ -999,299 +1111,21 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       favoriteKey: key,
       tooltip: sticker.name,
       dragElement: make,
-      // 长按让给拖拽（REQ-17.5）,重命名 / 分组 / 删除移到角标菜单。
-      badge: _customMenuBadge(sticker),
+      // 长按让给拖拽（REQ-17.5）,角标与其他页签一致用收藏星标。
       onTap: () => _pick(make(), key),
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Image.file(
           File(StickerStore.pathOf(sticker.id, sticker.ext)),
           fit: BoxFit.contain,
+          // 「我的」分节网格整列直建,解码宽度钉在格子量级,
+          // 避免大量素材一次性全尺寸解码。
+          cacheWidth: 220,
           errorBuilder: (_, _, _) =>
               const Icon(Icons.broken_image_outlined, size: 20),
         ),
       ),
     );
-  }
-
-  Widget _customMenuBadge(CustomSticker sticker) {
-    final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: '管理素材',
-      child: InkResponse(
-        radius: 16,
-        onTap: () => _customStickerMenu(sticker),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(
-            Icons.more_horiz_rounded,
-            size: 15,
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 从相册导入图片作为贴纸（REQ-20.1）：先问一句要不要去白底（REQ-20.3）,
-  /// 超限的图片由仓库自动压缩,提示里如实报出压缩张数与压缩后尺寸（REQ-20.5）。
-  Future<void> _importCustomStickers() async {
-    final files = await StickerStore.pickImages();
-    if (!mounted || files.isEmpty) return;
-    final cutWhite = await _askImportOptions(files.length);
-    if (!mounted || cutWhite == null) return;
-    final provider = context.read<CustomStickerProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    var done = 0;
-    var failed = 0;
-    final shrunk = <String>[];
-    for (final file in files) {
-      final result = await _importOne(provider, file, cutWhite: cutWhite);
-      if (!result.ok) {
-        failed++;
-        continue;
-      }
-      done++;
-      if (result.shrunk != null) shrunk.add(result.shrunk!);
-    }
-    if (!mounted) return;
-    final parts = <String>[
-      if (done > 0) '已导入 $done 张素材',
-      if (failed > 0) '$failed 张图片无法识别，已跳过',
-      if (shrunk.length == 1) '1 张超出上限，已压缩为 ${shrunk.first}',
-      if (shrunk.length > 1)
-        '${shrunk.length} 张超出上限，已压缩到 ${StickerStore.maxEdge} 像素内',
-    ];
-    messenger.showSnackBar(SnackBar(content: Text(parts.join('；'))));
-  }
-
-  /// 导入前的选项（REQ-20.3）；返回 null 表示放弃导入。
-  Future<bool?> _askImportOptions(int count) {
-    var cutWhite = false;
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (builderContext, setLocal) => AlertDialog(
-          title: const Text('导入为贴纸'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '已选择 $count 张图片，长边超过 ${StickerStore.maxEdge} 像素的会自动压缩。',
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              CheckboxListTile(
-                value: cutWhite,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('去除白色背景', style: TextStyle(fontSize: 14)),
-                subtitle: const Text(
-                  '适合白底的手绘与印章；透明 PNG 不必勾选',
-                  style: TextStyle(fontSize: 11.5),
-                ),
-                onChanged: (value) => setLocal(() => cutWhite = value ?? false),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, cutWhite),
-              child: const Text('导入'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 导入单张：按需先去白底,再交给仓库统一压缩落盘。
-  /// [ok] 为 false 表示图片无法识别；[shrunk] 非空表示触发了压缩,值为压缩后尺寸。
-  Future<({bool ok, String? shrunk})> _importOne(
-    CustomStickerProvider provider,
-    XFile file, {
-    required bool cutWhite,
-  }) async {
-    final Uint8List source;
-    try {
-      final raw = await file.readAsBytes();
-      source = cutWhite ? await StickerStore.removeWhiteBackground(raw) : raw;
-    } on IOException {
-      return (ok: false, shrunk: null);
-    }
-    final sticker = await provider.importFromFile(
-      // 去白底后的字节没有落盘路径,包一层内存 XFile 交给同一条导入链路。
-      cutWhite
-          ? XFile.fromData(source, path: file.name, mimeType: 'image/png')
-          : file,
-    );
-    if (sticker == null) return (ok: false, shrunk: null);
-    final before = await _pixelSize(source);
-    final oversize =
-        source.length > StickerStore.maxBytes ||
-        (before != null && before.longestSide > StickerStore.maxEdge);
-    if (!oversize) return (ok: true, shrunk: null);
-    final saved = await StickerStore.readBytes(sticker.id, sticker.ext);
-    final after = saved == null ? null : await _pixelSize(saved);
-    return (
-      ok: true,
-      shrunk: after == null
-          ? '${StickerStore.maxEdge} 像素内'
-          : '${after.width.round()}×${after.height.round()}',
-    );
-  }
-
-  /// 只读图片头拿像素尺寸（不整张解码）,用于如实提示压缩结果（REQ-20.5）；
-  /// 格式不受支持时返回 null。
-  Future<Size?> _pixelSize(Uint8List bytes) async {
-    ui.ImmutableBuffer? buffer;
-    ui.ImageDescriptor? descriptor;
-    try {
-      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      descriptor = await ui.ImageDescriptor.encoded(buffer);
-      return Size(descriptor.width.toDouble(), descriptor.height.toDouble());
-    } on Exception {
-      return null;
-    } finally {
-      descriptor?.dispose();
-      buffer?.dispose();
-    }
-  }
-
-  /// 自定义素材角标菜单：重命名 / 移动到素材包 / 分组 / 删除（REQ-20.4 + v7）。
-  Future<void> _customStickerMenu(CustomSticker sticker) async {
-    final provider = context.read<CustomStickerProvider>();
-    final packName = provider.packById(sticker.packId ?? '')?.name;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (menuContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline_rounded),
-              title: const Text('重命名'),
-              subtitle: Text(sticker.name),
-              onTap: () => Navigator.pop(menuContext, 'rename'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.inventory_2_outlined),
-              title: const Text('移动到素材包'),
-              subtitle: Text(packName ?? '未分组'),
-              onTap: () => Navigator.pop(menuContext, 'pack'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: const Text('分组'),
-              subtitle: Text(sticker.category),
-              onTap: () => Navigator.pop(menuContext, 'category'),
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.delete_outline,
-                color: Color(0xFFE57373),
-              ),
-              title: const Text(
-                '删除',
-                style: TextStyle(color: Color(0xFFE57373)),
-              ),
-              onTap: () => Navigator.pop(menuContext, 'delete'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (!mounted || action == null) return;
-    switch (action) {
-      case 'rename':
-        final name = await _promptText('重命名素材', '素材名称', sticker.name);
-        if (!mounted || name == null) return;
-        await context.read<CustomStickerProvider>().rename(sticker.id, name);
-      case 'pack':
-        await moveStickerToPackFlow(context, sticker);
-      case 'category':
-        final group = await _promptText('素材分组', '分组名称', sticker.category);
-        if (!mounted || group == null) return;
-        await context.read<CustomStickerProvider>().setCategory(
-          sticker.id,
-          group,
-        );
-      case 'delete':
-        await _deleteCustomSticker(sticker);
-    }
-  }
-
-  Future<String?> _promptText(String title, String hint, String initial) async {
-    final controller = TextEditingController(text: initial);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    final trimmed = value?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
-  /// 删除自定义素材；被手账或模板引用时先说明后果再确认（REQ-20.4）。
-  Future<void> _deleteCustomSticker(CustomSticker sticker) async {
-    final provider = context.read<CustomStickerProvider>();
-    final referenced = provider.isReferenced(
-      sticker.id,
-      context.read<JournalProvider>().entries,
-      context.read<TemplateProvider>().templates,
-    );
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('删除素材？'),
-        content: Text(
-          referenced
-              ? '有手账正在使用「${sticker.name}」，删除后那些位置会显示缺失占位。'
-              : '「${sticker.name}」将从素材库移除。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFE57373),
-            ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      await provider.delete(sticker.id);
-    }
   }
 
   // ---------------- 跨页签搜索（REQ-17.6） ----------------
