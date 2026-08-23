@@ -145,14 +145,22 @@ class _SearchPageState extends State<SearchPage> {
               isLabelVisible: false,
               child: Icon(Icons.tune_outlined),
             ),
-            onPressed: () => setState(() => _panelOpen = !_panelOpen),
+            onPressed: () => setState(() {
+              _panelOpen = !_panelOpen;
+              // 打开筛选时收起键盘，避免键盘挤压面板空间。
+              if (_panelOpen) FocusScope.of(context).unfocus();
+            }),
           ),
           const SizedBox(width: 4),
         ],
       ),
       body: Column(
         children: [
-          if (_panelOpen) _filterPanel(scheme, journal),
+          // 面板高度受限时可滚动，避免键盘弹出等场景下溢出。
+          if (_panelOpen)
+            Flexible(
+              child: SingleChildScrollView(child: _filterPanel(scheme, journal)),
+            ),
           if (_filtersActive) _activeChips(scheme),
           Expanded(
             child: !showResults
