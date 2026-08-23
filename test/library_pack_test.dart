@@ -150,7 +150,7 @@ void main() {
   testWidgets('素材首页两个固定入口可达（NFR-15 路径 1）', (tester) async {
     final (journal, settings, templates, stickers) = await bootstrap(tester);
     await seedPack(tester, stickers, templates);
-    // 未分组里放一套自建模板：未分组详情才有内容。
+    // 我的素材里放一套自建模板：该详情页才有内容。
     await templates.saveTemplate(
       JournalTemplate(id: 'tpl-loose-1', name: '散装模板', content: '内容'),
     );
@@ -168,7 +168,7 @@ void main() {
 
     // 首页结构（REQ-26.1）：固定入口置顶 + 「我的素材包」区。
     expect(find.text('内置模板'), findsOneWidget);
-    expect(find.text('未分组'), findsOneWidget);
+    expect(find.text('我的素材'), findsOneWidget);
     expect(find.text('我的素材包'), findsOneWidget);
     expect(find.text('秋日旅行'), findsOneWidget, reason: '包卡片应显示包名');
 
@@ -180,8 +180,8 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    // 未分组固定入口 → 未分组详情（排序选择已下线，仅保留手动序与拖排）。
-    await tester.tap(find.text('未分组'));
+    // 「我的素材」固定入口 → 未分组详情（排序选择已下线，仅保留手动序与拖排）。
+    await tester.tap(find.text('我的素材'));
     await tester.pumpAndSettle();
     expect(find.byType(PackDetailPage), findsOneWidget);
     expect(find.text('手动排序'), findsNothing, reason: '排序切换条已移除');
@@ -329,8 +329,8 @@ void main() {
     await tester.tap(find.text('打开弹层'));
     await tester.pumpAndSettle();
 
-    // 分节顺序：内置模板 → 未分组 → 各包（REQ-28.1，包顺序 = 首页手动顺序）。
-    final labels = ['内置模板', '未分组', '胶带集'];
+    // 分节顺序：内置模板 → 我的模板 → 各包（REQ-28.1，包顺序 = 首页手动顺序）。
+    final labels = ['内置模板', '我的模板', '胶带集'];
     var top = -1.0;
     for (final label in labels) {
       final found = find.text(label);
@@ -341,7 +341,7 @@ void main() {
     }
     // 空节不显示（REQ-28.3）。
     expect(find.text('空包'), findsNothing);
-    // tile 与节头计数齐全：内置 + 未分组 1 套 + 包内 1 套。
+    // tile 与节头计数齐全：内置 + 自建 1 套 + 包内 1 套。
     expect(find.text('散装模板'), findsOneWidget);
     expect(find.text('胶带集模板'), findsOneWidget);
     expect(find.text('共 1 套'), findsNWidgets(2));

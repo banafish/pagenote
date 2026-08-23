@@ -12,7 +12,7 @@ import 'canvas/canvas_view.dart';
 /// 模板选择底部弹层（REQ-09.2 + REQ-28）：整页版式模板直接展示画布预览,
 /// 「新建 → 选模板 → 替换文字」三步成稿。
 ///
-/// 列表按「内置模板 → 未分组（自建）→ 各素材包」分节（REQ-28.1）：
+/// 列表按「内置模板 → 我的模板（自建、不在包里）→ 各素材包」分节（REQ-28.1）：
 /// 包顺序与素材页包列表一致（手动排序）,管理侧整理好的结构在取用的
 /// 那一刻同样可见；空节不显示,tile 的渲染、预览与套用返回逻辑不变。
 Future<JournalTemplate?> showTemplatePicker(BuildContext context) {
@@ -33,7 +33,7 @@ Future<JournalTemplate?> showTemplatePicker(BuildContext context) {
         ];
         final sections = <(String, List<JournalTemplate>)>[
           if (builtin.isNotEmpty) ('内置模板', builtin),
-          if (ungrouped.isNotEmpty) ('未分组', ungrouped),
+          if (ungrouped.isNotEmpty) ('我的模板', ungrouped),
           for (final pack in packs)
             if (provider.templatesOfPack(pack.id).isNotEmpty)
               (pack.name, provider.templatesOfPack(pack.id)),

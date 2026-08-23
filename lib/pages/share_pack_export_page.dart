@@ -39,7 +39,8 @@ class _SharePackExportPageState extends State<SharePackExportPage> {
   Widget build(BuildContext context) {
     // 内置模板每台设备都有，打包发给别人没有意义，只列自建模板。
     final templates = context.watch<TemplateProvider>().userTemplates;
-    final stickers = context.watch<CustomStickerProvider>().stickers;
+    final stickerProvider = context.watch<CustomStickerProvider>();
+    final stickers = stickerProvider.stickers;
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -117,7 +118,7 @@ class _SharePackExportPageState extends State<SharePackExportPage> {
                       ),
                     ),
                     subtitle: Text(
-                      s.category,
+                      stickerProvider.packById(s.packId ?? '')?.name ?? '我的素材',
                       style: const TextStyle(fontSize: 12),
                     ),
                     onChanged: (_) => _toggle(_stickerIds, s.id),

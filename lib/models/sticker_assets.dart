@@ -106,6 +106,9 @@ class CustomSticker {
   /// 文件内容 sha1（同时是文件名主干）。
   final String id;
   String name;
+
+  /// 旧版「分组」功能的自由文本。分组 UI 已下线，仅随 DB / 备份 /
+  /// 分享包往返保留（默认「我的」），新导入不再指定。
   String category;
   String keywords;
 

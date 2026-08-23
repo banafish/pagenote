@@ -19,10 +19,11 @@ const _cardSpacing = 12.0;
 const _gridPadding = 16.0;
 
 /// 素材首页（REQ-26）：从「模板 / 贴纸」两个子页签重构为包列表——
-/// 置顶「内置模板」「未分组」两个固定内容入口，下方为「我的素材包」。
+/// 置顶「内置模板」「我的素材」两个固定内容入口，下方为「我的素材包」。
 ///
 /// 包优先 ≠ 只有包（判断三）：固定入口背后永远有实际内容——内置模板恒非空，
-/// 未分组对没导过包的用户就是全部家当，首屏永不为空（延续 REQ-23.2）。
+/// 我的素材（不在任何包里的贴纸与自建模板）对没导过包的用户就是全部家当，
+/// 首屏永不为空（延续 REQ-23.2）。
 /// 点固定入口或包卡片进入 [PackDetailPage]（三处同一个详情页组件）。
 /// 列表页不做跨包多选——跨包分发用「逐包整包导出」替代（REQ-26.7）。
 class LibraryPage extends StatefulWidget {
@@ -218,7 +219,7 @@ class _LibraryPageState extends State<LibraryPage> {
             Divider(height: 1, indent: 62, color: scheme.outlineVariant.withValues(alpha: 0.4)),
             _fixedEntry(
               icon: Icons.photo_library_outlined,
-              title: '未分组',
+              title: '我的素材',
               subtitle: '$ungroupedStickers 张贴纸 · $ungroupedTemplates 套模板',
               onTap: () => _openDetail(const PackDetailPage.ungrouped()),
             ),
@@ -324,7 +325,7 @@ class _LibraryPageState extends State<LibraryPage> {
             const SizedBox(height: 6),
             Text(
               '朋友分享的素材包 zip 点下方按钮装进来；\n'
-              '也可以新建一个包，把「未分组」里的散装贴纸挪进去整理。',
+              '也可以新建一个包，把「我的素材」里的散装贴纸挪进去整理。',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,

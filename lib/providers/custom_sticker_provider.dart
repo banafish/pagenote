@@ -41,12 +41,6 @@ class CustomStickerProvider extends ChangeNotifier {
   List<CustomSticker> stickersOfPack(String packId) =>
       [for (final s in _backing) if (s.packId == packId) s];
 
-  /// 现有分组（REQ-20.4「我的」页签按此分段）。
-  List<String> get categories {
-    final names = _backing.map((s) => s.category).toSet().toList()..sort();
-    return names;
-  }
-
   CustomSticker? byId(String id) =>
       _backing.where((s) => s.id == id).firstOrNull;
 
@@ -73,19 +67,12 @@ class CustomStickerProvider extends ChangeNotifier {
   /// 已存在则不重复入库，直接返回既有记录（REQ-20.2）。
   /// 图片无法解码、或尺寸超出解码上限（NFR-06）时返回 null。
   /// [packId] 指定落位素材包（详情页导入时直接进包）；null 为未分组。
-  /// [category] 指定分组（未分组详情页从某个分节的标题导入时直接进该分组）；
-  /// null 用默认分组「我的」。
   Future<CustomSticker?> importFromFile(
     XFile file, {
     String? name,
     String? packId,
-    String? category,
   }) async {
-    final sticker = await StickerStore.importFile(
-      file,
-      name: name ?? '',
-      category: category ?? '我的',
-    );
+    final sticker = await StickerStore.importFile(file, name: name ?? '');
     if (sticker == null) return null;
     sticker.packId = packId;
     return _put(sticker);
@@ -100,6 +87,8 @@ class CustomStickerProvider extends ChangeNotifier {
   /// 只有超限被压缩过的图 sha1 会变，其引用退化为缺失占位（FIX-03）。
   ///
   /// [packId] 指定落位素材包（分享包导入按包落位）；null 为未分组。
+  /// [category] 是旧版「分组」字段的透传：备份与分享包清单里带着它，
+  /// 导入时原样保留（分组 UI 已下线，不再有编辑入口）。
   /// 返回 null 表示**这一张被跳过**：空字节、格式无法识别、尺寸超上限或解码失败。
   /// 不抛异常，调用方按返回值计数并继续导入其余素材，不中断整包。
   Future<CustomSticker?> importFromBytes(
@@ -130,18 +119,6 @@ class CustomStickerProvider extends ChangeNotifier {
     sticker.name = trimmed;
     await _db.insertCustomSticker(sticker);
     _syncIndex();
-    notifyListeners();
-  }
-
-  /// 改分组（REQ-20.4）。
-  Future<void> setCategory(String id, String category) async {
-    final sticker = byId(id);
-    final trimmed = category.trim();
-    if (sticker == null || trimmed.isEmpty || sticker.category == trimmed) {
-      return;
-    }
-    sticker.category = trimmed;
-    await _db.insertCustomSticker(sticker);
     notifyListeners();
   }
 

@@ -267,8 +267,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
 
-    // 「未分组」固定入口可达：散装贴纸 + 自建模板的详情页（REQ-26.2）。
-    await tester.tap(find.text('未分组'));
+    // 「我的素材」固定入口可达：散装贴纸 + 自建模板的详情页（REQ-26.2）。
+    await tester.tap(find.text('我的素材'));
     await tester.pumpAndSettle();
     expect(find.text('散装素材都住这里').hitTestable(), findsOneWidget);
     await tester.pageBack();
@@ -345,11 +345,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 素材 → 未分组详情，离开再回来时首页仍在（详情页是独立路由，
+    // 素材 → 我的素材详情，离开再回来时首页仍在（详情页是独立路由，
     // REQ-26.9；一级入口切换不打断它之上的浏览状态）。
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('未分组'));
+    await tester.tap(find.text('我的素材'));
     await tester.pumpAndSettle();
     expect(find.text('散装素材都住这里').hitTestable(), findsOneWidget);
     await tester.pageBack();
@@ -505,7 +505,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
-    expect(find.text('未分组').hitTestable(), findsOneWidget);
+    expect(find.text('我的素材').hitTestable(), findsOneWidget);
     expect(find.text('还没有素材包').hitTestable(), findsOneWidget);
     // 写手账 FAB 只在时光首页提供，其余一级入口不显示。
     expect(find.byType(FloatingActionButton), findsNothing);
@@ -540,7 +540,7 @@ void main() {
     expect(find.text('素材'), findsOneWidget);
     // 首屏永不为空：内置模板固定入口永远存在（REQ-26.1）。
     expect(find.text('内置模板'), findsOneWidget);
-    expect(find.text('未分组'), findsOneWidget);
+    expect(find.text('我的素材'), findsOneWidget);
 
     // 点固定入口进入详情页：内置模板 = builtin 网格（只读 + 复制）。
     await tester.tap(find.text('内置模板'));
@@ -553,10 +553,10 @@ void main() {
     // 内置详情没有多选以外的整页操作入口，也没有排序条。
     expect(find.text('最近使用'), findsNothing);
 
-    // 未分组入口：排序选择已下线，各处都不再出现排序条。
+    // 「我的素材」入口：排序选择已下线，各处都不再出现排序条。
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('未分组'));
+    await tester.tap(find.text('我的素材'));
     await tester.pumpAndSettle();
     expect(find.text('最近使用'), findsNothing);
     expect(find.text('创建时间'), findsNothing);

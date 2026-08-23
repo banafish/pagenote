@@ -44,21 +44,21 @@ const _gridPadding = 16.0;
 /// 新导入内容的高亮时长（REQ-21.9）：呼吸描边亮一小会儿即回落。
 const _highlightDuration = Duration(seconds: 4);
 
-/// 详情页的数据源（REQ-26.2）：内置模板、未分组与各素材包三处
+/// 详情页的数据源（REQ-26.2）：内置模板、我的素材（未分组）与各素材包三处
 /// 使用同一个页面组件、不同数据源。
 enum PackDetailSource {
   /// 内置模板：只读网格 + 复制为我的模板（现状行为）。
   builtin,
 
-  /// 未分组：`packId` 为 null 的贴纸（保留 category 分节）
-  /// + 自建模板（继承三档排序与长按拖排）。
+  /// 未分组：`packId` 为 null 的贴纸 + 自建模板
+  /// （继承三档排序与长按拖排）。
   ungrouped,
 
   /// 指定包：该包的贴纸网格 + 模板网格。
   pack,
 }
 
-/// 素材详情页（REQ-26）：素材首页「内置模板 / 未分组 / 各素材包」三处
+/// 素材详情页（REQ-26）：素材首页「内置模板 / 我的素材 / 各素材包」三处
 /// 固定入口与包卡片的统一落点，同屏浏览贴纸与模板。
 ///
 /// 由 [TemplateManagerBody] / [StickerManagerBody] 合并而来——包级操作
@@ -204,30 +204,14 @@ class _PackDetailPageState extends State<PackDetailPage>
     };
   }
 
-  /// 按分组切段（未分组贴纸沿用 category 语义，与素材面板「我的」页签一致）。
+  /// 贴纸一节（与包详情同构，不再按 category 细分）；
+  /// 没有贴纸时返回空，由构建处的「贴纸」占位节兜底。
   List<({String label, List<CustomSticker> items})> _stickerSections(
     CustomStickerProvider provider,
   ) {
-    return switch (widget.source) {
-      PackDetailSource.builtin => const [],
-      PackDetailSource.ungrouped => () {
-        final all = provider.ungroupedStickers;
-        final names = all.map((s) => s.category).toSet().toList()..sort();
-        return [
-          for (final name in names)
-            (
-              label: name,
-              items: [
-                for (final sticker in all)
-                  if (sticker.category == name) sticker,
-              ],
-            ),
-        ];
-      }(),
-      PackDetailSource.pack => [
-        (label: '贴纸', items: provider.stickersOfPack(widget.packId!)),
-      ],
-    };
+    final stickers = _visibleStickers(provider);
+    if (stickers.isEmpty) return const [];
+    return [(label: '贴纸', items: stickers)];
   }
 
   // ---------------- 模板手动排序（REQ-18.4） ----------------
@@ -243,7 +227,7 @@ class _PackDetailPageState extends State<PackDetailPage>
 
   // ---------------- 单个贴纸的操作（REQ-20.4，与现状一致） ----------------
 
-  /// 贴纸操作菜单：重命名 / 移动到素材包 / 分组 / 导出 / 删除。
+  /// 贴纸操作菜单：重命名 / 移动到素材包 / 导出 / 删除。
   Future<void> _stickerMenu(CustomSticker sticker) async {
     final provider = context.read<CustomStickerProvider>();
     final packName = provider.packById(sticker.packId ?? '')?.name;
@@ -263,14 +247,8 @@ class _PackDetailPageState extends State<PackDetailPage>
             ListTile(
               leading: const Icon(Icons.inventory_2_outlined),
               title: const Text('移动到素材包'),
-              subtitle: Text(packName ?? '未分组'),
+              subtitle: Text(packName ?? '我的素材'),
               onTap: () => Navigator.pop(menuContext, 'pack'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: const Text('分组'),
-              subtitle: Text(sticker.category),
-              onTap: () => Navigator.pop(menuContext, 'category'),
             ),
             ListTile(
               leading: const Icon(Icons.ios_share_rounded),
@@ -301,13 +279,6 @@ class _PackDetailPageState extends State<PackDetailPage>
         await context.read<CustomStickerProvider>().rename(sticker.id, name);
       case 'pack':
         if (mounted) await moveStickerToPackFlow(context, sticker);
-      case 'category':
-        final group = await _promptText('素材分组', '分组名称', sticker.category);
-        if (!mounted || group == null) return;
-        await context.read<CustomStickerProvider>().setCategory(
-          sticker.id,
-          group,
-        );
       case 'export':
         if (context.mounted) {
           await exportStickersAsPack(context, [sticker], const [], null);
@@ -476,7 +447,7 @@ class _PackDetailPageState extends State<PackDetailPage>
     );
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('已复制为「${copy.name}」，在「未分组」里可找到 ✨')));
+        ..showSnackBar(SnackBar(content: Text('已复制为「${copy.name}」，在「我的素材」里可找到 ✨')));
   }
 
   Future<void> _deleteTemplate(JournalTemplate template) async {
@@ -637,7 +608,7 @@ class _PackDetailPageState extends State<PackDetailPage>
               ListTile(
                 leading: const Icon(Icons.folder_open_rounded),
                 title: const Text('解散素材包'),
-                subtitle: const Text('素材保留，移入未分组'),
+                subtitle: const Text('素材保留，移入我的素材'),
                 onTap: () => Navigator.pop(menuContext, 'dissolve'),
               ),
               ListTile(
@@ -744,7 +715,7 @@ class _PackDetailPageState extends State<PackDetailPage>
         .length;
     final templateNote = packTemplates.isEmpty
         ? ''
-        : '\n包内 ${packTemplates.length} 套模板会保留，移回未分组。';
+        : '\n包内 ${packTemplates.length} 套模板会保留，移回我的素材。';
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -754,7 +725,7 @@ class _PackDetailPageState extends State<PackDetailPage>
               ? '「${pack.name}」共 ${items.length} 张素材，其中 $referenced 张正被手账或模板使用，'
                     '删除后那些位置会显示缺失占位。$templateNote'
               : '「${pack.name}」与包内 ${items.length} 张素材将被移除。$templateNote\n'
-                    '只想去掉分组的话，用「解散素材包」可以保留素材。',
+                    '只想去掉这个包的话，用「解散素材包」可以保留素材。',
         ),
         actions: [
           TextButton(
@@ -860,7 +831,7 @@ class _PackDetailPageState extends State<PackDetailPage>
         widget.source == PackDetailSource.ungrouped &&
         !_selecting &&
         templates.length > 1;
-    // 导入贴纸的落位：包详情直接进包，未分组落在默认分组。
+    // 导入贴纸的落位：包详情直接进包，我的素材落在未分组。
     final importPackId = widget.source == PackDetailSource.pack
         ? widget.packId
         : null;
@@ -873,7 +844,7 @@ class _PackDetailPageState extends State<PackDetailPage>
           : AppBar(
               title: Text(switch (widget.source) {
                 PackDetailSource.builtin => '内置模板',
-                PackDetailSource.ungrouped => '未分组',
+                PackDetailSource.ungrouped => '我的素材',
                 PackDetailSource.pack => pack!.name,
               }),
               actions: [
@@ -909,11 +880,6 @@ class _PackDetailPageState extends State<PackDetailPage>
                         ? () => importStickersFromGallery(
                             context,
                             packId: importPackId,
-                            // 未分组按分节导入：加进点开的那个分组；
-                            // 包内不细分组，落默认分组。
-                            category: widget.source == PackDetailSource.pack
-                                ? null
-                                : section.label,
                           )
                         : null,
                   ),
@@ -1396,7 +1362,7 @@ class _PackDetailPageState extends State<PackDetailPage>
       PackDetailSource.builtin => ('内置模板', '内置模板每台设备都有，复制为我的模板后可自由修改。'),
       PackDetailSource.ungrouped => (
         '散装素材都住这里',
-        '从相册导入的贴纸与自建模板默认放在未分组，\n整理进素材包后可在首页按包浏览。',
+        '从相册导入的贴纸与自建模板默认放在这里，\n整理进素材包后可在首页按包浏览。',
       ),
       PackDetailSource.pack => (
         '这个包还是空的',

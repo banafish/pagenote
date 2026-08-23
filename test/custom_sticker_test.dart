@@ -189,7 +189,7 @@ void main() {
     expect(decoded.height, closeTo(1024 * 800 / 2400, 1), reason: '等比缩放');
   });
 
-  test('重命名 / 分组 / 删除往返，删除后文件与记录都不在（REQ-20.4）', () async {
+  test('重命名 / 删除往返，删除后文件与记录都不在（REQ-20.4）', () async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
     final provider = await newProvider(database: db);
@@ -200,14 +200,11 @@ void main() {
     expect(File(path).existsSync(), isTrue);
 
     await provider.rename(sticker.id, '新名字');
-    await provider.setCategory(sticker.id, '旅行');
     expect(provider.byId(sticker.id)!.name, '新名字');
-    expect(provider.categories, ['旅行']);
 
     // 重新读库确认落盘。
     final reopened = await newProvider(database: db);
     expect(reopened.stickers.single.name, '新名字');
-    expect(reopened.stickers.single.category, '旅行');
 
     await reopened.delete(sticker.id);
     expect(reopened.stickers, isEmpty);
@@ -282,10 +279,12 @@ void main() {
 
   test('备份包带上自定义贴纸清单与位图，解析回程可还原（REQ-20.6）', () async {
     final provider = await newProvider();
-    final sticker = (await provider.importFromFile(
-      fileOf(pngOf(72, 72), '备份素材.png'),
+    // 分组字段（旧版功能）随备份清单原样往返。
+    final sticker = (await provider.importFromBytes(
+      pngOf(72, 72),
+      name: '备份素材',
+      category: '手绘',
     ))!;
-    await provider.setCategory(sticker.id, '手绘');
     final saved = (await StickerStore.readBytes(sticker.id, sticker.ext))!;
 
     final entry = JournalEntry(

@@ -848,18 +848,18 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       children: [
         _minePackStrip(packs),
         Expanded(
-          child: stickers.isEmpty
-              ? _mineEmpty(scheme)
-              : SingleChildScrollView(
+              child: stickers.isEmpty
+                  ? _mineEmpty(scheme)
+                  : SingleChildScrollView(
                   // 与贴纸页签同一套分节样式：标题 + 收缩网格；
-                  // 未分组贴纸不属于任何包，固定放在最顶上一节。
+                  // 不在任何包里的贴纸（「我的素材」）固定放在最顶上一节。
                   // 整列直建（不懒加载）,预览条点击才能定位到任意分节。
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (ungrouped.isNotEmpty) ...[
-                        _mineSectionHeader('未分组', ungrouped.length),
+                        _mineSectionHeader('我的素材', ungrouped.length),
                         _customGrid(
                           ungrouped,
                           shrinkWrap: true,

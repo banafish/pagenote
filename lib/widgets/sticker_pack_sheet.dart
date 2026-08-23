@@ -5,7 +5,7 @@ import '../models/sticker_assets.dart';
 import '../providers/custom_sticker_provider.dart';
 
 /// 把一张贴纸移入素材包的完整流程（素材管理页与素材面板的角标菜单共用）：
-/// 底部弹层列出「新建素材包 / 移回未分组 / 现有包」，选定即移动。
+/// 底部弹层列出「新建素材包 / 移回我的素材 / 现有包」，选定即移动。
 /// 没有任何包且不想新建时，用户直接取消即可。
 Future<void> moveStickerToPackFlow(
   BuildContext context,
@@ -42,7 +42,7 @@ Future<void> moveStickerToPackFlow(
           if (current != null)
             ListTile(
               leading: const Icon(Icons.folder_open_rounded),
-              title: const Text('移回未分组'),
+              title: const Text('移回我的素材'),
               onTap: () => Navigator.pop(sheetContext, '__ungrouped__'),
             ),
           for (final pack in packs)

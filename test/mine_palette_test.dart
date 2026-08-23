@@ -19,7 +19,7 @@ import 'package:pagenote/utils/sticker_store.dart';
 import 'package:pagenote/widgets/canvas/canvas_tool_sheets.dart';
 
 /// 素材面板「我的」页签分节改版的三条关键路径：
-/// 1. 分节结构：预览条（管理入口 + 包封面）置顶，未分组在最上一节，
+/// 1. 分节结构：预览条（管理入口 + 包封面）置顶，「我的素材」在最上一节，
 ///    包名标题带张数，旧的「导入图片」行不再出现；
 /// 2. 点击包预览定位到对应分节标题；
 /// 3. 预览条首位的管理入口整页打开素材首页。
@@ -83,7 +83,7 @@ void main() {
     return img.encodePng(image);
   }
 
-  /// 未分组 10 张 + 「春日」包 5 张 + 「夏夜」包 8 张，
+  /// 「我的素材」10 张 + 「春日」包 5 张 + 「夏夜」包 8 张，
   /// 分节内容足够超出页签区高度，滚动定位才有意义。
   Future<void> seedMine(WidgetTester tester, CustomStickerProvider stickers) async {
     await tester.runAsync(() async {
@@ -158,7 +158,7 @@ void main() {
     (widget) => widget is Tooltip && widget.message == tooltip,
   );
 
-  testWidgets('我的页签分节直出：预览条 + 未分组置顶 + 包名带张数', (tester) async {
+  testWidgets('我的页签分节直出：预览条 + 我的素材置顶 + 包名带张数', (tester) async {
     final (journal, settings, templates, stickers) = await bootstrap(tester);
     await seedMine(tester, stickers);
     await tester.pumpWidget(
@@ -191,9 +191,9 @@ void main() {
     expect(find.byIcon(Icons.more_horiz_rounded), findsNothing);
     expect(find.byIcon(Icons.star_border_rounded), findsNWidgets(23));
 
-    // 未分组在最上一节，其后按 provider 的包顺序（素材页同序）排列。
+    // 「我的素材」在最上一节，其后按 provider 的包顺序（素材页同序）排列。
     double topOf(String text) => tester.getTopLeft(find.text(text).last).dy;
-    var prevTop = topOf('未分组');
+    var prevTop = topOf('我的素材');
     for (final name in stickers.packs.map((p) => p.name)) {
       final top = topOf(name);
       expect(top, greaterThan(prevTop), reason: '「$name」分节应排在前面的小节之后');
