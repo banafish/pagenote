@@ -374,6 +374,41 @@ class _PackDetailPageState extends State<PackDetailPage>
     }
   }
 
+  /// 模板区标题右侧的「新增」：先起名，再进编辑器从零搭版式；
+  /// 保存后落在当前包 / 未分组（编辑器模板模式对未入库模板就地落库），
+  /// 中途退出则什么都不留。
+  Future<void> _addTemplate() async {
+    // 默认名撞车时自动带序号，避免攒出一排「新模板」。
+    final taken = context
+        .read<TemplateProvider>()
+        .templates
+        .map((t) => t.name)
+        .toSet();
+    var initial = '新模板';
+    for (var i = 2; taken.contains(initial); i++) {
+      initial = '新模板 $i';
+    }
+    final name = await _promptText('新建模板', '模板名称', initial);
+    if (!mounted || name == null) return;
+    final template = JournalTemplate(
+      id: newTemplateId(),
+      name: name,
+      packId: widget.source == PackDetailSource.pack ? widget.packId : null,
+    );
+    final saved =
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (_) => EditorPage(editingTemplate: template),
+          ),
+        ) ??
+        false;
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已创建模板「$name」✨')),
+      );
+    }
+  }
+
   /// 编辑模板整页版式（就地更新）：复用手账编辑器，保存回写该模板本身。
   /// 网格刷新由 TemplateProvider.saveTemplate 的 notifyListeners 驱动。
   Future<void> _editTemplate(JournalTemplate template) async {
@@ -801,6 +836,12 @@ class _PackDetailPageState extends State<PackDetailPage>
         widget.source == PackDetailSource.ungrouped &&
         !_selecting &&
         templates.length > 1;
+    // 导入贴纸的落位：包详情直接进包，未分组落在默认分组。
+    final importPackId = widget.source == PackDetailSource.pack
+        ? widget.packId
+        : null;
+    // 内置模板只读，不提供新增入口；多选态是挑内容导出的模式，也让出 ＋。
+    final canAdd = widget.source != PackDetailSource.builtin && !_selecting;
 
     return Scaffold(
       appBar: _selecting
@@ -812,17 +853,6 @@ class _PackDetailPageState extends State<PackDetailPage>
                 PackDetailSource.pack => pack!.name,
               }),
               actions: [
-                if (widget.source != PackDetailSource.builtin)
-                  IconButton(
-                    tooltip: '导入图片',
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    onPressed: () => importStickersFromGallery(
-                      context,
-                      packId: widget.source == PackDetailSource.pack
-                          ? widget.packId
-                          : null,
-                    ),
-                  ),
                 IconButton(
                   tooltip: '多选导出',
                   icon: const Icon(Icons.checklist_rounded),
@@ -850,17 +880,41 @@ class _PackDetailPageState extends State<PackDetailPage>
                   _sectionLabel(
                     section.label,
                     '共 ${section.items.length} 张',
+                    addTooltip: '导入贴纸',
+                    onAdd: canAdd
+                        ? () => importStickersFromGallery(
+                            context,
+                            packId: importPackId,
+                            // 未分组按分节导入：加进点开的那个分组；
+                            // 包内不细分组，落默认分组。
+                            category: widget.source == PackDetailSource.pack
+                                ? null
+                                : section.label,
+                          )
+                        : null,
                   ),
                   _stickerGrid(section.items),
                 ],
                 if (stickers.isEmpty &&
                     widget.source != PackDetailSource.builtin) ...[
-                  _sectionLabel('贴纸', null),
+                  _sectionLabel(
+                    '贴纸',
+                    null,
+                    addTooltip: '导入贴纸',
+                    onAdd: canAdd
+                        ? () => importStickersFromGallery(
+                            context,
+                            packId: importPackId,
+                          )
+                        : null,
+                  ),
                   SliverToBoxAdapter(child: _noStickerHint()),
                 ],
                 _sectionLabel(
                   widget.source == PackDetailSource.builtin ? '内置模板' : '模板',
                   templates.isEmpty ? null : '共 ${templates.length} 套',
+                  addTooltip: '新建模板',
+                  onAdd: canAdd ? _addTemplate : null,
                 ),
                 if (templates.isNotEmpty)
                   _templateGrid(
@@ -983,7 +1037,9 @@ class _PackDetailPageState extends State<PackDetailPage>
     );
   }
 
-  Widget _sectionLabel(String text, String? hint) {
+  /// 分节标题：名字 + 计数，[onAdd] 非空时右侧挂一个新增入口
+  /// （贴纸导入 / 新建模板），对齐到文字行垂直居中。
+  Widget _sectionLabel(String text, String? hint, {String? addTooltip, VoidCallback? onAdd}) {
     final scheme = Theme.of(context).colorScheme;
     return SliverToBoxAdapter(
       child: Padding(
@@ -994,24 +1050,41 @@ class _PackDetailPageState extends State<PackDetailPage>
           8,
         ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(
-              text,
-              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-            ),
-            if (hint != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  hint,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    text,
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                   ),
-                ),
+                  if (hint != null) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        hint,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (onAdd != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: addTooltip,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                icon: Icon(Icons.add_rounded, size: 19, color: scheme.primary),
+                onPressed: onAdd,
               ),
             ],
           ],
@@ -1025,7 +1098,7 @@ class _PackDetailPageState extends State<PackDetailPage>
     return Padding(
       padding: const EdgeInsets.fromLTRB(_gridPadding, 4, _gridPadding, 6),
       child: Text(
-        '还没有贴纸，点右上角「导入图片」加进来',
+        '还没有贴纸，点「贴纸」右侧的 ＋ 加进来',
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
       ),
     );
@@ -1300,7 +1373,7 @@ class _PackDetailPageState extends State<PackDetailPage>
       ),
       PackDetailSource.pack => (
         '这个包还是空的',
-        '点右上角「导入图片」直接加进包，\n或把现有素材「移动到素材包」挪进来。',
+        '点「导入图片」加贴纸，「新建模板」搭一个版式，\n或把现有素材「移动到素材包」挪进来。',
       ),
     };
     return Center(
@@ -1338,16 +1411,28 @@ class _PackDetailPageState extends State<PackDetailPage>
               ),
             ),
             const SizedBox(height: 18),
+            // 整页空态没有分节标题可挂 ＋，两个新增入口都放这里。
             if (widget.source != PackDetailSource.builtin)
-              FilledButton.tonalIcon(
-                onPressed: () => importStickersFromGallery(
-                  context,
-                  packId: widget.source == PackDetailSource.pack
-                      ? widget.packId
-                      : null,
-                ),
-                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                label: const Text('导入图片'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: () => importStickersFromGallery(
+                      context,
+                      packId: widget.source == PackDetailSource.pack
+                          ? widget.packId
+                          : null,
+                    ),
+                    icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                    label: const Text('导入图片'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.tonalIcon(
+                    onPressed: _addTemplate,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('新建模板'),
+                  ),
+                ],
               )
             else
               FilledButton.tonalIcon(

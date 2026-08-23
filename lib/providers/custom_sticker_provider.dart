@@ -73,12 +73,19 @@ class CustomStickerProvider extends ChangeNotifier {
   /// 已存在则不重复入库，直接返回既有记录（REQ-20.2）。
   /// 图片无法解码、或尺寸超出解码上限（NFR-06）时返回 null。
   /// [packId] 指定落位素材包（详情页导入时直接进包）；null 为未分组。
+  /// [category] 指定分组（未分组详情页从某个分节的标题导入时直接进该分组）；
+  /// null 用默认分组「我的」。
   Future<CustomSticker?> importFromFile(
     XFile file, {
     String? name,
     String? packId,
+    String? category,
   }) async {
-    final sticker = await StickerStore.importFile(file, name: name ?? '');
+    final sticker = await StickerStore.importFile(
+      file,
+      name: name ?? '',
+      category: category ?? '我的',
+    );
     if (sticker == null) return null;
     sticker.packId = packId;
     return _put(sticker);

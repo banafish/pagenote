@@ -321,14 +321,17 @@ Future<({String name, String author})?> askPackMeta(
   return meta.name.isEmpty ? (name: defaultName, author: meta.author) : meta;
 }
 
-// ---------------- 导入图片（REQ-20.1/20.3/20.5，详情页顶栏共用） ----------------
+// ---------------- 导入图片（REQ-20.1/20.3/20.5，详情页分节标题与空态共用） ----------------
 
 /// 从相册导入图片作为贴纸：先问一句要不要去白底（REQ-20.3），
 /// 超限的图片由仓库自动压缩，提示里如实报出压缩张数与压缩后尺寸（REQ-20.5）。
 /// [packId] 指定落位素材包（在包详情页导入直接进包）；null 为未分组。
+/// [category] 指定分组（未分组详情页从分节标题导入直接进该分组）；
+/// null 用默认分组「我的」。
 Future<void> importStickersFromGallery(
   BuildContext context, {
   String? packId,
+  String? category,
 }) async {
   final files = await StickerStore.pickImages();
   if (!context.mounted || files.isEmpty) return;
@@ -340,7 +343,13 @@ Future<void> importStickersFromGallery(
   var failed = 0;
   final shrunk = <String>[];
   for (final file in files) {
-    final result = await _importOne(provider, file, cutWhite: cutWhite, packId: packId);
+    final result = await _importOne(
+      provider,
+      file,
+      cutWhite: cutWhite,
+      packId: packId,
+      category: category,
+    );
     if (!result.ok) {
       failed++;
       continue;
@@ -414,6 +423,7 @@ Future<({bool ok, String? shrunk})> _importOne(
   XFile file, {
   required bool cutWhite,
   String? packId,
+  String? category,
 }) async {
   final Uint8List source;
   try {
@@ -427,6 +437,7 @@ Future<({bool ok, String? shrunk})> _importOne(
         ? XFile.fromData(source, path: file.name, mimeType: 'image/png')
         : file,
     packId: packId,
+    category: category,
   );
   if (sticker == null) return (ok: false, shrunk: null);
   final before = await pixelSize(source);
