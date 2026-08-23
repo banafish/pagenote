@@ -133,8 +133,11 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
   /// 跨页签搜索词（REQ-17.6）,非空时页签区替换为统一结果列表。
   String _query = '';
 
-  /// 折叠态只留搜索与最近使用,画布露出更多（REQ-17.3）。
+  /// 折叠态只留搜索与素材带（收藏 / 最近使用）,画布露出更多（REQ-17.3）。
   bool _collapsed = false;
+
+  /// 素材带当前显示收藏还是最近使用（两条合并成一条后靠它切换）。
+  bool _showFavorites = true;
 
   /// 待插入矢量贴纸的色调（REQ-19.1）,null 为素材原配色。
   int? _tint;
@@ -189,7 +192,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
     final screenHeight = MediaQuery.sizeOf(context).height;
     // 搜索时软键盘弹出,面板整体上抬,页签区随之收缩。
     final insets = MediaQuery.viewInsetsOf(context).bottom;
-    // 页签区高度：小屏也留得下头部与两条横滑区。
+    // 页签区高度：小屏也留得下头部与横滑素材带。
     final bodyHeight = (screenHeight * 0.36).clamp(180.0, 320.0);
     // 素材已被删除的收藏项直接不展示,排序时一并落库自净。
     final favorites = [
@@ -217,10 +220,8 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               children: [
                 _header(scheme),
                 _searchField(scheme),
-                if (_query.isEmpty && favorites.isNotEmpty)
-                  _keyStrip('收藏', favorites, reorderable: true),
-                if (_query.isEmpty && recent.isNotEmpty)
-                  _keyStrip('最近使用', recent),
+                if (_query.isEmpty && (favorites.isNotEmpty || recent.isNotEmpty))
+                  _quickStrip(favorites, recent),
                 if (!_collapsed) ...[
                   if (_query.isEmpty)
                     TabBar(
@@ -328,45 +329,65 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
 
   // ---------------- 最近使用与收藏（REQ-17.1 / 17.2） ----------------
 
-  /// 一条横滑素材带；[reorderable] 为收藏区,长按可拖拽排序并持久化。
-  Widget _keyStrip(
-    String title,
-    List<String> keys, {
-    bool reorderable = false,
-  }) {
+  /// 收藏与最近使用合并为一条素材带：标题行放切换,选中哪侧显示哪侧。
+  /// 当前侧为空时自动落到另一侧（空侧的切换不可点）,
+  /// 两侧都空则整条不出场（build 里已挡）。
+  Widget _quickStrip(List<String> favorites, List<String> recent) {
     final scheme = Theme.of(context).colorScheme;
+    final showFavorites = favorites.isNotEmpty &&
+        (recent.isEmpty || _showFavorites);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
-          child: Text(
-            reorderable ? '$title · 长按可拖动排序' : title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: scheme.onSurfaceVariant,
-            ),
+          child: Row(
+            children: [
+              _quickTab(
+                '收藏',
+                selected: showFavorites,
+                enabled: favorites.isNotEmpty,
+                onTap: () => setState(() => _showFavorites = true),
+              ),
+              const SizedBox(width: 6),
+              _quickTab(
+                '最近使用',
+                selected: !showFavorites,
+                enabled: recent.isNotEmpty,
+                onTap: () => setState(() => _showFavorites = false),
+              ),
+              if (showFavorites)
+                Expanded(
+                  child: Text(
+                    '长按可拖动排序',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
           ),
         ),
         SizedBox(
           height: 54,
-          child: reorderable
+          child: showFavorites
               ? ReorderableListView.builder(
                   scrollDirection: Axis.horizontal,
                   buildDefaultDragHandles: false,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: keys.length,
+                  itemCount: favorites.length,
                   itemBuilder: (context, i) =>
                       ReorderableDelayedDragStartListener(
-                        key: ValueKey(keys[i]),
+                        key: ValueKey(favorites[i]),
                         index: i,
                         // 收藏区的长按归拖拽排序,取消收藏点右上角星标；
                         // 拖到画布从下方页签发起（REQ-17.5）。
-                        child: _stripCell(keys[i], draggable: false),
+                        child: _stripCell(favorites[i], draggable: false),
                       ),
                   onReorderItem: (from, to) {
-                    final next = [...keys];
+                    final next = [...favorites];
                     next.insert(to, next.removeAt(from));
                     context.read<SettingsProvider>().reorderFavoriteStickers(
                       next,
@@ -376,10 +397,43 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               : ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  children: [for (final key in keys) _stripCell(key)],
+                  children: [for (final key in recent) _stripCell(key)],
                 ),
         ),
       ],
+    );
+  }
+
+  /// 素材带标题行的切换药丸：选中侧以主题色淡底高亮,空侧淡化且不可点。
+  Widget _quickTab(
+    String label, {
+    required bool selected,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.13)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected
+                ? scheme.primary
+                : scheme.onSurfaceVariant.withValues(alpha: enabled ? 1 : 0.4),
+          ),
+        ),
+      ),
     );
   }
 

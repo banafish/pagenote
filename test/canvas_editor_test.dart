@@ -133,6 +133,47 @@ void main() {
     );
   });
 
+  testWidgets('素材面板：收藏与最近使用合并为一条可切换素材带', (tester) async {
+    await tester.pumpWidget(await wrap());
+    await tester.pumpAndSettle();
+
+    Finder inSheet(Finder finder) =>
+        find.descendant(of: find.byType(BottomSheet), matching: finder);
+    Finder inGrid(String text) => inSheet(
+      find.descendant(of: find.byType(GridView), matching: find.text(text)),
+    );
+    await tester.tap(find.byTooltip('贴纸'));
+    await tester.pumpAndSettle();
+
+    // 两侧都空时整条不出场,不占面板高度。
+    expect(find.text('收藏'), findsNothing);
+    expect(find.text('最近使用'), findsNothing);
+
+    // 从网格选一枚 emoji：最近使用侧非空,带子出现且自动落到该侧。
+    await tester.tap(inSheet(find.text('表情')));
+    await tester.pumpAndSettle();
+    await tester.tap(inSheet(find.text('植物')));
+    await tester.pumpAndSettle();
+    await tester.tap(inGrid('🌸'));
+    await tester.pumpAndSettle();
+    expect(find.text('最近使用'), findsOneWidget);
+    // 收藏侧为空时不可点,点也不切走。
+    await tester.tap(find.text('收藏'));
+    await tester.pumpAndSettle();
+    expect(find.text('最近使用'), findsOneWidget, reason: '空侧切换应无效');
+
+    // 收藏这枚 emoji（横条角标星标）：收藏侧非空,切得过去也切得回来。
+    final star = inSheet(find.byIcon(Icons.star_border_rounded)).first;
+    await tester.tap(star);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('收藏'));
+    await tester.pumpAndSettle();
+    expect(find.text('长按可拖动排序'), findsOneWidget, reason: '收藏侧带排序提示');
+    await tester.tap(find.text('最近使用'));
+    await tester.pumpAndSettle();
+    expect(find.text('长按可拖动排序'), findsNothing);
+  });
+
   testWidgets('今日手账：一键套用并自动填入每日一问（调研二阶段第 3 条）', (tester) async {
     final prompt = promptForDate(DateUtils2.dateKey(DateTime.now()));
 
