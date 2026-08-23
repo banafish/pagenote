@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +9,8 @@ import '../providers/custom_sticker_provider.dart';
 import '../providers/template_provider.dart';
 import '../widgets/pack_cover.dart';
 import 'pack_detail_page.dart';
+import 'share_pack_export_page.dart';
+import 'share_pack_import_page.dart';
 
 /// 包卡片网格的目标宽度与比例（封面 + 包名 + 计数 + 署名）。
 const _cardExtent = 170.0;
@@ -71,6 +76,55 @@ class _LibraryPageState extends State<LibraryPage> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
+  // ---------------- 素材包导入 / 导出（REQ-21.12，入口自设置页上移） ----------------
+
+  /// Windows 双击关联之外的兜底入口，Android 也可用。
+  /// 只负责取字节，勾选与校验都交给导入预览页（REQ-21.6），
+  /// 不沿用备份那种「一个确认框全量导入」的交互。
+  Future<void> _importSharePack() async {
+    const zipGroup = XTypeGroup(label: '素材包', extensions: ['zip']);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final Uint8List bytes;
+    final String source;
+    try {
+      final file = await openFile(acceptedTypeGroups: const [zipGroup]);
+      if (file == null) return;
+      bytes = await file.readAsBytes();
+      source = file.name;
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('读取素材包文件失败')));
+      return;
+    }
+    final result = await navigator.push<SharePackImportResult>(
+      MaterialPageRoute<SharePackImportResult>(
+        builder: (_) => SharePackImportPage(bytes: bytes, sourceName: source),
+      ),
+    );
+    if (result == null || result.isEmpty) return;
+
+    final parts = [
+      if (result.templateIds.isNotEmpty) '${result.templateIds.length} 套模板',
+      if (result.stickerIds.isNotEmpty) '${result.stickerIds.length} 张贴纸',
+    ];
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('已导入 ${parts.join('、')}')));
+    // 导入完成直达对应包详情页并高亮新增（REQ-26.4）：
+    // 包有了自己的页面,回跳有了天然落点,不再连续 push 两个管理页。
+    if (result.packId != null) {
+      await navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => PackDetailPage.pack(
+            result.packId!,
+            highlightTemplateIds: result.templateIds,
+            highlightStickerIds: result.stickerIds,
+          ),
+        ),
+      );
+    }
+  }
+
   // ---------------- 包手动排序（REQ-26.5） ----------------
 
   /// 长按拖拽落位：按新顺序重编 sortIndex 并落库；
@@ -102,6 +156,18 @@ class _LibraryPageState extends State<LibraryPage> {
       appBar: AppBar(
         title: const Text('素材'),
         actions: [
+          // 导入 / 导出入口从设置页上移到素材首页，贴近内容更好找。
+          // 图标取「进 / 出」一对：导入为箭头入框，与导出的箭头出框镜像。
+          IconButton(
+            tooltip: '导入素材包',
+            icon: const Icon(Icons.input_outlined),
+            onPressed: _importSharePack,
+          ),
+          IconButton(
+            tooltip: '导出素材包',
+            icon: const Icon(Icons.ios_share_outlined),
+            onPressed: () => _openDetail(const SharePackExportPage()),
+          ),
           IconButton(
             tooltip: '新建素材包',
             icon: const Icon(Icons.create_new_folder_outlined),
@@ -230,8 +296,9 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  /// 空态引导（REQ-26.8）：导入素材包指路设置页（延续 REQ-25.2
-  /// 「文件动作属于设置」的划分），并引导把散装贴纸挪进包。
+  /// 空态引导（REQ-26.8，入口上移后改版）：直接给「导入素材包」按钮
+  /// （原指路设置页的文案随 REQ-25.2 划分调整一并作废），
+  /// 并引导把散装贴纸挪进包。
   Widget _emptyPacksGuide() {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
@@ -256,7 +323,7 @@ class _LibraryPageState extends State<LibraryPage> {
             ),
             const SizedBox(height: 6),
             Text(
-              '朋友分享的素材包 zip 在「设置 → 导入素材包」装进来；\n'
+              '朋友分享的素材包 zip 点下方按钮装进来；\n'
               '也可以新建一个包，把「未分组」里的散装贴纸挪进去整理。',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -266,10 +333,22 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
             ),
             const SizedBox(height: 14),
-            FilledButton.tonalIcon(
-              onPressed: _createPack,
-              icon: const Icon(Icons.create_new_folder_outlined, size: 18),
-              label: const Text('新建素材包'),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: _importSharePack,
+                  icon: const Icon(Icons.input_outlined, size: 18),
+                  label: const Text('导入素材包'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _createPack,
+                  icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+                  label: const Text('新建素材包'),
+                ),
+              ],
             ),
           ],
         ),
