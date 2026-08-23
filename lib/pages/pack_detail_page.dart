@@ -718,6 +718,11 @@ class _PackDetailPageState extends State<PackDetailPage>
                   addTooltip: '新建模板',
                   onAdd: canAdd ? _addTemplate : null,
                 ),
+                // 有贴纸没模板：与贴纸空态同款引导文案。
+                if (templates.isEmpty &&
+                    stickers.isNotEmpty &&
+                    widget.source != PackDetailSource.builtin)
+                  SliverToBoxAdapter(child: _noTemplateHint()),
                 if (templates.isNotEmpty)
                   _templateGrid(templates: templates, draggable: draggable),
                 const SliverToBoxAdapter(child: SizedBox(height: 28)),
@@ -911,6 +916,18 @@ class _PackDetailPageState extends State<PackDetailPage>
       padding: const EdgeInsets.fromLTRB(_gridPadding, 4, _gridPadding, 6),
       child: Text(
         '还没有贴纸，点「贴纸」右侧的 ＋ 加进来',
+        style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+
+  /// 与贴纸空态同款样式（REQ-26）：有贴纸没模板时引导新建模板。
+  Widget _noTemplateHint() {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(_gridPadding, 4, _gridPadding, 6),
+      child: Text(
+        '还没有模板，点「模板」右侧的 ＋ 加进来',
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
       ),
     );
@@ -1352,7 +1369,13 @@ class _TemplateCard extends StatelessWidget {
                   else if (highlighted)
                     Positioned(left: 6, top: 6, child: _badge(context, '新导入')),
                   if (selecting)
-                    Positioned(right: 6, top: 6, child: _checkMark(context)),
+                    Positioned(right: 6, top: 6, child: _checkMark(context))
+                  else
+                    Positioned(
+                      right: 4,
+                      top: 4,
+                      child: _useTemplateButton(context),
+                    ),
                 ],
               ),
             ),
@@ -1445,6 +1468,31 @@ class _TemplateCard extends StatelessWidget {
     );
   }
 
+  /// 一键用模板开新篇（REQ-18.1）：内置 / 自建模板都可用的写手账快捷入口；
+  /// 浮在缩略图右上角，加半透明底色保证任何版式上都看得清。
+  Widget _useTemplateButton(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: '用模板写一篇',
+      child: Material(
+        color: scheme.surface.withValues(alpha: 0.92),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => onAction('use'),
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Icon(
+              Icons.note_add_rounded,
+              size: 16,
+              color: scheme.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _footer(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
@@ -1459,23 +1507,11 @@ class _TemplateCard extends StatelessWidget {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
-          // 多选态下操作按钮让位给勾选。
+          // 多选态下更多菜单让位给勾选；
+          // 「用模板写一篇」快捷入口已挪到卡片右上角。
           if (selecting)
             const SizedBox(width: 8)
-          else ...[
-            // 一键用模板开新篇：内置 / 自建模板都可用的写手账快捷入口。
-            IconButton(
-              tooltip: '用模板写一篇',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              icon: Icon(
-                Icons.note_add_rounded,
-                size: 19,
-                color: scheme.primary,
-              ),
-              onPressed: () => onAction('use'),
-            ),
+          else
             PopupMenuButton<String>(
               tooltip: '更多',
               icon: Icon(
@@ -1564,7 +1600,6 @@ class _TemplateCard extends StatelessWidget {
               ],
               onSelected: onAction,
             ),
-          ],
         ],
       ),
     );
