@@ -20,6 +20,7 @@ import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
 import 'package:pagenote/utils/date_utils.dart';
+import 'package:pagenote/widgets/entry_card.dart';
 
 JournalEntry _entry({
   required String id,
@@ -200,6 +201,45 @@ void main() {
     expect(find.text('傍晚的海风很舒服'), findsOneWidget);
     expect(find.text('#旅行'), findsOneWidget);
     expect(find.text('1 篇'), findsWidgets);
+  });
+
+  testWidgets('时光页视图切换：单列纵向 ↔ 多列并排且持久化', (tester) async {
+    final journal = JournalProviderForTest();
+    journal.debugSetEntries([
+      _entry(id: 'e1', title: '第一条', content: '一一'),
+      _entry(id: 'e2', title: '第二条', content: '二二'),
+      _entry(id: 'e3', title: '第三条', content: '三三'),
+    ]);
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsProvider(prefs);
+
+    await tester.pumpWidget(
+      _wrap(child: const RootShell(), journal: journal, settings: settings),
+    );
+    await tester.pumpAndSettle();
+
+    Rect rect(int i) => tester.getRect(find.byType(EntryCard).at(i));
+
+    // 默认单列：同组卡片逐条纵向堆叠、左缘对齐。
+    expect(rect(0).left, rect(1).left);
+    expect(rect(0).bottom, lessThan(rect(1).top));
+    expect(settings.timelineGrid, isFalse);
+
+    // 切到多列：宽屏两列，左右交替流入（树序 = 左列 e1、左列 e3、右列 e2）。
+    await tester.tap(find.byIcon(Icons.view_agenda_outlined));
+    await tester.pumpAndSettle();
+    expect(settings.timelineGrid, isTrue);
+    expect(find.byIcon(Icons.grid_view_rounded), findsOneWidget);
+    expect(rect(2).left, greaterThan(rect(0).right));
+    expect(rect(2).top, closeTo(rect(0).top, 0.5));
+    expect(rect(1).top, greaterThan(rect(0).bottom));
+
+    // 再切回单列，布局与偏好都还原。
+    await tester.tap(find.byIcon(Icons.grid_view_rounded));
+    await tester.pumpAndSettle();
+    expect(settings.timelineGrid, isFalse);
+    expect(rect(0).left, rect(1).left);
+    expect(rect(0).bottom, lessThan(rect(1).top));
   });
 
   testWidgets('四个一级入口与素材/回顾的二级页面均可达（REQ-23/24、NFR-12）', (tester) async {

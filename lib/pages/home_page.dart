@@ -32,6 +32,8 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final journal = context.watch<JournalProvider>();
+    final settings = context.watch<SettingsProvider>();
+    final gridMode = settings.timelineGrid;
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
 
@@ -84,6 +86,14 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.favorite_border),
               onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly),
             ),
+            // 视图切换：单列时间轴 ↔ 多列网格（列数随宽度自适应）。
+            IconButton(
+              tooltip: gridMode ? '单列显示' : '多列显示',
+              isSelected: gridMode,
+              selectedIcon: const Icon(Icons.grid_view_rounded),
+              icon: const Icon(Icons.view_agenda_outlined),
+              onPressed: () => settings.setTimelineGrid(!gridMode),
+            ),
             const SizedBox(width: 4),
           ],
         ),
@@ -127,9 +137,12 @@ class _HomePageState extends State<HomePage> {
                 final child = _DateGroupView(
                   dateKey: group.date,
                   entries: group.entries,
+                  multiColumn: gridMode,
                   onOpen: (entry) => widget.onOpenEditor(context, entry),
                 );
-                if (!isPhone) {
+                // 多列模式铺满可用宽度、按宽度自适应列数；
+                // 单列在宽屏维持 760 的舒适阅读宽度。
+                if (!isPhone && !gridMode) {
                   return ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 760),
                     child: child,
@@ -287,11 +300,24 @@ class _DateGroupView extends StatelessWidget {
     required this.dateKey,
     required this.entries,
     required this.onOpen,
+    this.multiColumn = false,
   });
 
   final String dateKey;
   final List<JournalEntry> entries;
   final void Function(JournalEntry) onOpen;
+
+  /// 多列视图：分组内条目左右交替流入自适应列数的纵向栏。
+  final bool multiColumn;
+
+  /// 多列视图中相邻两栏的间距。
+  static const _columnSpacing = 12.0;
+
+  /// 多列视图每栏的目标宽度，据此随屏宽自适应列数。
+  static const _columnTargetWidth = 400.0;
+
+  /// 栏宽低于该值时卡片改用紧凑排布（隐藏图片条、压缩留白）。
+  static const _compactColumnWidth = 260.0;
 
   @override
   Widget build(BuildContext context) {
@@ -331,19 +357,56 @@ class _DateGroupView extends StatelessWidget {
             ],
           ),
         ),
-        for (final entry in entries)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: EntryCard(
-              entry: entry,
-              onTap: () => onOpen(entry),
-              onToggleFavorite: (id) =>
-                  context.read<JournalProvider>().toggleFavorite(id),
-              onDelete: (id) => deleteWithUndo(context, id),
-              onShare: (id) => _openShare(context, entry),
-            ),
-          ),
+        if (multiColumn)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // 至少两列；宽屏从两列起步，更宽时按目标栏宽继续加列。
+              final count = (constraints.maxWidth / _columnTargetWidth)
+                  .floor()
+                  .clamp(2, 6)
+                  .toInt();
+              final columnWidth =
+                  (constraints.maxWidth - _columnSpacing * (count - 1)) / count;
+              final compact = columnWidth < _compactColumnWidth;
+              final cells = List.generate(count, (_) => <Widget>[]);
+              for (var i = 0; i < entries.length; i++) {
+                cells[i % count].add(
+                  _entryCard(context, entries[i], compact: compact),
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var c = 0; c < count; c++) ...[
+                    if (c > 0) const SizedBox(width: _columnSpacing),
+                    Expanded(child: Column(children: cells[c])),
+                  ],
+                ],
+              );
+            },
+          )
+        else
+          for (final entry in entries) _entryCard(context, entry),
       ],
+    );
+  }
+
+  Widget _entryCard(
+    BuildContext context,
+    JournalEntry entry, {
+    bool compact = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: EntryCard(
+        entry: entry,
+        compact: compact,
+        onTap: () => onOpen(entry),
+        onToggleFavorite: (id) =>
+            context.read<JournalProvider>().toggleFavorite(id),
+        onDelete: (id) => deleteWithUndo(context, id),
+        onShare: (id) => _openShare(context, entry),
+      ),
     );
   }
 

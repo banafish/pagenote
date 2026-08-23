@@ -38,6 +38,9 @@ class SettingsProvider extends ChangeNotifier {
   static const _keySeedIndex = 'seedColorIndex';
   static const _keyFontScale = 'fontScale';
 
+  // 时光页时间轴多列视图切换。
+  static const _keyTimelineGrid = 'timeline.grid';
+
   // 每日一问「换一条」（REQ-04.2）。
   static const _keyPromptDate = 'prompt.refreshDate';
   static const _keyPromptCount = 'prompt.refreshCount';
@@ -112,6 +115,14 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> setFontScale(double scale) async {
     await _prefs.setDouble(_keyFontScale, scale.clamp(0.85, 1.3));
+    notifyListeners();
+  }
+
+  /// 时光页时间轴是否为多列视图，默认单列。
+  bool get timelineGrid => _prefs.getBool(_keyTimelineGrid) ?? false;
+
+  Future<void> setTimelineGrid(bool enabled) async {
+    await _prefs.setBool(_keyTimelineGrid, enabled);
     notifyListeners();
   }
 
