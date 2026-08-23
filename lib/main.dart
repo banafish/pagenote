@@ -55,11 +55,17 @@ Future<void> main() async {
   await WidgetService.instance.updateFrom(journal);
 
   runApp(
-    PageNoteApp(
-      settings: settings,
-      journal: journal,
-      templates: templates,
-      customStickers: customStickers,
+    // Windows 端整体禁用语义树（flutter/flutter#182444）：外部 UIA 客户端
+    // （输入法、远程/截图工具、讲述人等）会激活引擎无障碍桥，ListView +
+    // Tooltip 组合会产生孤儿语义节点，控制台刷 "Failed to update ui::AXTree"
+    // 且可能无 Dart 异常直接崩溃；官方修复（#190344/#190431）合并后可移除。
+    ExcludeSemantics(
+      child: PageNoteApp(
+        settings: settings,
+        journal: journal,
+        templates: templates,
+        customStickers: customStickers,
+      ),
     ),
   );
 
