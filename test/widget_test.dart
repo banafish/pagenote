@@ -202,7 +202,7 @@ void main() {
     expect(find.text('1 篇'), findsWidgets);
   });
 
-  testWidgets('四个一级入口与素材/回顾子页签均可达（REQ-23/24、NFR-12）', (tester) async {
+  testWidgets('四个一级入口与素材/回顾的二级页面均可达（REQ-23/24、NFR-12）', (tester) async {
     final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
@@ -252,9 +252,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('这一天还是空白的一页').hitTestable(), findsOneWidget);
 
-    // 切到「统计」子页签（REQ-24：回顾内两个子页签可达），
-    // 统计页内容整体迁移、不做删减（REQ-24.3）。
-    await tester.tap(find.text('统计'));
+    // 右上角统计图标进入统计二级页（REQ-24：默认日历直达，
+    // 统计内容整体迁移为独立整页、不做删减，REQ-24.3）。
+    await tester.tap(find.byIcon(Icons.insights_rounded));
     await tester.pumpAndSettle();
     expect(find.text('总篇数').hitTestable(), findsOneWidget);
     await tester.scrollUntilVisible(
@@ -268,6 +268,8 @@ void main() {
           .first,
     );
     expect(find.text('心情趋势').hitTestable(), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     // 设置（一级入口 4）。
     await tester.tap(find.byIcon(Icons.settings_outlined));
@@ -286,7 +288,7 @@ void main() {
     expect(find.text('v1.2.0 · 拾起生活中的每一页'), findsOneWidget);
   });
 
-  testWidgets('一级入口切换保留子页签与日历选中状态（REQ-23.3/24.5、NFR-09）', (tester) async {
+  testWidgets('一级入口切换与进出统计均保留日历选中状态（REQ-23.3/24.5、NFR-09）', (tester) async {
     final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
@@ -320,7 +322,7 @@ void main() {
     expect(find.text('内置模板').hitTestable(), findsOneWidget);
     expect(find.text('还没有素材包').hitTestable(), findsOneWidget);
 
-    // 回顾 → 日历里选中 15 号，切到统计再切回，选中日期不变（REQ-24.5）。
+    // 回顾 → 日历里选中 15 号，进出统计二级页后选中日期不变（REQ-24.5）。
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
     await tester.pumpAndSettle();
     final now = DateTime.now();
@@ -340,10 +342,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('15'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('统计'));
+    // 进右上角统计页再返回：统计覆盖日历，返回后选中日期不变（REQ-24.5）。
+    await tester.tap(find.byIcon(Icons.insights_rounded));
     await tester.pumpAndSettle();
     expect(find.text('这一天还是空白的一页').hitTestable(), findsNothing);
-    await tester.tap(find.text('日历'));
+    expect(find.text('总篇数').hitTestable(), findsOneWidget);
+    await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text(selectedLabel),
@@ -358,14 +362,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(selectedLabel).hitTestable(), findsOneWidget);
 
-    // 去别的一级入口再回来：仍停在「统计」子页签（REQ-24.5 / NFR-09）。
-    await tester.tap(find.text('统计'));
-    await tester.pumpAndSettle();
+    // 去别的一级入口再回来：选中日期同样原样保留（REQ-23.3 / NFR-09）。
     await tester.tap(find.byIcon(Icons.palette_outlined));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('总篇数').hitTestable(), findsOneWidget);
+    expect(find.text(selectedLabel).hitTestable(), findsOneWidget);
   });
 
   testWidgets('窄屏 NavigationBar 呈现相同的目的地与子页签结构（NFR-11）', (tester) async {
@@ -405,7 +407,7 @@ void main() {
     // 写手账 FAB 只在时光首页提供，其余一级入口不显示。
     expect(find.byType(FloatingActionButton), findsNothing);
 
-    // 回顾默认落在「日历」子页签（窄屏下当日列表在折叠线以下，滚过去再断言）。
+    // 回顾默认展示日历（REQ-24.2；窄屏下当日列表在折叠线以下，滚过去再断言）。
     await tester.tap(find.byIcon(Icons.calendar_today_outlined));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
