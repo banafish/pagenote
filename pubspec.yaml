@@ -82,6 +82,7 @@ dependencies:
   # 会让 FilePickerPlugin 缺类、Android 编译失败；10.x 仍无条件应用 KGP。
   # （10.3.11 已被官方撤回，取 10.3.10。）
   file_picker: ^10.3.10
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

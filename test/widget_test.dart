@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -297,6 +298,14 @@ void main() {
   });
 
   testWidgets('四个一级入口与素材/回顾的二级页面均可达（REQ-23/24、NFR-12）', (tester) async {
+    // 「关于」版本号来自 PackageInfo（pubspec.yaml 打包值），测试里注入 mock。
+    PackageInfo.setMockInitialValues(
+      appName: '拾页',
+      packageName: 'com.example.pagenote',
+      version: '1.3.0',
+      buildNumber: '3',
+      buildSignature: '',
+    );
     final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();
     final settings = SettingsProvider(prefs);
@@ -370,7 +379,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('主题模式').hitTestable(), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('v1.2.0 · 拾起生活中的每一页'),
+      find.text('v1.3.0 · 拾起生活中的每一页'),
       200,
       scrollable: find
           .descendant(
@@ -379,7 +388,7 @@ void main() {
           )
           .first,
     );
-    expect(find.text('v1.2.0 · 拾起生活中的每一页'), findsOneWidget);
+    expect(find.text('v1.3.0 · 拾起生活中的每一页'), findsOneWidget);
   });
 
   testWidgets('一级入口切换与进出统计均保留日历选中状态（REQ-23.3/24.5、NFR-09）', (tester) async {

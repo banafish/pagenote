@@ -114,18 +114,15 @@ class _BrandMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final logo = Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(13),
+    // 与设置页「关于」一致：直接用应用图标（assets/icon/app_icon.png）。
+    final logo = ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.asset(
+        'assets/icon/app_icon.png',
+        width: 42,
+        height: 42,
+        fit: BoxFit.cover,
       ),
-      child: const Icon(Icons.auto_stories, color: Colors.white, size: 23),
     );
     if (!extended) return logo;
     return Row(

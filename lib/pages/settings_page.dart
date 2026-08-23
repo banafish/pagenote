@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/custom_sticker_provider.dart';
@@ -323,13 +324,7 @@ class SettingsPage extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        'v1.2.0 · 拾起生活中的每一页',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                      const _AppVersionText(),
                     ],
                   ),
                 ],
@@ -902,6 +897,44 @@ class _SeedSwatch extends StatelessWidget {
               ? const Icon(Icons.check, color: Colors.white, size: 21)
               : null,
         ),
+      ),
+    );
+  }
+}
+
+/// 关于区版本号：取自 pubspec.yaml 的 version（构建时打进包里），不用手写。
+/// 不做静态缓存——插件自身只在成功后缓存，且组件随 IndexedStack 常驻，
+/// 正常生命周期里只会加载一次。
+class _AppVersionText extends StatefulWidget {
+  const _AppVersionText();
+
+  @override
+  State<_AppVersionText> createState() => _AppVersionTextState();
+}
+
+class _AppVersionTextState extends State<_AppVersionText> {
+  String? _version;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then(
+      (info) {
+        if (mounted) setState(() => _version = info.version);
+      },
+      // 取不到（极端环境）就只显示标语，不影响设置页其余内容。
+      onError: (_) {},
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final version = _version;
+    return Text(
+      version == null ? '拾起生活中的每一页' : 'v$version · 拾起生活中的每一页',
+      style: TextStyle(
+        fontSize: 12.5,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
     );
   }
