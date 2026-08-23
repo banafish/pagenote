@@ -35,9 +35,8 @@ class CroppedImage {
 /// 打开「裁剪照片」对话框：默认裁剪框即整张原图（保持原比例）,
 /// 可自由拖动四角调整区域。返回 null 表示放弃这张照片。
 ///
-/// - 「使用原图」：不裁剪,返回原路径与原始尺寸;
-/// - 「裁剪并添加」：后台 isolate 裁剪（顺带烘掉 EXIF 方向、压长边）,
-///   结果另存为新附件文件,原中间文件由调用方决定去留。
+/// 「裁剪并添加」后台 isolate 裁剪（顺带烘掉 EXIF 方向、压长边）,
+/// 结果另存为新附件文件,原中间文件由调用方决定去留。
 ///
 /// [persist] 仅供测试注入落盘行为,默认走附件目录。
 Future<CroppedImage?> showImageCropDialog(
@@ -120,26 +119,11 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
     if (result == null) {
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('照片处理失败，请重试或改用原图')),
+        const SnackBar(content: Text('照片处理失败，请重试')),
       );
       return;
     }
     Navigator.of(context).pop(result);
-  }
-
-  void _useOriginal() {
-    final natural = _natural;
-    if (natural == null) {
-      Navigator.of(context).pop();
-      return;
-    }
-    Navigator.of(context).pop(
-      CroppedImage(
-        path: widget.path,
-        width: natural.width,
-        height: natural.height,
-      ),
-    );
   }
 
   // ---------------- 裁剪框编辑 ----------------
@@ -243,18 +227,15 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
                     child: const Text('取消'),
                   ),
                   const Spacer(),
-                  OutlinedButton(
-                    onPressed: _busy || _failed ? null : _useOriginal,
-                    child: const Text('使用原图'),
-                  ),
-                  const SizedBox(width: 8),
                   FilledButton(
                     onPressed: _busy || _failed ? null : _confirm,
                     child: _busy
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
                         : const Text('裁剪并添加'),
                   ),
@@ -273,7 +254,7 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
         height: 220,
         alignment: Alignment.center,
         child: Text(
-          '这张图片无法读取，可以改用原图直接添加',
+          '这张图片无法读取，请换一张试试',
           style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
         ),
       );

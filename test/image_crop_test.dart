@@ -26,15 +26,25 @@ void main() {
     return file;
   }
 
-  testWidgets('默认整图原比例;「使用原图」按真实尺寸返回', (tester) async {
+  testWidgets('默认整图原比例;不动裁剪框直接添加,按整图尺寸返回', (tester) async {
     final photo = makePhoto('a.png', 400, 200);
+    final persisted = <String>[];
     CroppedImage? result;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () async {
-              result = await showImageCropDialog(context, photo.path);
+              result = await showImageCropDialog(
+                context,
+                photo.path,
+                persist: (bytes, ext) async {
+                  final target = '${tmp.path}${Platform.pathSeparator}full$ext';
+                  File(target).writeAsBytesSync(bytes);
+                  persisted.add(target);
+                  return target;
+                },
+              );
             },
             child: const Text('open'),
           ),
@@ -44,17 +54,18 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('使用原图'), findsOneWidget);
     // 裁剪框默认即整张原图:尺寸行显示 400 × 200 / 400 × 200。
     expect(find.text('400 × 200 / 400 × 200'), findsOneWidget);
+    // 「使用原图」按钮已移除,底部只剩取消与确认。
+    expect(find.text('使用原图'), findsNothing);
 
-    await tester.tap(find.text('使用原图'));
+    await tester.tap(find.text('裁剪并添加'));
     await tester.pumpAndSettle();
     expect(result, isNotNull);
     expect(result!.width, 400);
     expect(result!.height, 200);
     expect(result!.aspect, closeTo(0.5, 1e-9), reason: '横图 2:1,高宽比 0.5');
-    expect(result!.path, photo.path, reason: '使用原图直接沿用原路径');
+    expect(result!.path, persisted.single, reason: '结果另存为新附件文件');
   });
 
   testWidgets('拖角自由裁剪:按裁剪区域尺寸返回,结果写盘', (tester) async {

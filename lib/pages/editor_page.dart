@@ -932,7 +932,6 @@ class _EditorPageState extends State<EditorPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isWide = MediaQuery.sizeOf(context).width >= 780;
 
     // 新建且未动笔画布时,引导从整页模板开始（三步成稿）；
     // 模板编辑 / 已带着模板进来时不走这条引导。
@@ -944,37 +943,34 @@ class _EditorPageState extends State<EditorPage> {
         !_hasText &&
         _canvas.images.isEmpty;
 
-    final canvasChild = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child:
-                _viewMode
-                    // 查看态：整页自适应视口（平板/电脑免上下滑动）,
-                    // 双指捏合 / 滚轮 / Ctrl+滚轮 缩放,双击复位。
-                    ? _viewCanvas()
-                    // 画布编辑器自带缩放平移与选中操作条;底部工具栏悬浮其上。
-                    : CanvasEditor(
-                      key: _editorKey,
-                      canvas: _canvas,
-                      entry: _draft,
-                      onCommit: _commit,
-                      onEditText: _editText,
-                      onEditImage: _editImage,
-                      onEditSticker: _editSticker,
-                      onEditComponent: _editComponent,
-                    ),
-          ),
-        ),
-      ),
-    );
+    final canvasChild = _viewMode
+        // 查看态：整页自适应视口（平板/电脑免上下滑动）,
+        // 双指捏合 / 滚轮 / Ctrl+滚轮 缩放,双击复位。
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: _viewCanvas(),
+            ),
+          )
+        // 编辑态：缩放/平移视口铺满整个可用区域（桌面两侧不再留空白框,
+        // 放大后画布全屏可见可拖动）;页面本身限宽 640、由缩放层居中。
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: CanvasEditor(
+              key: _editorKey,
+              canvas: _canvas,
+              entry: _draft,
+              onCommit: _commit,
+              onEditText: _editText,
+              onEditImage: _editImage,
+              onEditSticker: _editSticker,
+              onEditComponent: _editComponent,
+            ),
+          );
 
     final page = Column(
       children: [
-        if (showTemplateChips)
         if (showTemplateChips)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -1018,15 +1014,8 @@ class _EditorPageState extends State<EditorPage> {
       ],
     );
 
-    final body = isWide
-        ? Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 860),
-              child: page,
-            ),
-          )
-        : page;
-
+    // 画布（含缩放平移）铺满整个页宽：桌面放大后两侧也能显示、可拖动,
+    // 不再用 860 的窄列把它框在中间。
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -1114,7 +1103,7 @@ class _EditorPageState extends State<EditorPage> {
             const SizedBox(width: 12),
           ],
         ),
-        body: body,
+        body: page,
       ),
     );
   }

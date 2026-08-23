@@ -263,16 +263,33 @@ class CanvasZoomState extends State<CanvasZoom>
             onScaleUpdate: _onScaleUpdate,
             onScaleEnd: _onScaleEnd,
             onDoubleTap: widget.doubleTapReset ? reset : null,
-            child: ClipRect(
-              child: Transform(
+          child: ClipRect(
+            child: Transform(
+              alignment: Alignment.topLeft,
+              transform: Matrix4.identity()
+                ..translateByDouble(_offset.dx, _offset.dy, 0, 1)
+                ..scaleByDouble(_scale, _scale, _scale, 1),
+              // 内容固定按 childSize 原始尺寸布局,不被视口约束压扁：内容比
+              // 视口大时若被钳制,实际渲染尺寸与 childSize 不符,缩放换算全乱
+              // （查看态整页在手机上被压成左上半宽即此因）,超出部分还会在
+              // 布局阶段就被裁掉,放大也看不回来。
+              child: OverflowBox(
                 alignment: Alignment.topLeft,
-                transform: Matrix4.identity()
-                  ..translateByDouble(_offset.dx, _offset.dy, 0, 1)
-                  ..scaleByDouble(_scale, _scale, _scale, 1),
+                minWidth: 0,
+                minHeight: 0,
+                maxWidth: double.infinity,
+                maxHeight: double.infinity,
                 // RepaintBoundary：缩放/平移时内容层整块复用,不逐帧重画。
-                child: RepaintBoundary(child: widget.child),
+                child: RepaintBoundary(
+                  child: SizedBox(
+                    width: widget.childSize.width,
+                    height: widget.childSize.height,
+                    child: widget.child,
+                  ),
+                ),
               ),
             ),
+          ),
           ),
         );
       },

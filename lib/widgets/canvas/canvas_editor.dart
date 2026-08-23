@@ -278,7 +278,10 @@ class CanvasEditorState extends State<CanvasEditor> {
     final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final pageWidth = constraints.maxWidth;
+        // 页面限宽 640：视口更宽（平板/电脑）时页面保持文档比例、由缩放层
+        // 居中,但缩放/平移视口仍是整个编辑区 —— 放大后画布可看到、可拖到
+        // 全屏范围,不再被框在中间窄条里。
+        final pageWidth = math.min(constraints.maxWidth, 640.0);
         final pageSize = Size(pageWidth, pageWidth);
         // 页面（可滚动）。
         final page = SizedBox(
