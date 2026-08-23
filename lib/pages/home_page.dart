@@ -6,13 +6,11 @@ import '../models/journal_entry.dart';
 import '../pages/editor_page.dart';
 import '../pages/monthly_report_page.dart';
 import '../pages/quick_note_page.dart';
-import '../pages/share_card_page.dart';
 import '../providers/journal_provider.dart';
 import '../providers/settings_provider.dart';
 import '../utils/date_utils.dart';
-import '../utils/delete_flow.dart';
 import '../widgets/daily_prompt_card.dart';
-import '../widgets/entry_card.dart';
+import '../widgets/entry_card_list.dart';
 import '../widgets/on_this_day_card.dart';
 import 'search_page.dart';
 
@@ -310,15 +308,6 @@ class _DateGroupView extends StatelessWidget {
   /// 多列视图：分组内条目左右交替流入自适应列数的纵向栏。
   final bool multiColumn;
 
-  /// 多列视图中相邻两栏的间距。
-  static const _columnSpacing = 12.0;
-
-  /// 多列视图每栏的目标宽度，据此随屏宽自适应列数。
-  static const _columnTargetWidth = 400.0;
-
-  /// 栏宽低于该值时卡片改用紧凑排布（隐藏图片条、压缩留白）。
-  static const _compactColumnWidth = 260.0;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -357,63 +346,13 @@ class _DateGroupView extends StatelessWidget {
             ],
           ),
         ),
-        if (multiColumn)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // 至少两列；宽屏从两列起步，更宽时按目标栏宽继续加列。
-              final count = (constraints.maxWidth / _columnTargetWidth)
-                  .floor()
-                  .clamp(2, 6)
-                  .toInt();
-              final columnWidth =
-                  (constraints.maxWidth - _columnSpacing * (count - 1)) / count;
-              final compact = columnWidth < _compactColumnWidth;
-              final cells = List.generate(count, (_) => <Widget>[]);
-              for (var i = 0; i < entries.length; i++) {
-                cells[i % count].add(
-                  _entryCard(context, entries[i], compact: compact),
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var c = 0; c < count; c++) ...[
-                    if (c > 0) const SizedBox(width: _columnSpacing),
-                    Expanded(child: Column(children: cells[c])),
-                  ],
-                ],
-              );
-            },
-          )
-        else
-          for (final entry in entries) _entryCard(context, entry),
+        EntryCardList(
+          entries: entries,
+          multiColumn: multiColumn,
+          onOpen: onOpen,
+        ),
       ],
     );
-  }
-
-  Widget _entryCard(
-    BuildContext context,
-    JournalEntry entry, {
-    bool compact = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: EntryCard(
-        entry: entry,
-        compact: compact,
-        onTap: () => onOpen(entry),
-        onToggleFavorite: (id) =>
-            context.read<JournalProvider>().toggleFavorite(id),
-        onDelete: (id) => deleteWithUndo(context, id),
-        onShare: (id) => _openShare(context, entry),
-      ),
-    );
-  }
-
-  void _openShare(BuildContext context, JournalEntry entry) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry)));
   }
 }
 

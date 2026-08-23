@@ -242,6 +242,60 @@ void main() {
     expect(rect(0).bottom, lessThan(rect(1).top));
   });
 
+  testWidgets('回顾页当日列表视图切换：单列纵向 ↔ 多列并排且持久化', (tester) async {
+    // 800×1600：日历与当日列表全部落在首屏内，几何断言不受滚动裁剪影响
+    //（800 宽减侧栏后日历列 <760，当日列表在日历下方纵向排列）。
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final journal = JournalProviderForTest();
+    final today = DateUtils2.dateKey(DateTime.now());
+    journal.debugSetEntries([
+      _entry(id: 'e1', date: today, title: '第一条', content: '一一'),
+      _entry(id: 'e2', date: today, title: '第二条', content: '二二'),
+      _entry(id: 'e3', date: today, title: '第三条', content: '三三'),
+    ]);
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsProvider(prefs);
+
+    await tester.pumpWidget(
+      _wrap(child: const RootShell(), journal: journal, settings: settings),
+    );
+    await tester.pumpAndSettle();
+
+    // 进入「回顾」，默认落在日历且选中今天，当日列表就在日历下方。
+    await tester.tap(find.byIcon(Icons.calendar_today_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('第一条'), findsOneWidget);
+
+    Rect rect(int i) => tester.getRect(find.byType(EntryCard).at(i));
+
+    // 默认单列：当日卡片逐条纵向堆叠、左缘对齐。
+    expect(rect(0).left, rect(1).left);
+    expect(rect(0).bottom, lessThan(rect(1).top));
+    expect(settings.calendarGrid, isFalse);
+
+    // 切到多列：两列左右交替流入（树序 = 左列 e1、左列 e3、右列 e2）。
+    await tester.tap(find.byIcon(Icons.view_agenda_outlined));
+    await tester.pumpAndSettle();
+    expect(settings.calendarGrid, isTrue);
+    expect(find.byIcon(Icons.grid_view_rounded), findsOneWidget);
+    expect(rect(2).left, greaterThan(rect(0).right));
+    expect(rect(2).top, closeTo(rect(0).top, 0.5));
+    expect(rect(1).top, greaterThan(rect(0).bottom));
+
+    // 再切回单列，布局与偏好都还原。
+    await tester.tap(find.byIcon(Icons.grid_view_rounded));
+    await tester.pumpAndSettle();
+    expect(settings.calendarGrid, isFalse);
+    expect(rect(0).left, rect(1).left);
+    expect(rect(0).bottom, lessThan(rect(1).top));
+  });
+
   testWidgets('四个一级入口与素材/回顾的二级页面均可达（REQ-23/24、NFR-12）', (tester) async {
     final journal = JournalProviderForTest();
     final prefs = await SharedPreferences.getInstance();

@@ -41,6 +41,9 @@ class SettingsProvider extends ChangeNotifier {
   // 时光页时间轴多列视图切换。
   static const _keyTimelineGrid = 'timeline.grid';
 
+  // 回顾页当日列表多列视图切换。
+  static const _keyCalendarGrid = 'calendar.grid';
+
   // 每日一问「换一条」（REQ-04.2）。
   static const _keyPromptDate = 'prompt.refreshDate';
   static const _keyPromptCount = 'prompt.refreshCount';
@@ -123,6 +126,14 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> setTimelineGrid(bool enabled) async {
     await _prefs.setBool(_keyTimelineGrid, enabled);
+    notifyListeners();
+  }
+
+  /// 回顾页当日手账列表是否为多列视图，默认单列。
+  bool get calendarGrid => _prefs.getBool(_keyCalendarGrid) ?? false;
+
+  Future<void> setCalendarGrid(bool enabled) async {
+    await _prefs.setBool(_keyCalendarGrid, enabled);
     notifyListeners();
   }
 

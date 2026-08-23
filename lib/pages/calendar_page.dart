@@ -3,10 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/journal_entry.dart';
 import '../providers/journal_provider.dart';
+import '../providers/settings_provider.dart';
 import '../utils/date_utils.dart';
-import '../utils/delete_flow.dart';
-import '../widgets/entry_card.dart';
-import 'share_card_page.dart';
+import '../widgets/entry_card_list.dart';
 
 /// 日历页：按月浏览手账记录。
 ///
@@ -62,12 +61,6 @@ class _CalendarPageState extends State<CalendarPage> {
           dateKey: _selectedDay!,
           entries: byDate[_selectedDay!] ?? [],
           onOpen: (entry) => widget.onOpenEditor(context, entry),
-          onToggleFavorite: (id) =>
-              context.read<JournalProvider>().toggleFavorite(id),
-          onDelete: (id) => deleteWithUndo(context, id),
-          onShare: (entry) => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => ShareCardPage(entry: entry))),
           onNewEntry: () => widget.onOpenEditor(
             context,
             JournalEntry(
@@ -292,23 +285,18 @@ class _DayEntries extends StatelessWidget {
     required this.dateKey,
     required this.entries,
     required this.onOpen,
-    required this.onToggleFavorite,
-    required this.onDelete,
-    required this.onShare,
     required this.onNewEntry,
   });
 
   final String dateKey;
   final List<JournalEntry> entries;
   final void Function(JournalEntry) onOpen;
-  final ValueChanged<String> onToggleFavorite;
-  final ValueChanged<String> onDelete;
-  final ValueChanged<JournalEntry> onShare;
   final VoidCallback onNewEntry;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final gridMode = context.watch<SettingsProvider>().calendarGrid;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Column(
@@ -333,7 +321,18 @@ class _DayEntries extends StatelessWidget {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 4),
+              // 视图切换：单列当日列表 ↔ 多列网格，与时光页同款。
+              IconButton(
+                tooltip: gridMode ? '单列显示' : '多列显示',
+                isSelected: gridMode,
+                visualDensity: VisualDensity.compact,
+                selectedIcon: const Icon(Icons.grid_view_rounded),
+                icon: const Icon(Icons.view_agenda_outlined),
+                onPressed: () => context
+                    .read<SettingsProvider>()
+                    .setCalendarGrid(!gridMode),
+              ),
               IconButton(
                 tooltip: '为此日写手账',
                 visualDensity: VisualDensity.compact,
@@ -376,18 +375,13 @@ class _DayEntries extends StatelessWidget {
               ),
             )
           else
-            for (final entry in entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: EntryCard(
-                  entry: entry,
-                  onTap: () => onOpen(entry),
-                  onToggleFavorite: onToggleFavorite,
-                  onDelete: onDelete,
-                  onShare: (_) => onShare(entry),
-                  compact: true,
-                ),
-              ),
+            EntryCardList(
+              entries: entries,
+              multiColumn: gridMode,
+              spacing: 12,
+              compact: true,
+              onOpen: onOpen,
+            ),
         ],
       ),
     );
