@@ -8,6 +8,7 @@ import '../models/sticker_assets.dart';
 import '../providers/custom_sticker_provider.dart';
 import '../providers/template_provider.dart';
 import '../widgets/pack_cover.dart';
+import 'pack_actions.dart';
 import 'pack_detail_page.dart';
 import 'share_pack_export_page.dart';
 import 'share_pack_import_page.dart';
@@ -39,42 +40,13 @@ class _LibraryPageState extends State<LibraryPage> {
   /// 命名后直接进入空包详情页——空包不再只能靠「移动贴纸到包」间接创建。
   Future<void> _createPack() async {
     final provider = context.read<CustomStickerProvider>();
-    final name = await _promptPackName();
+    final name = await promptText(context, '新建素材包', '包名称', '');
     if (name == null || !mounted) return;
     final pack = await provider.createPack(name);
     if (pack == null || !mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => PackDetailPage.pack(pack.id)),
     );
-  }
-
-  Future<String?> _promptPackName() async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('新建素材包'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '包名称'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('创建'),
-          ),
-        ],
-      ),
-    );
-    // 对话框退出动画期间 TextField 仍依赖 controller，延后释放。
-    Future.delayed(const Duration(milliseconds: 400), controller.dispose);
-    final trimmed = value?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
   }
 
   // ---------------- 素材包导入 / 导出（REQ-21.12，入口自设置页上移） ----------------
@@ -179,11 +151,13 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
       body: CustomScrollView(
         slivers: [
-          SliverToBoxAdapter(child: _fixedEntries(
-            builtinCount: builtinCount,
-            ungroupedStickers: ungroupedStickers,
-            ungroupedTemplates: ungroupedTemplates,
-          )),
+          SliverToBoxAdapter(
+            child: _fixedEntries(
+              builtinCount: builtinCount,
+              ungroupedStickers: ungroupedStickers,
+              ungroupedTemplates: ungroupedTemplates,
+            ),
+          ),
           SliverToBoxAdapter(child: _packsHeader(packs.length)),
           if (packs.isEmpty)
             SliverToBoxAdapter(child: _emptyPacksGuide())
@@ -216,7 +190,11 @@ class _LibraryPageState extends State<LibraryPage> {
               subtitle: '$builtinCount 套 · 复制后可自由修改',
               onTap: () => _openDetail(const PackDetailPage.builtin()),
             ),
-            Divider(height: 1, indent: 62, color: scheme.outlineVariant.withValues(alpha: 0.4)),
+            Divider(
+              height: 1,
+              indent: 62,
+              color: scheme.outlineVariant.withValues(alpha: 0.4),
+            ),
             _fixedEntry(
               icon: Icons.photo_library_outlined,
               title: '我的素材',
@@ -252,10 +230,7 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: scheme.onSurfaceVariant,
-        ),
+        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
       ),
       trailing: const Icon(Icons.chevron_right_rounded),
       onTap: onTap,
@@ -389,7 +364,11 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   /// 包卡片（REQ-26.1）：封面或占位、包名、n 贴纸 · n 模板、作者署名。
-  Widget _packCard(StickerPack pack, {required int stickers, required int templates}) {
+  Widget _packCard(
+    StickerPack pack, {
+    required int stickers,
+    required int templates,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final author = pack.author.trim();
     return Container(
@@ -400,49 +379,77 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        customBorder: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         onTap: () => _openDetail(PackDetailPage.pack(pack.id)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(child: PackCoverImage(pack: pack)),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 7, 10, 9),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.fromLTRB(10, 6, 4, 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    pack.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          pack.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$stickers 贴 · $templates 模',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (author.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              author,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: scheme.onSurfaceVariant.withValues(
+                                  alpha: 0.8,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '$stickers 贴 · $templates 模',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
+                  // 包级操作直达（与详情页右上角菜单同一份逻辑）：
+                  // 不进详情页也能改名 / 换封面 / 导出 / 解散 / 删除。
+                  IconButton(
+                    tooltip: '素材包操作',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 30,
+                    ),
+                    icon: Icon(
+                      Icons.more_vert_rounded,
+                      size: 18,
                       color: scheme.onSurfaceVariant,
                     ),
+                    onPressed: () => showPackMenu(context, pack),
                   ),
-                  if (author.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        author,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),

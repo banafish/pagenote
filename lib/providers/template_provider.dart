@@ -60,8 +60,10 @@ class TemplateProvider extends ChangeNotifier {
       _backing.where((t) => !t.builtin).toList();
 
   /// 指定素材包内的模板（v8；模板随分享包整包落位）。
-  List<JournalTemplate> templatesOfPack(String packId) =>
-      [for (final t in _backing) if (!t.builtin && t.packId == packId) t];
+  List<JournalTemplate> templatesOfPack(String packId) => [
+    for (final t in _backing)
+      if (!t.builtin && t.packId == packId) t,
+  ];
 
   /// 解除一个包下全部模板的归属（包解散/删除时由素材侧调用）：
   /// 模板本身保留，回到「我的模板」的未分组。
@@ -74,6 +76,19 @@ class TemplateProvider extends ChangeNotifier {
     }
     if (!touched) return;
     await _db.clearTemplatePack(packId);
+    notifyListeners();
+  }
+
+  /// 把一套模板移入素材包；packId 为 null 即移回未分组。
+  /// 与贴纸的 moveStickerToPack 同一套语义。不动 updatedAt 与手动序——
+  /// 整理归属不该把模板顶到列表前面。
+  Future<void> moveTemplateToPack(String templateId, String? packId) async {
+    final template = byId(templateId);
+    if (template == null || template.builtin || template.packId == packId) {
+      return;
+    }
+    template.packId = packId;
+    await _db.insertTemplate(template);
     notifyListeners();
   }
 
@@ -298,10 +313,7 @@ class TemplateProvider extends ChangeNotifier {
       if (resolved.containsKey(name)) continue;
       final bytes = attachments[name];
       if (bytes == null) continue;
-      resolved[name] = await Attachments.persistBytes(
-        bytes,
-        p.extension(name),
-      );
+      resolved[name] = await Attachments.persistBytes(bytes, p.extension(name));
     }
     canvas.remapImagePaths((path) => resolved[p.basename(path)] ?? '');
   }

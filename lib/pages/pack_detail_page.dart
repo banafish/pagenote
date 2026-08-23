@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +10,6 @@ import '../models/template.dart';
 import '../providers/custom_sticker_provider.dart';
 import '../providers/journal_provider.dart';
 import '../providers/template_provider.dart';
-import '../utils/pack_cover_store.dart';
 import '../utils/sticker_store.dart';
 import '../widgets/canvas/canvas_view.dart';
 import '../widgets/pack_cover.dart';
@@ -274,7 +272,7 @@ class _PackDetailPageState extends State<PackDetailPage>
     if (!mounted || action == null) return;
     switch (action) {
       case 'rename':
-        final name = await _promptText('重命名素材', '素材名称', sticker.name);
+        final name = await promptText(context, '重命名素材', '素材名称', sticker.name);
         if (!mounted || name == null) return;
         await context.read<CustomStickerProvider>().rename(sticker.id, name);
       case 'pack':
@@ -328,7 +326,10 @@ class _PackDetailPageState extends State<PackDetailPage>
 
   // ---------------- 单个模板的操作（与现状一致） ----------------
 
-  Future<void> _onTemplateAction(String action, JournalTemplate template) async {
+  Future<void> _onTemplateAction(
+    String action,
+    JournalTemplate template,
+  ) async {
     switch (action) {
       case 'use':
         await _useTemplate(template);
@@ -338,6 +339,8 @@ class _PackDetailPageState extends State<PackDetailPage>
         await _renameTemplate(template);
       case 'duplicate':
         await _duplicateTemplate(template);
+      case 'pack':
+        if (mounted) await moveTemplateToPackFlow(context, template);
       case 'export':
         if (context.mounted) {
           await exportTemplatesAsPack(context, [template]);
@@ -361,7 +364,7 @@ class _PackDetailPageState extends State<PackDetailPage>
     for (var i = 2; taken.contains(initial); i++) {
       initial = '新模板 $i';
     }
-    final name = await _promptText('新建模板', '模板名称', initial);
+    final name = await promptText(context, '新建模板', '模板名称', initial);
     if (!mounted || name == null) return;
     final template = JournalTemplate(
       id: newTemplateId(),
@@ -376,9 +379,9 @@ class _PackDetailPageState extends State<PackDetailPage>
         ) ??
         false;
     if (saved && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已创建模板「$name」✨')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已创建模板「$name」✨')));
     }
   }
 
@@ -404,9 +407,9 @@ class _PackDetailPageState extends State<PackDetailPage>
         ) ??
         false;
     if (saved && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已更新模板「${template.name}」✨')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已更新模板「${template.name}」✨')));
     }
   }
 
@@ -447,7 +450,9 @@ class _PackDetailPageState extends State<PackDetailPage>
     );
     messenger
       ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('已复制为「${copy.name}」，在「我的素材」里可找到 ✨')));
+      ..showSnackBar(
+        SnackBar(content: Text('已复制为「${copy.name}」，在「我的素材」里可找到 ✨')),
+      );
   }
 
   Future<void> _deleteTemplate(JournalTemplate template) async {
@@ -556,232 +561,6 @@ class _PackDetailPageState extends State<PackDetailPage>
     );
   }
 
-  // ---------------- 包级操作（REQ-26.3 + REQ-27.2，上移到详情页） ----------------
-
-  /// 包操作菜单：重命名 / 封面 / 导出整包 / 解散 / 删除。
-  Future<void> _packMenu(StickerPack pack) async {
-    final hasCover = pack.coverPath != null;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (menuContext) => SafeArea(
-        // 包菜单条目多，小屏 / 横屏可能超出可用高度，整体可滚动。
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    pack.name,
-                    style: Theme.of(menuContext)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline_rounded),
-                title: const Text('重命名素材包'),
-                onTap: () => Navigator.pop(menuContext, 'rename'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.image_outlined),
-                title: Text(hasCover ? '更换封面' : '上传封面'),
-                subtitle: const Text('从相册选一张，长边超 1024 像素会自动压缩'),
-                onTap: () => Navigator.pop(menuContext, 'cover'),
-              ),
-              if (hasCover)
-                ListTile(
-                  leading: const Icon(Icons.hide_image_outlined),
-                  title: const Text('移除封面'),
-                  onTap: () => Navigator.pop(menuContext, 'removeCover'),
-                ),
-              ListTile(
-                leading: const Icon(Icons.ios_share_rounded),
-                title: const Text('导出整个包'),
-                onTap: () => Navigator.pop(menuContext, 'export'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.folder_open_rounded),
-                title: const Text('解散素材包'),
-                subtitle: const Text('素材保留，移入我的素材'),
-                onTap: () => Navigator.pop(menuContext, 'dissolve'),
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.delete_outline,
-                  color: Color(0xFFE57373),
-                ),
-                title: const Text(
-                  '删除包与素材',
-                  style: TextStyle(color: Color(0xFFE57373)),
-                ),
-                onTap: () => Navigator.pop(menuContext, 'delete'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!mounted || action == null) return;
-    final provider = context.read<CustomStickerProvider>();
-    final templates = context.read<TemplateProvider>();
-    switch (action) {
-      case 'rename':
-        final name = await _promptText('重命名素材包', '包名称', pack.name);
-        if (!mounted || name == null) return;
-        await provider.renamePack(pack.id, name);
-      case 'cover':
-        await _changeCover(pack);
-      case 'removeCover':
-        await provider.setPackCover(pack.id, null);
-      case 'export':
-        // 整包导出带上包内模板（v8）与封面（REQ-27.6），
-        // 接收方导入后仍是同一个包。
-        if (context.mounted) {
-          await exportStickersAsPack(
-            context,
-            provider.stickersOfPack(pack.id),
-            templates.templatesOfPack(pack.id),
-            pack,
-          );
-        }
-      case 'dissolve':
-        // 解散不动素材与模板本身；模板同步移回未分组，
-        // 否则会挂着已删除的包 id。包没了，本页随之出栈。
-        await provider.dissolvePack(pack.id);
-        await templates.detachPack(pack.id);
-        if (mounted) Navigator.of(context).pop();
-      case 'delete':
-        await _deletePack(pack);
-    }
-  }
-
-  /// 上传 / 更换封面（REQ-27.2 / 27.4）：从相册选一张，
-  /// 超限自动压缩并提示。
-  Future<void> _changeCover(StickerPack pack) async {
-    final provider = context.read<CustomStickerProvider>();
-    final files = await StickerStore.pickImages();
-    if (!mounted || files.isEmpty) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final Uint8List bytes;
-    try {
-      bytes = await files.first.readAsBytes();
-    } on Exception {
-      messenger.showSnackBar(const SnackBar(content: Text('读取封面图片失败')));
-      return;
-    }
-    final stored = await PackCoverStore.importFromBytes(bytes);
-    if (stored == null) {
-      messenger.showSnackBar(const SnackBar(content: Text('封面图片无法识别或尺寸超限，请换一张')));
-      return;
-    }
-    await provider.setPackCover(pack.id, stored);
-    if (!mounted) return;
-    // 如实提示压缩结果（REQ-27.4，对齐 REQ-20.5 的贴纸约束）。
-    final before = await pixelSize(bytes);
-    final oversize =
-        bytes.length > PackCoverStore.maxBytes ||
-        (before != null && before.longestSide > PackCoverStore.maxEdge);
-    if (oversize) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('封面超出上限，已自动压缩到 1024 像素内')),
-        );
-    }
-  }
-
-  /// 删除包与包内全部素材；有素材被手账或模板引用时先说明后果再确认。
-  /// 包内模板不跟随删除——移回未分组保留（v8）。
-  Future<void> _deletePack(StickerPack pack) async {
-    final provider = context.read<CustomStickerProvider>();
-    final templates = context.read<TemplateProvider>();
-    final items = provider.stickersOfPack(pack.id);
-    final packTemplates = templates.templatesOfPack(pack.id);
-    final referenced = items
-        .where(
-          (s) => provider.isReferenced(
-            s.id,
-            context.read<JournalProvider>().entries,
-            templates.templates,
-          ),
-        )
-        .length;
-    final templateNote = packTemplates.isEmpty
-        ? ''
-        : '\n包内 ${packTemplates.length} 套模板会保留，移回我的素材。';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('删除素材包？'),
-        content: Text(
-          referenced > 0
-              ? '「${pack.name}」共 ${items.length} 张素材，其中 $referenced 张正被手账或模板使用，'
-                    '删除后那些位置会显示缺失占位。$templateNote'
-              : '「${pack.name}」与包内 ${items.length} 张素材将被移除。$templateNote\n'
-                    '只想去掉这个包的话，用「解散素材包」可以保留素材。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFE57373),
-            ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    await provider.deletePack(pack.id);
-    // 模板保留，只解除对已删包的归属。
-    await templates.detachPack(pack.id);
-    if (!mounted) return;
-    setState(() {
-      _selectedStickerIds.removeWhere((id) => provider.byId(id) == null);
-    });
-    Navigator.of(context).pop();
-  }
-
-  Future<String?> _promptText(String title, String hint, String initial) async {
-    final controller = TextEditingController(text: initial);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    // 对话框退出动画期间 TextField 仍依赖 controller，延后释放。
-    Future.delayed(const Duration(milliseconds: 400), controller.dispose);
-    final trimmed = value?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
   // ---------------- 多选导出（REQ-26.7） ----------------
 
   void _exitSelection() => setState(() {
@@ -805,6 +584,37 @@ class _PackDetailPageState extends State<PackDetailPage>
     if (mounted && _selecting) _exitSelection();
   }
 
+  /// 多选移动（贴纸与模板混选）：与单个素材移动同一套选包弹层，
+  /// 移完退出多选。
+  Future<void> _moveSelection({
+    required List<JournalTemplate> templates,
+    required List<CustomSticker> stickers,
+    required String? currentPackId,
+  }) async {
+    if (templates.isEmpty && stickers.isEmpty) return;
+    final count = templates.length + stickers.length;
+    final target = await moveToPackFlow(
+      context,
+      title: '移动 $count 项到…',
+      currentPackId: currentPackId,
+      move: (packId) async {
+        final stickerProvider = context.read<CustomStickerProvider>();
+        final templateProvider = context.read<TemplateProvider>();
+        for (final s in stickers) {
+          await stickerProvider.moveStickerToPack(s.id, packId);
+        }
+        for (final t in templates) {
+          await templateProvider.moveTemplateToPack(t.id, packId);
+        }
+      },
+    );
+    if (target == null || !mounted) return;
+    _exitSelection();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('已移动 $count 项到「$target」')));
+  }
+
   // ---------------- 布局 ----------------
 
   @override
@@ -817,7 +627,8 @@ class _PackDetailPageState extends State<PackDetailPage>
     // 包在详情页打开期间被解散 / 删除（本页或别处操作）：直接出栈回首页。
     if (widget.source == PackDetailSource.pack && pack == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && Navigator.of(context).canPop()) Navigator.of(context).pop();
+        if (mounted && Navigator.of(context).canPop())
+          Navigator.of(context).pop();
       });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -859,7 +670,8 @@ class _PackDetailPageState extends State<PackDetailPage>
                   IconButton(
                     tooltip: '素材包操作',
                     icon: const Icon(Icons.more_vert_rounded),
-                    onPressed: () => _packMenu(pack!),
+                    onPressed: () =>
+                        showPackMenu(context, pack!, popWhenRemoved: true),
                   ),
                 const SizedBox(width: 4),
               ],
@@ -907,10 +719,7 @@ class _PackDetailPageState extends State<PackDetailPage>
                   onAdd: canAdd ? _addTemplate : null,
                 ),
                 if (templates.isNotEmpty)
-                  _templateGrid(
-                    templates: templates,
-                    draggable: draggable,
-                  ),
+                  _templateGrid(templates: templates, draggable: draggable),
                 const SliverToBoxAdapter(child: SizedBox(height: 28)),
               ],
             ),
@@ -937,7 +746,7 @@ class _PackDetailPageState extends State<PackDetailPage>
         child: Row(
           children: [
             GestureDetector(
-              onTap: () => _changeCover(pack),
+              onTap: () => changePackCover(context, pack),
               child: Stack(
                 children: [
                   SizedBox(
@@ -1016,14 +825,14 @@ class _PackDetailPageState extends State<PackDetailPage>
       padding: const EdgeInsets.fromLTRB(_gridPadding + 4, 12, _gridPadding, 2),
       child: Text(
         _selecting
-            ? '点内容勾选（贴纸与模板可混选），选好后点右上角导出'
+            ? (widget.source == PackDetailSource.builtin
+                  ? '点模板勾选，选好后点右上角导出'
+                  : '点内容勾选（贴纸与模板可混选），选好后点右上角导出或移动到素材包')
             : switch (widget.source) {
-                PackDetailSource.builtin =>
-                  '点模板可预览；用模板可直接写一篇，复制为我的模板后可自由修改',
+                PackDetailSource.builtin => '点模板可预览；用模板可直接写一篇，复制为我的模板后可自由修改',
                 PackDetailSource.ungrouped =>
                   '点贴纸可重命名 / 移动到素材包 / 删除，长按进入多选；模板可直接用来写一篇',
-                PackDetailSource.pack =>
-                  '点贴纸可重命名 / 移动 / 删除，长按进入多选；模板可直接用来写一篇',
+                PackDetailSource.pack => '点贴纸可重命名 / 移动 / 删除，长按进入多选；模板可直接用来写一篇',
               },
         style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
       ),
@@ -1032,7 +841,12 @@ class _PackDetailPageState extends State<PackDetailPage>
 
   /// 分节标题：名字 + 计数，[onAdd] 非空时右侧挂一个新增入口
   /// （贴纸导入 / 新建模板），对齐到文字行垂直居中。
-  Widget _sectionLabel(String text, String? hint, {String? addTooltip, VoidCallback? onAdd}) {
+  Widget _sectionLabel(
+    String text,
+    String? hint, {
+    String? addTooltip,
+    VoidCallback? onAdd,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return SliverToBoxAdapter(
       child: Padding(
@@ -1051,7 +865,10 @@ class _PackDetailPageState extends State<PackDetailPage>
                 children: [
                   Text(
                     text,
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   if (hint != null) ...[
                     const SizedBox(width: 8),
@@ -1061,7 +878,9 @@ class _PackDetailPageState extends State<PackDetailPage>
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.75,
+                          ),
                         ),
                       ),
                     ),
@@ -1167,9 +986,9 @@ class _PackDetailPageState extends State<PackDetailPage>
         onLongPress: _selecting
             ? null
             : () => setState(() {
-              _selecting = true;
-              _selectedStickerIds.add(sticker.id);
-            }),
+                _selecting = true;
+                _selectedStickerIds.add(sticker.id);
+              }),
         child: Stack(
           children: [
             Column(
@@ -1333,6 +1152,26 @@ class _PackDetailPageState extends State<PackDetailPage>
           }),
           child: Text(allSelected ? '取消全选' : '全选'),
         ),
+        // 内置模板只读不可移动；其余来源多选后可整批归入素材包。
+        if (widget.source != PackDetailSource.builtin)
+          IconButton(
+            tooltip: '移动到素材包',
+            icon: const Icon(Icons.drive_file_move_rounded),
+            onPressed:
+                _selectedTemplateIds.isEmpty && _selectedStickerIds.isEmpty
+                ? null
+                : () => _moveSelection(
+                    templates: [
+                      for (final t in templates)
+                        if (_selectedTemplateIds.contains(t.id)) t,
+                    ],
+                    stickers: [
+                      for (final s in stickers)
+                        if (_selectedStickerIds.contains(s.id)) s,
+                    ],
+                    currentPackId: pack?.id,
+                  ),
+          ),
         IconButton(
           tooltip: '导出为素材包',
           icon: const Icon(Icons.ios_share_rounded),
@@ -1416,7 +1255,10 @@ class _PackDetailPageState extends State<PackDetailPage>
                           ? widget.packId
                           : null,
                     ),
-                    icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 18,
+                    ),
                     label: const Text('导入图片'),
                   ),
                   const SizedBox(width: 10),
@@ -1496,7 +1338,9 @@ class _TemplateCard extends StatelessWidget {
       // 需用 customBorder 让水波纹贴合卡片圆角。
       child: InkWell(
         onTap: onTap,
-        customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        customBorder: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           children: [
             Expanded(
@@ -1666,6 +1510,18 @@ class _TemplateCard extends StatelessWidget {
                         Icon(Icons.drive_file_rename_outline_rounded, size: 19),
                         SizedBox(width: 10),
                         Text('重命名'),
+                      ],
+                    ),
+                  ),
+                // 与贴纸菜单同款的整理入口：不进多选也能把模板归入素材包。
+                if (!template.builtin)
+                  const PopupMenuItem(
+                    value: 'pack',
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory_2_outlined, size: 19),
+                        SizedBox(width: 10),
+                        Text('移动到素材包'),
                       ],
                     ),
                   ),

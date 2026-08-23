@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import '../models/sticker_assets.dart';
 import '../models/template.dart' show JournalTemplate;
 import '../providers/custom_sticker_provider.dart';
+import '../providers/journal_provider.dart';
+import '../providers/template_provider.dart';
 import '../services/share_pack_service.dart';
 import '../utils/pack_cover_store.dart';
 import '../utils/sticker_store.dart';
@@ -111,10 +113,8 @@ Future<PackExportDestination?> askPackExportDestination(
       title: const Text('素材包导出到'),
       children: [
         SimpleDialogOption(
-          onPressed: () => Navigator.pop(
-            dialogContext,
-            PackExportDestination.saveToFolder,
-          ),
+          onPressed: () =>
+              Navigator.pop(dialogContext, PackExportDestination.saveToFolder),
           child: const ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.folder_open_rounded),
@@ -123,10 +123,8 @@ Future<PackExportDestination?> askPackExportDestination(
           ),
         ),
         SimpleDialogOption(
-          onPressed: () => Navigator.pop(
-            dialogContext,
-            PackExportDestination.systemShare,
-          ),
+          onPressed: () =>
+              Navigator.pop(dialogContext, PackExportDestination.systemShare),
           child: const ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.share_outlined),
@@ -147,7 +145,9 @@ Future<void> exportTemplatesAsPack(
   List<JournalTemplate> targets,
 ) async {
   if (targets.isEmpty) return;
-  final withPhotos = targets.where((t) => t.canvas?.hasImagePaths ?? false).toList();
+  final withPhotos = targets
+      .where((t) => t.canvas?.hasImagePaths ?? false)
+      .toList();
   var includePhotos = false;
   if (withPhotos.isNotEmpty) {
     final choice = await askIncludeTemplatePhotos(context, withPhotos);
@@ -175,7 +175,10 @@ Future<void> exportTemplatesAsPack(
       packName: meta.name,
       author: meta.author,
       templates: packed,
-      stickers: [for (final s in stickers.stickers) if (ids.contains(s.id)) s],
+      stickers: [
+        for (final s in stickers.stickers)
+          if (ids.contains(s.id)) s,
+      ],
       stickerBytes: await stickers.exportBytes(ids: ids),
       includePhotos: includePhotos,
       destination: destination,
@@ -228,7 +231,9 @@ Future<void> exportStickersAsPack(
   final provider = context.read<CustomStickerProvider>();
   try {
     // 包身份：整包导出复用包的稳定 originId（手工包首次导出时分配并落库）。
-    final shareId = pack == null ? null : await provider.ensurePackOriginId(pack.id);
+    final shareId = pack == null
+        ? null
+        : await provider.ensurePackOriginId(pack.id);
     // 带照片时把原始模板交给 buildPack（照片入包 + 路径改写为纯文件名），
     // 不带时先在这里清干净；两条路都不会把本机绝对路径带进包（REQ-21.4）。
     final packedTemplates = includePhotos
@@ -243,7 +248,10 @@ Future<void> exportStickersAsPack(
       packName: meta.name,
       author: meta.author,
       templates: packedTemplates,
-      stickers: [for (final s in provider.stickers) if (ids.contains(s.id)) s],
+      stickers: [
+        for (final s in provider.stickers)
+          if (ids.contains(s.id)) s,
+      ],
       stickerBytes: await provider.exportBytes(ids: ids),
       includePhotos: includePhotos,
       packId: shareId,
@@ -464,4 +472,243 @@ Future<Size?> pixelSize(Uint8List bytes) async {
     descriptor?.dispose();
     buffer?.dispose();
   }
+}
+
+// ---------------- 包级操作菜单（详情页右上角与素材首页包卡片共用） ----------------
+
+/// 素材包操作菜单：重命名 / 封面 / 导出整包 / 解散 / 删除（REQ-26.3）。
+/// 详情页传 [popWhenRemoved] —— 包没了本页随之出栈；
+/// 素材首页不出栈，网格会随数据刷新自行收掉该卡片。
+Future<void> showPackMenu(
+  BuildContext context,
+  StickerPack pack, {
+  bool popWhenRemoved = false,
+}) async {
+  final hasCover = pack.coverPath != null;
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (menuContext) => SafeArea(
+      // 包菜单条目多，小屏 / 横屏可能超出可用高度，整体可滚动。
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  pack.name,
+                  style: Theme.of(
+                    menuContext,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline_rounded),
+              title: const Text('重命名素材包'),
+              onTap: () => Navigator.pop(menuContext, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: Text(hasCover ? '更换封面' : '上传封面'),
+              subtitle: const Text('从相册选一张，长边超 1024 像素会自动压缩'),
+              onTap: () => Navigator.pop(menuContext, 'cover'),
+            ),
+            if (hasCover)
+              ListTile(
+                leading: const Icon(Icons.hide_image_outlined),
+                title: const Text('移除封面'),
+                onTap: () => Navigator.pop(menuContext, 'removeCover'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.ios_share_rounded),
+              title: const Text('导出整个包'),
+              onTap: () => Navigator.pop(menuContext, 'export'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_open_rounded),
+              title: const Text('解散素材包'),
+              subtitle: const Text('素材保留，移入我的素材'),
+              onTap: () => Navigator.pop(menuContext, 'dissolve'),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline,
+                color: Color(0xFFE57373),
+              ),
+              title: const Text(
+                '删除包与素材',
+                style: TextStyle(color: Color(0xFFE57373)),
+              ),
+              onTap: () => Navigator.pop(menuContext, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (!context.mounted || action == null) return;
+  final provider = context.read<CustomStickerProvider>();
+  final templates = context.read<TemplateProvider>();
+  switch (action) {
+    case 'rename':
+      final name = await promptText(context, '重命名素材包', '包名称', pack.name);
+      if (!context.mounted || name == null) return;
+      await provider.renamePack(pack.id, name);
+    case 'cover':
+      await changePackCover(context, pack);
+    case 'removeCover':
+      await provider.setPackCover(pack.id, null);
+    case 'export':
+      // 整包导出带上包内模板（v8）与封面（REQ-27.6），
+      // 接收方导入后仍是同一个包。
+      if (context.mounted) {
+        await exportStickersAsPack(
+          context,
+          provider.stickersOfPack(pack.id),
+          templates.templatesOfPack(pack.id),
+          pack,
+        );
+      }
+    case 'dissolve':
+      // 解散不动素材与模板本身；模板同步移回未分组，
+      // 否则会挂着已删除的包 id。
+      await provider.dissolvePack(pack.id);
+      await templates.detachPack(pack.id);
+      if (popWhenRemoved && context.mounted) Navigator.of(context).pop();
+    case 'delete':
+      await _deletePackWithConfirm(
+        context,
+        pack,
+        popWhenRemoved: popWhenRemoved,
+      );
+  }
+}
+
+/// 上传 / 更换封面（REQ-27.2 / 27.4）：从相册选一张，
+/// 超限自动压缩并提示。
+Future<void> changePackCover(BuildContext context, StickerPack pack) async {
+  final provider = context.read<CustomStickerProvider>();
+  final files = await StickerStore.pickImages();
+  if (!context.mounted || files.isEmpty) return;
+  final messenger = ScaffoldMessenger.of(context);
+  final Uint8List bytes;
+  try {
+    bytes = await files.first.readAsBytes();
+  } on Exception {
+    messenger.showSnackBar(const SnackBar(content: Text('读取封面图片失败')));
+    return;
+  }
+  final stored = await PackCoverStore.importFromBytes(bytes);
+  if (stored == null) {
+    messenger.showSnackBar(const SnackBar(content: Text('封面图片无法识别或尺寸超限，请换一张')));
+    return;
+  }
+  await provider.setPackCover(pack.id, stored);
+  if (!context.mounted) return;
+  // 如实提示压缩结果（REQ-27.4，对齐 REQ-20.5 的贴纸约束）。
+  final before = await pixelSize(bytes);
+  final oversize =
+      bytes.length > PackCoverStore.maxBytes ||
+      (before != null && before.longestSide > PackCoverStore.maxEdge);
+  if (oversize) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('封面超出上限，已自动压缩到 1024 像素内')));
+  }
+}
+
+/// 删除包与包内全部素材；有素材被手账或模板引用时先说明后果再确认。
+/// 包内模板不跟随删除——移回未分组保留（v8）。
+Future<void> _deletePackWithConfirm(
+  BuildContext context,
+  StickerPack pack, {
+  required bool popWhenRemoved,
+}) async {
+  final provider = context.read<CustomStickerProvider>();
+  final templates = context.read<TemplateProvider>();
+  final items = provider.stickersOfPack(pack.id);
+  final packTemplates = templates.templatesOfPack(pack.id);
+  final referenced = items
+      .where(
+        (s) => provider.isReferenced(
+          s.id,
+          context.read<JournalProvider>().entries,
+          templates.templates,
+        ),
+      )
+      .length;
+  final templateNote = packTemplates.isEmpty
+      ? ''
+      : '\n包内 ${packTemplates.length} 套模板会保留，移回我的素材。';
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('删除素材包？'),
+      content: Text(
+        referenced > 0
+            ? '「${pack.name}」共 ${items.length} 张素材，其中 $referenced 张正被手账或模板使用，'
+                  '删除后那些位置会显示缺失占位。$templateNote'
+            : '「${pack.name}」与包内 ${items.length} 张素材将被移除。$templateNote\n'
+                  '只想去掉这个包的话，用「解散素材包」可以保留素材。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFE57373),
+          ),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('删除'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  await provider.deletePack(pack.id);
+  // 模板保留，只解除对已删包的归属。
+  await templates.detachPack(pack.id);
+  if (popWhenRemoved && context.mounted) Navigator.of(context).pop();
+}
+
+/// 单行文本输入对话框（重命名 / 起名共用）；空输入视为取消。
+Future<String?> promptText(
+  BuildContext context,
+  String title,
+  String hint,
+  String initial,
+) async {
+  final controller = TextEditingController(text: initial);
+  final value = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: InputDecoration(hintText: hint),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, controller.text),
+          child: const Text('保存'),
+        ),
+      ],
+    ),
+  );
+  // 对话框退出动画期间 TextField 仍依赖 controller，延后释放。
+  Future.delayed(const Duration(milliseconds: 400), controller.dispose);
+  final trimmed = value?.trim() ?? '';
+  return trimmed.isEmpty ? null : trimmed;
 }
