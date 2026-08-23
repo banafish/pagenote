@@ -40,117 +40,118 @@ class _HomePageState extends State<HomePage> {
         : journal.entries;
     final grouped = _groupByDate(entries);
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('拾页', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 1),
-              Text(
-                _greeting(now),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                  color: scheme.onSurfaceVariant,
-                ),
+    // 标题栏固定在顶部不随滚动收起，与素材 / 回顾 / 设置页一致。
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('拾页', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 1),
+            Text(
+              _greeting(now),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: scheme.onSurfaceVariant,
               ),
-            ],
-          ),
-          actions: [
-            // 快速速记入口（REQ-16）。
-            IconButton(
-              tooltip: '速记',
-              icon: const Icon(Icons.bolt_rounded),
-              onPressed: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const QuickNotePage())),
             ),
-            IconButton(
-              tooltip: '搜索',
-              icon: const Icon(Icons.search),
-              onPressed: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const SearchPage())),
-            ),
-            IconButton(
-              tooltip: _favoritesOnly ? '显示全部' : '只看收藏',
-              isSelected: _favoritesOnly,
-              selectedIcon: const Icon(
-                Icons.favorite,
-                color: Color(0xFFE57373),
-              ),
-              icon: const Icon(Icons.favorite_border),
-              onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly),
-            ),
-            // 视图切换：单列时间轴 ↔ 多列网格（列数随宽度自适应）。
-            IconButton(
-              tooltip: gridMode ? '单列显示' : '多列显示',
-              isSelected: gridMode,
-              selectedIcon: const Icon(Icons.grid_view_rounded),
-              icon: const Icon(Icons.view_agenda_outlined),
-              onPressed: () => settings.setTimelineGrid(!gridMode),
-            ),
-            const SizedBox(width: 4),
           ],
         ),
-        if (journal.loaded && entries.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _EmptyState(
-              favoritesOnly: _favoritesOnly,
-              onStartWithPrompt: _startWithPrompt,
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-            sliver: SliverList.builder(
-              itemCount: grouped.length + 1,
-              itemBuilder: (context, i) {
-                final isPhone = MediaQuery.sizeOf(context).width < 700;
-
-                // 顶部：那年今天 + 月报引导。
-                if (i == 0) {
-                  final child = Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      OnThisDayCard(
-                        byYear: journal.onThisDay(),
-                        onOpen: (entry) => widget.onOpenEditor(context, entry),
-                      ),
-                      _MonthlyReportCard(onOpen: _openLastMonthReport),
-                    ],
-                  );
-                  return isPhone
-                      ? child
-                      : ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 760),
-                          child: child,
-                        );
-                }
-
-                final group = grouped[i - 1];
-                final child = _DateGroupView(
-                  dateKey: group.date,
-                  entries: group.entries,
-                  multiColumn: gridMode,
-                  onOpen: (entry) => widget.onOpenEditor(context, entry),
-                );
-                // 多列模式铺满可用宽度、按宽度自适应列数；
-                // 单列在宽屏维持 760 的舒适阅读宽度。
-                if (!isPhone && !gridMode) {
-                  return ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
-                    child: child,
-                  );
-                }
-                return child;
-              },
-            ),
+        actions: [
+          // 快速速记入口（REQ-16）。
+          IconButton(
+            tooltip: '速记',
+            icon: const Icon(Icons.bolt_rounded),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const QuickNotePage())),
           ),
-      ],
+          IconButton(
+            tooltip: '搜索',
+            icon: const Icon(Icons.search),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SearchPage())),
+          ),
+          IconButton(
+            tooltip: _favoritesOnly ? '显示全部' : '只看收藏',
+            isSelected: _favoritesOnly,
+            selectedIcon: const Icon(Icons.favorite, color: Color(0xFFE57373)),
+            icon: const Icon(Icons.favorite_border),
+            onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly),
+          ),
+          // 视图切换：单列时间轴 ↔ 多列网格（列数随宽度自适应）。
+          IconButton(
+            tooltip: gridMode ? '单列显示' : '多列显示',
+            isSelected: gridMode,
+            selectedIcon: const Icon(Icons.grid_view_rounded),
+            icon: const Icon(Icons.view_agenda_outlined),
+            onPressed: () => settings.setTimelineGrid(!gridMode),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: CustomScrollView(
+        slivers: [
+          if (journal.loaded && entries.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _EmptyState(
+                favoritesOnly: _favoritesOnly,
+                onStartWithPrompt: _startWithPrompt,
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              sliver: SliverList.builder(
+                itemCount: grouped.length + 1,
+                itemBuilder: (context, i) {
+                  final isPhone = MediaQuery.sizeOf(context).width < 700;
+
+                  // 顶部：那年今天 + 月报引导。
+                  if (i == 0) {
+                    final child = Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        OnThisDayCard(
+                          byYear: journal.onThisDay(),
+                          onOpen: (entry) =>
+                              widget.onOpenEditor(context, entry),
+                        ),
+                        _MonthlyReportCard(onOpen: _openLastMonthReport),
+                      ],
+                    );
+                    return isPhone
+                        ? child
+                        : ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 760),
+                            child: child,
+                          );
+                  }
+
+                  final group = grouped[i - 1];
+                  final child = _DateGroupView(
+                    dateKey: group.date,
+                    entries: group.entries,
+                    multiColumn: gridMode,
+                    onOpen: (entry) => widget.onOpenEditor(context, entry),
+                  );
+                  // 多列模式铺满可用宽度、按宽度自适应列数；
+                  // 单列在宽屏维持 760 的舒适阅读宽度。
+                  if (!isPhone && !gridMode) {
+                    return ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: child,
+                    );
+                  }
+                  return child;
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 

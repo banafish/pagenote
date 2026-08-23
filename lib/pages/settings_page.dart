@@ -28,8 +28,6 @@ class SettingsPage extends StatelessWidget {
     final content = ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        _pageTitle(context),
-        const SizedBox(height: 14),
         _sectionTitle(context, '外观'),
         const SizedBox(height: 10),
         _SettingsCard(
@@ -342,14 +340,18 @@ class SettingsPage extends StatelessWidget {
       ],
     );
 
-    return width < 900
-        ? content
-        : Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: content,
+    // 标题固定在 AppBar，不随列表滚走，与素材 / 回顾页一致。
+    return Scaffold(
+      appBar: AppBar(title: const Text('设置')),
+      body: width < 900
+          ? content
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: content,
+              ),
             ),
-          );
+    );
   }
 
   Widget _iconBox(BuildContext context, IconData icon, Color bg, Color fg) {
@@ -518,19 +520,6 @@ class SettingsPage extends StatelessWidget {
 
   // 素材包导入 / 导出入口已挪到素材页 AppBar（原 REQ-21.12 / REQ-25.2
   // 把文件动作归设置页，现按素材归属上移，方便用户在素材首页找到）。
-
-  Widget _pageTitle(BuildContext context) {
-    final top = MediaQuery.paddingOf(context).top;
-    return Padding(
-      padding: EdgeInsets.only(top: top + 8, left: 4),
-      child: Text(
-        '设置',
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-      ),
-    );
-  }
 
   Widget _sectionTitle(BuildContext context, String text) {
     final scheme = Theme.of(context).colorScheme;
