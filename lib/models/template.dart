@@ -141,7 +141,7 @@ class JournalTemplate {
       );
 }
 
-/// 内置模板清单（REQ-09.1 ≥4 套 + 调研二阶段「今日手账」）。
+/// 内置模板清单（REQ-09.1 ≥4 套 + 调研二阶段「今日手账」+ 生活场景扩充）。
 /// 每套均为整页版式：纸张 + 贴纸/胶带预设 + 文字占位 + 花样字体。
 final builtinTemplates = [
   JournalTemplate(
@@ -198,6 +198,60 @@ final builtinTemplates = [
     builtin: true,
     canvas: _gratitudeCanvas(),
   ),
+  JournalTemplate(
+    id: 'builtin-birthday',
+    name: '生日纪念',
+    title: '🎂 又长大一岁啦',
+    content: '🎂 今天的主角：\n🎈 新的一岁，希望：\n\n【今天最开心的瞬间】\n\n\n【写给下一岁的自己】\n',
+    tags: const ['生日', '纪念'],
+    builtin: true,
+    canvas: _birthdayCanvas(),
+  ),
+  JournalTemplate(
+    id: 'builtin-food-diary',
+    name: '美食日记',
+    title: '美食日记',
+    content: '🍽 今天吃了：\n😋 味道打分：⭐️⭐️⭐️\n\n【最惊艳的一道】\n\n\n【店铺/做法记录】\n',
+    tags: const ['美食'],
+    builtin: true,
+    canvas: _foodCanvas(),
+  ),
+  JournalTemplate(
+    id: 'builtin-movie',
+    name: '观影手记',
+    title: '🎬 观影手记',
+    content: '🎞 片名：\n🎥 导演 / 年份：\n⭐️ 我的评分：☆☆☆☆☆\n\n【一句话剧情】\n\n\n【戳中我的台词】\n\n\n【散场后想说】\n',
+    tags: const ['观影'],
+    builtin: true,
+    canvas: _movieCanvas(),
+  ),
+  JournalTemplate(
+    id: 'builtin-fitness',
+    name: '运动打卡',
+    title: '运动打卡 💪',
+    content: '🏃 今日训练：\n⏱ 时长 / 强度：\n\n【身体的感觉】\n\n\n【给明天的小目标】\n',
+    tags: const ['运动'],
+    builtin: true,
+    canvas: _fitnessCanvas(),
+  ),
+  JournalTemplate(
+    id: 'builtin-goodnight',
+    name: '晚安日记',
+    title: '🌙 晚安日记',
+    content: '今天的三件小事：\n1. \n2. \n3. \n\n【此刻的心情】\n\n\n【明早醒来想做的一件小事】\n',
+    tags: const ['晚安'],
+    builtin: true,
+    canvas: _goodnightCanvas(),
+  ),
+  JournalTemplate(
+    id: 'builtin-weekend-plan',
+    name: '周末计划',
+    title: '周末计划',
+    content: '□ 睡到自然醒\n□ 吃一顿好吃的\n□ 出门走走晒太阳\n□ 见想见的人\n□ 做一件喜欢的小事\n\n【本周末关键词】\n\n【下周也想…】\n',
+    tags: const ['计划'],
+    builtin: true,
+    canvas: _weekendPlanCanvas(),
+  ),
 ];
 
 /// 生成不冲突的新模板 id。
@@ -217,6 +271,7 @@ bool isBuiltinTemplateId(String id) => builtinTemplateIds.contains(id);
 // ---------------------------------------------------------------------------
 
 const _kai = 'LXGW WenKai';
+const _kuaiLe = 'ZCOOL KuaiLe';
 
 /// 今日手账：日期/心情/天气组件 + 标题与正文占位（每日一问在套用时填入）。
 JournalCanvas _todayCanvas() => JournalCanvas(
@@ -416,6 +471,206 @@ JournalCanvas _gratitudeCanvas() => JournalCanvas(
       y: 0.32,
       w: 0.84,
       text: '今天值得感恩的三件小事：\n1. \n2. \n3. \n\n【想对自己说】\n',
+      fontScale: 0.038,
+      fontFamily: _kai,
+    ),
+  ],
+);
+
+/// 生日纪念：落日渐变纸，居中标题两侧气球与礼物，
+/// 爱心胶带封着两张拍立得照片位 —— 打开就是一张庆祝页。
+JournalCanvas _birthdayCanvas() => JournalCanvas(
+  paperId: 'sunset',
+  height: 1.5,
+  elements: [
+    StructuredElement(kind: ComponentKind.date, x: 0.08, y: 0.06, w: 0.5, h: 0.12),
+    StickerElement(key: 'vec:balloon', x: 0.85, y: 0.02, w: 0.11, h: 0.14, rotation: 12),
+    StickerElement(key: 'vec:balloon', x: 0.055, y: 0.165, w: 0.115, h: 0.145, rotation: -14),
+    StickerElement(key: 'vec:gift', x: 0.835, y: 0.175, w: 0.11, h: 0.11, rotation: 10),
+    TextElement(
+      role: 'title',
+      x: 0.15,
+      y: 0.195,
+      w: 0.7,
+      text: '🎂 又长大一岁啦',
+      fontScale: 0.054,
+      align: 1,
+      fontFamily: 'Ma Shan Zheng',
+      lineHeight: 1.5,
+    ),
+    TapeElement(x: 0.395, y: 0.3, w: 0.23, h: 0.07, rotation: -4, style: 'hearts', color: 0xFFF4A9A0),
+    ImageElement(path: '', x: 0.09, y: 0.345, w: 0.43, h: 0.46, rotation: -3, mask: ImageMask.polaroid),
+    ImageElement(path: '', x: 0.555, y: 0.385, w: 0.36, h: 0.44, rotation: 4, mask: ImageMask.polaroid),
+    TextElement(
+      role: 'body',
+      x: 0.08,
+      y: 0.9,
+      w: 0.84,
+      text: '🎂 今天的主角：\n🎈 新的一岁，希望：\n\n【今天最开心的瞬间】\n\n\n【写给下一岁的自己】\n',
+      fontScale: 0.038,
+      fontFamily: _kai,
+    ),
+  ],
+);
+
+/// 美食日记：奶油黄纸，波点胶带把奶茶与甜甜圈贴在页角，
+/// 圆形 + 拍立得两个照片位对应「摆盘照」与「探店照」。
+JournalCanvas _foodCanvas() => JournalCanvas(
+  paperId: 'butter',
+  height: 1.42,
+  elements: [
+    StructuredElement(kind: ComponentKind.date, x: 0.08, y: 0.06, w: 0.5, h: 0.12),
+    StructuredElement(kind: ComponentKind.mood, x: 0.62, y: 0.05, w: 0.3, h: 0.14),
+    TapeElement(x: 0.66, y: 0.155, w: 0.26, h: 0.07, rotation: -5, style: 'dots', color: 0xFFF2A65A),
+    StickerElement(key: 'vec:boba', x: 0.79, y: 0.185, w: 0.13, h: 0.13, rotation: 8),
+    StickerElement(key: 'vec:donut', x: 0.65, y: 0.2, w: 0.105, h: 0.105, rotation: -12),
+    TextElement(
+      role: 'title',
+      x: 0.08,
+      y: 0.215,
+      w: 0.84,
+      text: '美食日记',
+      fontScale: 0.054,
+      fontFamily: _kuaiLe,
+      lineHeight: 1.5,
+    ),
+    ImageElement(path: '', x: 0.09, y: 0.315, w: 0.34, h: 0.34, rotation: -2, mask: ImageMask.circle),
+    ImageElement(path: '', x: 0.52, y: 0.3, w: 0.38, h: 0.46, rotation: 3, mask: ImageMask.polaroid),
+    TextElement(
+      role: 'body',
+      x: 0.08,
+      y: 0.86,
+      w: 0.84,
+      text: '🍽 今天吃了：\n😋 味道打分：⭐️⭐️⭐️\n\n【最惊艳的一道】\n\n\n【店铺/做法记录】\n',
+      fontScale: 0.038,
+      fontFamily: _kai,
+    ),
+  ],
+);
+
+/// 观影手记：星屑紫纸营造深夜影院感，月亮相伴、
+/// 五颗空心星当评分栏，纯文字段落式排版。
+JournalCanvas _movieCanvas() => JournalCanvas(
+  paperId: 'stars',
+  elements: [
+    StructuredElement(kind: ComponentKind.date, x: 0.08, y: 0.06, w: 0.5, h: 0.12),
+    TapeElement(x: 0.58, y: 0.035, w: 0.28, h: 0.07, rotation: 6, style: 'stripes', color: 0xFFB8A4DB),
+    StickerElement(key: 'vec:moon', x: 0.64, y: 0.155, w: 0.11, h: 0.11, rotation: -8),
+    StickerElement(key: 'vec:star', x: 0.80, y: 0.145, w: 0.115, h: 0.115, rotation: 18),
+    TextElement(
+      role: 'title',
+      x: 0.08,
+      y: 0.215,
+      w: 0.84,
+      text: '🎬 观影手记',
+      fontScale: 0.052,
+      bold: true,
+      fontFamily: _kai,
+      lineHeight: 1.5,
+    ),
+    TextElement(
+      role: 'body',
+      x: 0.08,
+      y: 0.325,
+      w: 0.84,
+      text: '🎞 片名：\n🎥 导演 / 年份：\n⭐️ 我的评分：☆☆☆☆☆\n\n【一句话剧情】\n\n\n【戳中我的台词】\n\n\n【散场后想说】\n',
+      fontScale: 0.038,
+      fontFamily: _kai,
+    ),
+  ],
+);
+
+/// 运动打卡：薄荷绿纸，活动组件直接排在标题下
+/// （勾过的活动进统计页），小旗标记今日目标。
+JournalCanvas _fitnessCanvas() => JournalCanvas(
+  paperId: 'mint',
+  elements: [
+    StructuredElement(kind: ComponentKind.date, x: 0.08, y: 0.06, w: 0.5, h: 0.12),
+    StructuredElement(kind: ComponentKind.weather, x: 0.62, y: 0.05, w: 0.3, h: 0.1),
+    StickerElement(key: 'vec:flag', x: 0.82, y: 0.155, w: 0.13, h: 0.13, rotation: 8),
+    TextElement(
+      role: 'title',
+      x: 0.08,
+      y: 0.205,
+      w: 0.84,
+      text: '运动打卡 💪',
+      fontScale: 0.052,
+      bold: true,
+      fontFamily: _kai,
+      lineHeight: 1.5,
+    ),
+    StructuredElement(kind: ComponentKind.activities, x: 0.08, y: 0.31, w: 0.84, h: 0.13),
+    TextElement(
+      role: 'body',
+      x: 0.08,
+      y: 0.47,
+      w: 0.84,
+      text: '🏃 今日训练：\n⏱ 时长 / 强度：\n\n【身体的感觉】\n\n\n【给明天的小目标】\n',
+      fontScale: 0.038,
+      fontFamily: _kai,
+    ),
+  ],
+);
+
+/// 晚安日记：海空渐变纸，月亮与小星散布右上角，
+/// 波浪蓝胶带压住标题上沿 —— 一页安安静静的睡前仪式。
+JournalCanvas _goodnightCanvas() => JournalCanvas(
+  paperId: 'ocean',
+  height: 1.4,
+  elements: [
+    StructuredElement(kind: ComponentKind.date, x: 0.08, y: 0.06, w: 0.5, h: 0.12),
+    StickerElement(key: 'vec:star', x: 0.68, y: 0.045, w: 0.07, h: 0.07, rotation: 10),
+    StickerElement(key: 'vec:moon', x: 0.80, y: 0.03, w: 0.13, h: 0.13, rotation: -10),
+    StickerElement(key: 'vec:star', x: 0.90, y: 0.15, w: 0.06, h: 0.06, rotation: 20),
+    TapeElement(x: 0.05, y: 0.165, w: 0.24, h: 0.07, rotation: -5, style: 'waves', color: 0xFF8FC1E3),
+    TextElement(
+      role: 'title',
+      x: 0.08,
+      y: 0.235,
+      w: 0.84,
+      text: '🌙 晚安日记',
+      fontScale: 0.052,
+      bold: true,
+      fontFamily: _kai,
+      lineHeight: 1.5,
+    ),
+    TextElement(
+      role: 'body',
+      x: 0.08,
+      y: 0.35,
+      w: 0.84,
+      text: '今天的三件小事：\n1. \n2. \n3. \n\n【此刻的心情】\n\n\n【明早醒来想做的一件小事】\n',
+      fontScale: 0.038,
+      fontFamily: _kai,
+    ),
+  ],
+);
+
+/// 周末计划：春野渐变纸，帐篷与纸飞机预告出门的好心情，
+/// 快乐体标题配勾选清单，逐条打勾即成稿。
+JournalCanvas _weekendPlanCanvas() => JournalCanvas(
+  paperId: 'spring',
+  elements: [
+    StructuredElement(kind: ComponentKind.date, x: 0.08, y: 0.06, w: 0.5, h: 0.12),
+    StructuredElement(kind: ComponentKind.weather, x: 0.62, y: 0.05, w: 0.3, h: 0.1),
+    StickerElement(key: 'vec:tent', x: 0.655, y: 0.17, w: 0.12, h: 0.12, rotation: -8),
+    StickerElement(key: 'vec:paperplane', x: 0.82, y: 0.165, w: 0.13, h: 0.13, rotation: 12),
+    TextElement(
+      role: 'title',
+      x: 0.08,
+      y: 0.215,
+      w: 0.84,
+      text: '周末计划',
+      fontScale: 0.054,
+      fontFamily: _kuaiLe,
+      lineHeight: 1.5,
+    ),
+    TextElement(
+      role: 'body',
+      x: 0.08,
+      y: 0.325,
+      w: 0.84,
+      text: '□ 睡到自然醒\n□ 吃一顿好吃的\n□ 出门走走晒太阳\n□ 见想见的人\n□ 做一件喜欢的小事\n\n【本周末关键词】\n\n【下周也想…】\n',
       fontScale: 0.038,
       fontFamily: _kai,
     ),

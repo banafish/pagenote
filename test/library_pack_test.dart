@@ -292,8 +292,9 @@ void main() {
 
   testWidgets('模板弹层分节正确（NFR-15 路径 5，REQ-28）', (tester) async {
     // 弹层是懒加载列表：加高屏幕让 62% 的初始高度装下全部三节，
-    // 分节断言才是确定性的。
-    tester.view.physicalSize = const Size(800, 1600);
+    // 分节断言才是确定性的。（内置模板扩到 12 套后每套 tile ≈106px，
+    // 1600 高已装不下后面的节，按 tile 数同步加高。）
+    tester.view.physicalSize = const Size(800, 3400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
       tester.view.resetPhysicalSize();
