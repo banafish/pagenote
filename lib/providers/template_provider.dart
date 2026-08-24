@@ -309,13 +309,13 @@ class TemplateProvider extends ChangeNotifier {
     final resolved = <String, String>{};
     for (final img in canvas.images) {
       if (img.path.isEmpty) continue;
-      final name = p.basename(img.path);
+      final name = Attachments.baseName(img.path);
       if (resolved.containsKey(name)) continue;
       final bytes = attachments[name];
       if (bytes == null) continue;
       resolved[name] = await Attachments.persistBytes(bytes, p.extension(name));
     }
-    canvas.remapImagePaths((path) => resolved[p.basename(path)] ?? '');
+    canvas.remapImagePaths((path) => resolved[Attachments.baseName(path)] ?? '');
   }
 
   /// 同名时自动加后缀（REQ-21.8「默认保留两者」）。

@@ -394,8 +394,10 @@ class JournalProvider extends ChangeNotifier {
       }
       mapped.images = newPaths;
       // 画布上的照片元素路径按文件名同步重映射（跨设备附件路径不同）。
+      // baseName 不依赖平台路径风格：旧版备份的画布里可能留着导出机的
+      // 绝对路径，POSIX 端也要能从 `C:\a\b.jpg` 里取出 b.jpg。
       mapped.canvas?.remapImagePaths((path) {
-        final mapped2 = nameToNewPath[p.basename(path)];
+        final mapped2 = nameToNewPath[Attachments.baseName(path)];
         return mapped2 ?? path;
       });
 

@@ -12,6 +12,15 @@ class Attachments {
 
   static const maxImages = 9;
 
+  /// 分隔符无关的文件名提取。备份包里的画布路径可能来自其他平台
+  /// （如 Windows 导出的 `C:\a\b.jpg`），package:path 的 basename
+  /// 在 POSIX 平台不认反斜杠，会整串返回导致重映射失配，
+  /// 因此这里同时按 `\` 和 `/` 截取。
+  static String baseName(String path) {
+    final i = path.lastIndexOf(RegExp(r'[\\/]'));
+    return i < 0 ? path : path.substring(i + 1);
+  }
+
   static const _imageGroup = XTypeGroup(
     label: '图片',
     extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'],

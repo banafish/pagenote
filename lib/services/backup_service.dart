@@ -15,6 +15,7 @@ import '../models/canvas_page.dart';
 import '../models/journal_entry.dart';
 import '../models/sticker_assets.dart';
 import '../models/template.dart';
+import '../utils/attachments.dart';
 
 /// 备份文件损坏或格式不符。
 class BackupFormatException implements Exception {
@@ -109,6 +110,18 @@ class BackupService {
         }
       }
       final map = e.toMap();
+      // 条目画布与模板画布同规则（FIX-01.2）：序列化副本里的路径改写为
+      // 纯文件名，导出内容不得留下任何本机绝对路径；跨平台导入时
+      // POSIX 端解析不了 `C:\...` 反斜杠路径，重映射会整片失联。
+      // 文件已丢失的照片退化为占位框，内存里的条目对象保持本机路径。
+      if (e.canvas != null && e.canvas!.hasImagePaths) {
+        final packedCanvas = e.canvas!.clone();
+        packedCanvas.remapImagePaths((path) {
+          final name = Attachments.baseName(path);
+          return imageNames.contains(name) ? name : '';
+        });
+        map['canvas'] = encodeCanvas(packedCanvas);
+      }
       entryMaps.add({...map, 'images': imageNames.join('\u001F')});
     }
 
