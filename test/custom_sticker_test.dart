@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -20,6 +23,7 @@ import 'package:pagenote/services/backup_service.dart';
 import 'package:pagenote/utils/pack_cover_store.dart';
 import 'package:pagenote/storage/stored_files.dart';
 import 'package:pagenote/utils/sticker_store.dart';
+import 'package:pagenote/widgets/stored_image.dart';
 
 void main() {
   late Directory documents;
@@ -280,6 +284,32 @@ void main() {
     await provider.delete(sticker.id);
     expect(CustomStickerIndex.instance.pathOf(sticker.id), isNull);
     expect(isKnownStickerKey(sticker.stickerKey), isFalse);
+  });
+
+  testWidgets('图片贴纸按索引里的相对逻辑键可完成解码（原生端渲染回归）', (tester) async {
+    await tester.runAsync(() async {
+      PaintingBinding.instance.imageCache.clear();
+      final provider = await newProvider();
+      final sticker = (await provider.importFromBytes(
+        pngOf(64, 48, seed: 99),
+        name: '渲染',
+      ))!;
+      final key = CustomStickerIndex.instance.pathOf(sticker.id)!;
+      // 画布与素材面板拿到的就是这份相对键；若被当作文件路径直接打开，
+      // 解码会失败、界面退化成缺失占位。
+      expect(p.isAbsolute(key), isFalse);
+
+      final decoded = Completer<ui.Image>();
+      storedImageProvider(key).resolve(ImageConfiguration.empty).addListener(
+        ImageStreamListener(
+          (info, _) => decoded.complete(info.image),
+          onError: decoded.completeError,
+        ),
+      );
+      final image = await decoded.future.timeout(const Duration(seconds: 30));
+      expect(image.width, 64);
+      expect(image.height, 48);
+    });
   });
 
   test('备份包带上自定义贴纸清单与位图，解析回程可还原（REQ-20.6）', () async {
