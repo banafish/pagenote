@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
 
 import '../providers/settings_provider.dart';
 
@@ -14,8 +16,9 @@ class WebDavException implements Exception {
 }
 
 /// WebDAV 客户端（REQ-15 第一阶段：定期单向备份）。
-/// 基于 dart:io HttpClient 实现 Basic 认证与 MKCOL/PUT/PROPFIND/DELETE/GET,
-/// 不引入额外依赖;Android 与 Windows 均可用。
+/// 基于 package:http 实现 Basic 认证与 MKCOL/PUT/PROPFIND/DELETE/GET，
+/// Android / Windows / Web 三端通用；浏览器端要求 WebDAV 服务器
+/// 允许跨域（CORS），否则请求会被拦截并按网络错误提示。
 class WebDavClient {
   WebDavClient({
     required String baseUrl,
@@ -59,45 +62,42 @@ class WebDavClient {
       'Basic '
       '${base64Encode(utf8.encode('$username:$password'))}';
 
-  HttpClient _newClient() => HttpClient()
-    ..connectionTimeout = const Duration(seconds: 15)
-    ..idleTimeout = const Duration(seconds: 20);
-
   /// 执行单次请求并在结束时关闭连接;网络异常统一转 [WebDavException]。
   Future<T> _withRequest<T>(
     String method,
     Uri uri, {
     Map<String, String> headers = const {},
-    required Future<T> Function(HttpClientRequest) body,
+    List<int>? bodyBytes,
+    required Future<T> Function(http.StreamedResponse) body,
   }) async {
-    final client = _newClient();
+    final client = http.Client();
     try {
-      final request = await client.openUrl(method, uri)
-        ..headers.set(HttpHeaders.authorizationHeader, _authHeader)
-        ..headers.set(HttpHeaders.userAgentHeader, 'PageNote-Backup');
-      headers.forEach(request.headers.set);
-      return await body(request);
+      final request = http.Request(method, uri)
+        ..headers['authorization'] = _authHeader
+        ..headers['user-agent'] = 'PageNote-Backup';
+      headers.forEach((key, value) => request.headers[key] = value);
+      if (bodyBytes != null) request.bodyBytes = bodyBytes;
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 15));
+      return await body(response);
     } on WebDavException {
       rethrow;
-    } on SocketException catch (e) {
-      throw WebDavException('无法连接服务器:$e');
-    } on HttpException catch (e) {
-      throw WebDavException('网络异常:$e');
+    } on TimeoutException {
+      throw WebDavException('连接服务器超时');
+    } on http.ClientException catch (e) {
+      // 浏览器端的 CORS 拦截与各端断网都会走到这里。
+      throw WebDavException('无法连接服务器:${e.message}');
     } finally {
       client.close();
     }
   }
 
-  Future<Uint8List> _read(HttpClientResponse response) async {
-    final builder = BytesBuilder(copy: false);
-    await for (final chunk in response) {
-      builder.add(chunk);
-    }
-    return builder.toBytes();
-  }
+  Future<Uint8List> _read(http.StreamedResponse response) =>
+      response.stream.toBytes();
 
   void _throwIfAuthFailed(int status) {
-    if (status == HttpStatus.unauthorized || status == HttpStatus.forbidden) {
+    if (status == 401 || status == 403) {
       throw WebDavException('账号或密码不正确（$status）');
     }
   }
@@ -108,12 +108,11 @@ class WebDavClient {
       'PROPFIND',
       base,
       headers: {'Depth': '0'},
-      body: (request) async {
-        final response = await request.close();
-        final ok =
-            response.statusCode == 207 ||
-            (response.statusCode >= 200 && response.statusCode < 300);
-        if (!ok) _throwIfAuthFailed(response.statusCode);
+      body: (response) async {
+        await _read(response);
+        final status = response.statusCode;
+        final ok = status == 207 || (status >= 200 && status < 300);
+        if (!ok) _throwIfAuthFailed(status);
         return ok;
       },
     );
@@ -124,8 +123,7 @@ class WebDavClient {
     await _withRequest(
       'MKCOL',
       _dirUri,
-      body: (request) async {
-        final response = await request.close();
+      body: (response) async {
         await _read(response);
         final status = response.statusCode;
         if (status != 201 && status != 200 && status != 405) {
@@ -142,10 +140,9 @@ class WebDavClient {
     return _withRequest(
       'PUT',
       _fileUri(fileName),
-      headers: {HttpHeaders.contentTypeHeader: 'application/zip'},
-      body: (request) async {
-        request.add(bytes);
-        final response = await request.close();
+      headers: {'content-type': 'application/zip'},
+      bodyBytes: bytes,
+      body: (response) async {
         await _read(response);
         final status = response.statusCode;
         if (status < 200 || status >= 300) {
@@ -164,13 +161,12 @@ class WebDavClient {
       'PROPFIND',
       _dirUri,
       headers: {'Depth': '1'},
-      body: (request) async {
-        final response = await request.close();
-        if (response.statusCode == 404) return <String>[];
-        if (response.statusCode != 207 &&
-            (response.statusCode < 200 || response.statusCode >= 300)) {
-          _throwIfAuthFailed(response.statusCode);
-          throw WebDavException('读取备份列表失败（${response.statusCode}）');
+      body: (response) async {
+        final status = response.statusCode;
+        if (status == 404) return <String>[];
+        if (status != 207 && (status < 200 || status >= 300)) {
+          _throwIfAuthFailed(status);
+          throw WebDavException('读取备份列表失败（$status）');
         }
         final body = utf8.decode(await _read(response));
         return parseBackupHrefs(body);
@@ -183,11 +179,11 @@ class WebDavClient {
     return _withRequest(
       'GET',
       _fileUri(fileName),
-      body: (request) async {
-        final response = await request.close();
-        if (response.statusCode != 200) {
-          _throwIfAuthFailed(response.statusCode);
-          throw WebDavException('下载备份失败（${response.statusCode}）');
+      body: (response) async {
+        final status = response.statusCode;
+        if (status != 200) {
+          _throwIfAuthFailed(status);
+          throw WebDavException('下载备份失败（$status）');
         }
         return _read(response);
       },
@@ -199,8 +195,7 @@ class WebDavClient {
     await _withRequest(
       'DELETE',
       _fileUri(fileName),
-      body: (request) async {
-        final response = await request.close();
+      body: (response) async {
         await _read(response);
       },
     );

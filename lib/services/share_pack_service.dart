@@ -1,19 +1,22 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart' show FilePicker, FileType;
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/canvas_page.dart';
 import '../models/sticker_assets.dart';
 import '../models/template.dart';
+import '../storage/stored_files.dart';
+import '../storage/user_file.dart';
+import '../utils/attachments.dart' show Attachments;
 import '../utils/journal_id.dart';
+import '../utils/platforms.dart';
 
 /// 分享包损坏、格式不符或超出安全上限（REQ-21.10）。
 /// message 直接上屏，必须是可读中文。
@@ -157,16 +160,16 @@ class SharePackService {
       final packed = <String>{};
       for (final img in canvas.images) {
         if (img.path.isEmpty) continue;
-        final name = p.basename(img.path);
+        final name = Attachments.baseName(img.path);
         if (packed.contains(name)) continue;
-        final file = File(img.path);
-        if (!await file.exists()) continue;
-        photoBytes.putIfAbsent(name, file.readAsBytesSync);
+        final raw = await storedFiles.read(img.path);
+        if (raw == null) continue;
+        photoBytes.putIfAbsent(name, () => raw);
         packed.add(name);
       }
       final packedCanvas = canvas.clone();
       packedCanvas.remapImagePaths((path) {
-        final name = p.basename(path);
+        final name = Attachments.baseName(path);
         return packed.contains(name) ? name : '';
       });
       templateMaps.add({...t.toMap(), 'canvas': encodeCanvas(packedCanvas)});
@@ -239,7 +242,18 @@ class SharePackService {
     final name = '拾页素材包-${safeName.isEmpty ? '未命名' : safeName}-$date.zip';
     const zipGroup = XTypeGroup(label: '素材包', extensions: ['zip']);
 
-    if (Platform.isAndroid || Platform.isIOS) {
+    if (kIsWeb) {
+      // 浏览器：saveFile 直接触发下载。
+      final saved = await FilePicker.platform.saveFile(
+        fileName: name,
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+        bytes: bytes,
+      );
+      return saved;
+    }
+
+    if (isNativeMobile) {
       if (destination == PackExportDestination.saveToFolder) {
         try {
           // SAF「新建文档」选择器：用户挑文件夹（可进下载、网盘等任意目录），
@@ -255,13 +269,16 @@ class SharePackService {
           // 个别机型的文件选择器不可用时退回系统分享，保证导出仍然可用。
         }
       }
-      final dir = await getTemporaryDirectory();
-      final file = File(p.join(dir.path, name));
-      await file.writeAsBytes(bytes);
+      // 个别机型选择器不可用时退回系统分享；内存 XFile 由分享层自行暂存。
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], fileNameOverrides: [name]),
+        ShareParams(
+          files: [
+            XFile.fromData(bytes, mimeType: 'application/zip', name: name),
+          ],
+          fileNameOverrides: [name],
+        ),
       );
-      return file.path;
+      return name;
     }
 
     final location = await getSaveLocation(
@@ -269,9 +286,8 @@ class SharePackService {
       acceptedTypeGroups: const [zipGroup],
     );
     if (location == null) return null;
-    final file = File(location.path);
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
+    await writeToUserPath(location.path, bytes);
+    return location.path;
   }
 
   /// 解析并校验分享包（REQ-21.10）：非法内容抛 [SharePackFormatException]。

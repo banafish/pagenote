@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -7,6 +6,7 @@ import '../models/canvas_page.dart';
 import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
+import 'stored_image.dart';
 import 'canvas/canvas_view.dart';
 import 'sticker_layer.dart';
 
@@ -288,8 +288,8 @@ class _ShareImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Image.file(
-      File(path),
+    return Image(
+      image: storedImageProvider(path),
       fit: BoxFit.cover,
       errorBuilder: (_, _, _) => Container(
         color: const Color(0xFFEFE4D2),

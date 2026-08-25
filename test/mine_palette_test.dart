@@ -15,6 +15,7 @@ import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
+import 'package:pagenote/storage/stored_files.dart';
 import 'package:pagenote/utils/sticker_store.dart';
 import 'package:pagenote/widgets/canvas/canvas_tool_sheets.dart';
 
@@ -33,8 +34,8 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
     documents = await Directory.systemTemp.createTemp('pagenote-mine-docs');
-    previousDocumentsDir = StickerStore.documentsDir;
-    StickerStore.documentsDir = () async => documents.path;
+    previousDocumentsDir = StoredFilesImpl.documentsDir;
+    StoredFilesImpl.documentsDir = () async => documents.path;
   });
 
   setUp(() async {
@@ -43,7 +44,7 @@ void main() {
   });
 
   tearDownAll(() async {
-    StickerStore.documentsDir = previousDocumentsDir;
+    StoredFilesImpl.documentsDir = previousDocumentsDir;
     if (await documents.exists()) await documents.delete(recursive: true);
   });
 

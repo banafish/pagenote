@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +6,7 @@ import '../models/journal_entry.dart';
 import '../providers/journal_provider.dart';
 import '../utils/attachments.dart';
 import '../utils/date_utils.dart';
+import '../widgets/stored_image.dart';
 
 /// 快速速记（REQ-16）：不进完整编辑器的轻量入口。
 /// 一句话 + 可选图片直接入库,标记「未整理」;
@@ -195,8 +195,8 @@ class _QuickNotePageState extends State<QuickNotePage> {
           child: SizedBox(
             width: 92,
             height: 92,
-            child: Image.file(
-              File(path),
+            child: Image(
+              image: storedImageProvider(path),
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => Container(
                 color: scheme.surfaceContainerHighest,

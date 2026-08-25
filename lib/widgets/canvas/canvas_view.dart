@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import '../../models/decoration.dart';
 import '../../models/journal_entry.dart';
 import '../../models/sticker_assets.dart';
 import '../../utils/date_utils.dart';
+import '../stored_image.dart';
 
 /// 元素树画布的静态渲染器（调研三阶段）：背景纸张 + 按 z 序铺元素。
 /// 编辑器、时间线卡片、分享长图共用同一渲染逻辑,任意实际宽度下
@@ -153,8 +153,8 @@ class _ImageElementView extends StatelessWidget {
     if (element.path.isEmpty) {
       return _placeholderBox(context, scheme);
     }
-    final image = Image.file(
-      File(element.path),
+    final image = Image(
+      image: storedImageProvider(element.path),
       fit: BoxFit.cover,
       errorBuilder: (_, _, _) => _placeholderBox(context, scheme),
     );
@@ -259,8 +259,8 @@ class _StickerElementView extends StatelessWidget {
         key.substring(stickerKeyImage.length),
       );
       if (path == null) return _missingBox();
-      return Image.file(
-        File(path),
+      return Image(
+        image: storedImageProvider(path),
         fit: BoxFit.contain,
         errorBuilder: (_, _, _) => _missingBox(),
       );

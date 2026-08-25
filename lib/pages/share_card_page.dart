@@ -1,17 +1,19 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart' show FilePicker, FileType;
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:gal/gal.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/journal_entry.dart';
+import '../storage/user_file.dart';
+import '../utils/platforms.dart';
 import '../providers/settings_provider.dart';
 import '../utils/date_utils.dart';
 import '../widgets/share_card.dart';
@@ -57,7 +59,17 @@ class _ShareCardPageState extends State<ShareCardPage> {
       final name =
           '拾页-${widget.entry.date}-${DateUtils2.monthDay(widget.entry.date)}.png';
 
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (kIsWeb) {
+        // 浏览器没有相册，走下载；文件名由浏览器按用户设置落盘。
+        final saved = await FilePicker.platform.saveFile(
+          fileName: name,
+          type: FileType.image,
+          bytes: bytes,
+        );
+        _toast(saved == null ? '已取消保存' : '已保存到浏览器下载 📁');
+        return;
+      }
+      if (isNativeMobile) {
         final granted = await Gal.requestAccess();
         if (!granted) {
           _toast('未获得相册权限');
@@ -77,7 +89,7 @@ class _ShareCardPageState extends State<ShareCardPage> {
           ],
         );
         if (location == null) return;
-        await File(location.path).writeAsBytes(bytes, flush: true);
+        await writeToUserPath(location.path, bytes);
         _toast('已保存到 ${p.basename(location.path)} 📁');
       }
     } on GalException {
@@ -95,16 +107,16 @@ class _ShareCardPageState extends State<ShareCardPage> {
     try {
       final bytes = await _renderPng();
       if (bytes == null) return;
-      final dir = await getTemporaryDirectory();
-      final file = File(
-        p.join(
-          dir.path,
-          'pagenote-share-${DateTime.now().millisecondsSinceEpoch}.png',
-        ),
-      );
-      await file.writeAsBytes(bytes, flush: true);
+      final name =
+          '拾页-${widget.entry.date}-${DateUtils2.monthDay(widget.entry.date)}.png';
+      // 内存 XFile：分享层自行暂存字节，Web 端则转为浏览器下载。
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: '来自拾页的手账分享'),
+        ShareParams(
+          files: [
+            XFile.fromData(bytes, mimeType: 'image/png', name: name),
+          ],
+          text: '来自拾页的手账分享',
+        ),
       );
     } catch (_) {
       _toast('分享失败，请重试');
@@ -151,11 +163,11 @@ class _ShareCardPageState extends State<ShareCardPage> {
                   onPressed: _busy ? null : _save,
                   icon: const Icon(Icons.save_rounded, size: 19),
                   label: Text(
-                    Platform.isAndroid || Platform.isIOS ? '保存到相册' : '保存为图片',
+                    isNativeMobile ? '保存到相册' : '保存为图片',
                   ),
                 ),
                 const SizedBox(height: 10),
-                if (Platform.isAndroid || Platform.isIOS)
+                if (isNativeMobile)
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _share,
                     icon: const Icon(Icons.share_rounded, size: 19),

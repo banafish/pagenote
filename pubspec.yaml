@@ -83,6 +83,9 @@ dependencies:
   # （10.3.11 已被官方撤回，取 10.3.10。）
   file_picker: ^10.3.10
   package_info_plus: ^9.0.1
+  sqflite_common_ffi_web: ^1.1.2
+  http: ^1.6.0
+  idb_shim: ^2.9.8
 
 dev_dependencies:
   flutter_test:

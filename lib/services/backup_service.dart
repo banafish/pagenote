@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart' show FilePicker, FileType;
@@ -8,14 +6,16 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/canvas_page.dart';
 import '../models/journal_entry.dart';
 import '../models/sticker_assets.dart';
 import '../models/template.dart';
+import '../storage/stored_files.dart';
+import '../storage/user_file.dart';
 import '../utils/attachments.dart';
+import '../utils/platforms.dart';
 
 /// 备份文件损坏或格式不符。
 class BackupFormatException implements Exception {
@@ -102,10 +102,11 @@ class BackupService {
         for (final img in canvasImages)
           if (img.path.isNotEmpty) img.path,
       ]) {
-        final name = p.basename(path);
-        final file = File(path);
-        if (await file.exists()) {
-          attachmentBytes.putIfAbsent(name, () => file.readAsBytesSync());
+        // baseName 与下方画布重映射同一规则，Windows 反斜杠路径也能对上。
+        final name = Attachments.baseName(path);
+        final raw = await storedFiles.read(path);
+        if (raw != null) {
+          attachmentBytes.putIfAbsent(name, () => raw);
           if (!imageNames.contains(name)) imageNames.add(name);
         }
       }
@@ -137,10 +138,10 @@ class BackupService {
       final packed = <String>{};
       for (final img in canvas.images) {
         if (img.path.isEmpty) continue;
-        final name = p.basename(img.path);
-        final file = File(img.path);
-        if (await file.exists()) {
-          attachmentBytes.putIfAbsent(name, () => file.readAsBytesSync());
+        final name = Attachments.baseName(img.path);
+        final raw = await storedFiles.read(img.path);
+        if (raw != null) {
+          attachmentBytes.putIfAbsent(name, () => raw);
           packed.add(name);
         }
       }
@@ -148,7 +149,7 @@ class BackupService {
       // 文件已丢失的照片退化为占位框，与导入端的重映射一致。
       final packedCanvas = canvas.clone();
       packedCanvas.remapImagePaths((path) {
-        final name = p.basename(path);
+        final name = Attachments.baseName(path);
         return packed.contains(name) ? name : '';
       });
       templateMaps.add({...t.toMap(), 'canvas': encodeCanvas(packedCanvas)});
@@ -235,7 +236,18 @@ class BackupService {
         'pagenote-backup-${DateTime.now().toIso8601String().substring(0, 10)}.zip';
     const zipGroup = XTypeGroup(label: '备份', extensions: ['zip']);
 
-    if (Platform.isAndroid || Platform.isIOS) {
+    if (kIsWeb) {
+      // 浏览器：saveFile 直接触发下载到本地下载目录。
+      final saved = await FilePicker.platform.saveFile(
+        fileName: name,
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+        bytes: bytes,
+      );
+      return saved;
+    }
+
+    if (isNativeMobile) {
       try {
         // SAF「新建文档」选择器：用户挑保存位置，字节由系统写入所选目录，
         // 应用自身不需要任何存储权限。与素材包导出（REQ-21.5）同一套方案。
@@ -249,13 +261,16 @@ class BackupService {
       } on PlatformException {
         // 个别机型的文件选择器不可用时退回系统分享，保证导出仍然可用。
       }
-      final dir = await getTemporaryDirectory();
-      final file = File(p.join(dir.path, name));
-      await file.writeAsBytes(bytes);
+      // 个别机型选择器不可用时退回系统分享；内存 XFile 由分享层自行暂存。
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], fileNameOverrides: [name]),
+        ShareParams(
+          files: [
+            XFile.fromData(bytes, mimeType: 'application/zip', name: name),
+          ],
+          fileNameOverrides: [name],
+        ),
       );
-      return file.path;
+      return name;
     }
 
     final location = await getSaveLocation(
@@ -263,9 +278,8 @@ class BackupService {
       acceptedTypeGroups: const [zipGroup],
     );
     if (location == null) return null;
-    final file = File(location.path);
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
+    await writeToUserPath(location.path, bytes);
+    return location.path;
   }
 
   /// 选择并读取备份文件，返回 null 表示用户取消。

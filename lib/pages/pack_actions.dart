@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -13,6 +12,7 @@ import '../providers/journal_provider.dart';
 import '../providers/template_provider.dart';
 import '../services/share_pack_service.dart';
 import '../utils/pack_cover_store.dart';
+import '../utils/platforms.dart';
 import '../utils/sticker_store.dart';
 
 // ---------------- 分享包导出的公共件（REQ-21.1/21.2，导出页与各处菜单复用） ----------------
@@ -104,7 +104,7 @@ Future<bool?> askIncludeTemplatePhotos(
 Future<PackExportDestination?> askPackExportDestination(
   BuildContext context,
 ) async {
-  if (!Platform.isAndroid && !Platform.isIOS) {
+  if (!isNativeMobile) {
     return PackExportDestination.saveToFolder;
   }
   return showDialog<PackExportDestination>(
@@ -432,7 +432,7 @@ Future<({bool ok, String? shrunk})> _importOne(
   try {
     final raw = await file.readAsBytes();
     source = cutWhite ? await StickerStore.removeWhiteBackground(raw) : raw;
-  } on IOException {
+  } on Exception {
     return (ok: false, shrunk: null);
   }
   final sticker = await provider.importFromFile(

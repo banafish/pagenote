@@ -21,6 +21,7 @@ import 'package:pagenote/pages/pack_actions.dart'
 import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/services/share_pack_service.dart';
+import 'package:pagenote/storage/stored_files.dart';
 import 'package:pagenote/utils/sticker_store.dart';
 
 /// 分享包（REQ-21）与不可信文件 / 版本兼容（NFR-06、NFR-07）。
@@ -860,9 +861,16 @@ void main() {
       return img.encodePng(image);
     }
 
+    /// 存储层逻辑键在测试文档目录下的真实位置。
+    Future<String> storedPath(String key) async =>
+        p.join(await StoredFilesImpl.documentsDir(), key);
+
     /// 素材目录里实际存在的文件名。
     Future<Set<String>> storedNames() async {
-      final dir = await StickerStore.ensureDir();
+      final dir = Directory(
+        p.join(await StoredFilesImpl.documentsDir(), 'stickers'),
+      );
+      if (!await dir.exists()) return {};
       return {
         for (final f in dir.listSync().whereType<File>()) p.basename(f.path),
       };
@@ -940,16 +948,16 @@ void main() {
         );
         expect(saved, isNotNull, reason: '尺寸在解码上限内，应压缩后导入而不是跳过');
 
-        final stored = File(
-          StickerStore.pathOf(saved!.id, saved.ext),
-        ).readAsBytesSync();
-        expect(stored.length, lessThanOrEqualTo(StickerStore.maxBytes));
-        final decoded = img.decodeImage(stored)!;
+        final bytes = await File(
+          await storedPath(StickerStore.pathOf(saved!.id, saved.ext)),
+        ).readAsBytes();
+        expect(bytes.length, lessThanOrEqualTo(StickerStore.maxBytes));
+        final decoded = img.decodeImage(bytes)!;
         expect(decoded.width, lessThanOrEqualTo(StickerStore.maxEdge));
         expect(decoded.height, lessThanOrEqualTo(StickerStore.maxEdge));
         expect(decoded.width, StickerStore.maxEdge, reason: '长边压到上限，等比缩放');
         expect(decoded.height, 683, reason: '3:2 等比缩放后的短边');
-        expect(saved.id, StickerStore.idOf(stored), reason: 'id 恒等于落盘字节的 sha1');
+        expect(saved.id, StickerStore.idOf(bytes), reason: 'id 恒等于落盘字节的 sha1');
         // 分享包来的大图不再原样落盘，sha1 必然改变，模板里的 img:<sha1>
         // 引用随之退化为缺失占位（FIX-03）。本应用 exportPack 产出的包走不到这条路：
         // 导出前素材已经在 REQ-20.5 的上限内。
@@ -1141,9 +1149,9 @@ void useTempDocuments() {
 
   setUpAll(() async {
     documents = await Directory.systemTemp.createTemp('pagenote-pack-docs');
-    previousDocs = StickerStore.documentsDir;
+    previousDocs = StoredFilesImpl.documentsDir;
     previousPlatform = PathProviderPlatform.instance;
-    StickerStore.documentsDir = () async => documents.path;
+    StoredFilesImpl.documentsDir = () async => documents.path;
     PathProviderPlatform.instance = _TempDocuments(documents.path);
   });
 
@@ -1152,7 +1160,7 @@ void useTempDocuments() {
   });
 
   tearDownAll(() async {
-    StickerStore.documentsDir = previousDocs;
+    StoredFilesImpl.documentsDir = previousDocs;
     PathProviderPlatform.instance = previousPlatform;
     if (await documents.exists()) await documents.delete(recursive: true);
   });

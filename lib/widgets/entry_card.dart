@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +7,7 @@ import '../models/decoration.dart';
 import '../models/journal_entry.dart';
 import '../utils/date_utils.dart';
 import 'canvas/canvas_view.dart';
+import 'stored_image.dart';
 
 /// 时间轴中的手账卡片。
 class EntryCard extends StatelessWidget {
@@ -503,23 +503,15 @@ class _ImageThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final file = File(path);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: FutureBuilder<bool>(
-        future: file.exists(),
-        builder: (context, snapshot) {
-          if (snapshot.data == true) {
-            return Image.file(
-              file,
-              width: 118,
-              height: 92,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _fallback(context),
-            );
-          }
-          return _fallback(context);
-        },
+      // 缺文件 / 解码失败均由 errorBuilder 兜底，无需预先探测存在性。
+      child: Image(
+        image: storedImageProvider(path),
+        width: 118,
+        height: 92,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _fallback(context),
       ),
     );
   }

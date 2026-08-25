@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/services.dart';
 
@@ -6,6 +5,7 @@ import '../data/prompts.dart';
 import '../providers/journal_provider.dart';
 import '../utils/date_utils.dart';
 import 'notification_service.dart';
+import '../utils/platforms.dart';
 
 /// 桌面小组件展示内容（REQ-14）:连续天数 + 今日是否已写 + 今日一问。
 /// 纯数据类便于在无插件的测试环境中构造与断言。
@@ -47,7 +47,7 @@ class WidgetService {
 
   static const _channel = MethodChannel('pagenote/app');
 
-  bool get supported => Platform.isAndroid;
+  bool get supported => isNativeAndroid;
 
   /// 冷启动时由小组件拉起待处理的「写手账」动作。
   bool _pendingEditor = false;

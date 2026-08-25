@@ -2,7 +2,7 @@
 
 一款精美的手账应用 —— 拾起生活中的每一页。
 
-基于 Flutter 构建，支持 **Android 手机 / 平板** 与 **Windows** 三端，界面自适应：手机使用底部导航，平板与桌面使用侧边导航栏。
+基于 Flutter 构建，支持 **Android 手机 / 平板**、**Windows** 与 **Web 浏览器** 三类载体，界面自适应：手机使用底部导航，平板与桌面使用侧边导航栏。
 
 ## ✨ 功能
 
@@ -17,7 +17,7 @@
 - **搜索** — 按标题、正文、标签即时搜索，支持按标签快速浏览
 - **个性化** — 浅色 / 深色 / 跟随系统主题，6 种强调色，正文字号调节
 - **桌面小组件** — Android 桌面展示连续记录天数、今日是否已写与今日一问，点按直达编辑页
-- **WebDAV 自动备份** — 定期把全部手账与图片单向备份到坚果云等网盘，最多保留 10 份，支持从云端恢复
+- **WebDAV 自动备份** — 定期把全部手账与图片单向备份到坚果云等网盘，最多保留 10 份，支持从云端恢复（Web 端要求 WebDAV 服务器允许跨域访问）
 - **快速速记** — 一句话 + 可选图片直接入库并标记「未整理」，稍后在编辑页补充心情 / 标签整理成正式手账
 
 ## 🛠 技术栈
@@ -26,7 +26,7 @@
 | --- | --- |
 | 框架 | Flutter 3.x（Material 3） |
 | 状态管理 | provider |
-| 本地存储 | sqflite（Android）/ sqflite_common_ffi（Windows） |
+| 本地存储 | sqflite（Android）/ sqflite_common_ffi（Windows）/ sqflite_common_ffi_web + IndexedDB（Web） |
 | 偏好设置 | shared_preferences |
 | 图片选择 | file_selector（附件复制到应用目录持久保存） |
 | 图表 | 自绘（无第三方图表依赖） |
@@ -41,6 +41,9 @@ flutter run -d windows
 
 # Android（手机 / 平板）
 flutter run -d <device-id>
+
+# Web 浏览器
+flutter run -d chrome
 ```
 
 发布构建：
@@ -48,11 +51,13 @@ flutter run -d <device-id>
 ```bash
 flutter build windows --release
 flutter build apk --release
+flutter build web --release
 ```
 
 ## 📁 结构
 
 ```
+web/                 # Web 端壳（index.html / sqlite wasm / 图标）
 lib/
   app.dart            # 根导航骨架（响应式布局）
   main.dart           # 入口与平台数据库初始化

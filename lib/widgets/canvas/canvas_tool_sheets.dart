@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,7 @@ import '../../providers/custom_sticker_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../utils/sticker_store.dart';
 import '../pack_cover.dart';
+import '../stored_image.dart';
 
 /// 画布工具面板（调研一/二阶段）：素材与属性编辑的底部弹层集合。
 
@@ -486,8 +486,8 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       return SizedBox(
         width: size,
         height: size,
-        child: Image.file(
-          File(path),
+        child: Image(
+          image: storedImageProvider(path),
           fit: BoxFit.contain,
           errorBuilder: (_, _, _) => const SizedBox.shrink(),
         ),
@@ -1115,12 +1115,17 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       onTap: () => _pick(make(), key),
       child: Padding(
         padding: const EdgeInsets.all(4),
-        child: Image.file(
-          File(StickerStore.pathOf(sticker.id, sticker.ext)),
-          fit: BoxFit.contain,
+        child: Image(
           // 「我的」分节网格整列直建,解码宽度钉在格子量级,
           // 避免大量素材一次性全尺寸解码。
-          cacheWidth: 220,
+          image: ResizeImage(
+            storedImageProvider(
+              StickerStore.pathOf(sticker.id, sticker.ext),
+            ),
+            width: 220,
+            policy: ResizeImagePolicy.exact,
+          ),
+          fit: BoxFit.contain,
           errorBuilder: (_, _, _) =>
               const Icon(Icons.broken_image_outlined, size: 20),
         ),
@@ -1982,8 +1987,8 @@ Widget _stickerPreview(String key, int? tint) {
       key.substring(stickerKeyImage.length),
     );
     if (path != null) {
-      return Image.file(
-        File(path),
+      return Image(
+        image: storedImageProvider(path),
         fit: BoxFit.contain,
         errorBuilder: (_, _, _) =>
             const CustomPaint(painter: StickerPainter('__missing__')),

@@ -1,19 +1,29 @@
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
+import '../../storage/stored_files.dart';
+import '../../storage/sync_read.dart';
 import '../../utils/attachments.dart';
+import '../../utils/env.dart';
+import '../stored_image.dart';
 
 /// 后台执行重活：正常走 isolate（compute）,测试环境（FakeAsync 不推进
 /// 真实 isolate）改为当前执行器同步跑,便于 widget 测试覆盖。
 Future<R> _runTask<M, R>(R Function(M) task, M arg) {
-  if (Platform.environment['FLUTTER_TEST'] == 'true') {
+  if (isFlutterTest) {
     return Future.sync(() => task(arg));
   }
   return compute(task, arg);
+}
+
+/// 取原图字节：测试环境走同步读（FakeAsync 推不动真实异步 IO），
+/// 生产环境经存储层异步读取（Web 端为 IndexedDB 键）。
+Future<Uint8List?> _readBytes(String path) {
+  if (isFlutterTest) return Future.value(readStoredBytesSync(path));
+  return storedFiles.read(path);
 }
 
 /// 照片导入的裁剪结果：最终附件路径与像素尺寸（宽高比据此归一化到画布）。
@@ -79,7 +89,13 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
   }
 
   Future<void> _probe() async {
-    final result = await _runTask(_probeWorker, widget.path);
+    final raw = await _readBytes(widget.path);
+    if (raw == null) {
+      if (!mounted) return;
+      setState(() => _failed = true);
+      return;
+    }
+    final result = await _runTask(_probeWorker, raw);
     if (!mounted) return;
     setState(() {
       if (result == null) {
@@ -104,7 +120,8 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
     );
     CroppedImage? result;
     try {
-      final cropped = await _runTask(_cropWorker, (widget.path, crop));
+      final raw = await _readBytes(widget.path);
+      final cropped = raw == null ? null : await _runTask(_cropWorker, (raw, crop));
       if (cropped != null) {
         final path = widget.persist == null
             ? await Attachments.persistBytes(cropped.bytes, '.jpg')
@@ -293,8 +310,8 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.file(
-                      File(widget.path),
+                    Image(
+                      image: storedImageProvider(widget.path),
                       fit: BoxFit.contain,
                       filterQuality: FilterQuality.medium,
                       errorBuilder: (_, _, _) => Container(
@@ -427,9 +444,8 @@ class _CropOverlayPainter extends CustomPainter {
 // ---------------- 后台 isolate ----------------
 
 /// 读取图片显示尺寸：解码后烘平 EXIF 方向（与引擎显示一致）,只取宽高。
-({int width, int height})? _probeWorker(String path) {
+({int width, int height})? _probeWorker(Uint8List bytes) {
   try {
-    final bytes = File(path).readAsBytesSync();
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final oriented = img.bakeOrientation(decoded);
@@ -442,11 +458,10 @@ class _CropOverlayPainter extends CustomPainter {
 /// 裁剪并重编码为 JPEG：烘平 EXIF 方向后按像素矩形裁剪,长边压到
 /// 2560 以内控制内存与体积。任何一步失败返回 null（调用方回退原图）。
 ({Uint8List bytes, int width, int height})? _cropWorker(
-  (String, Rect) job,
+  (Uint8List, Rect) job,
 ) {
   try {
-    final bytes = File(job.$1).readAsBytesSync();
-    final decoded = img.decodeImage(bytes);
+    final decoded = img.decodeImage(job.$1);
     if (decoded == null) return null;
     final oriented = img.bakeOrientation(decoded);
     final rect = job.$2;

@@ -19,6 +19,7 @@ import 'package:pagenote/providers/journal_provider.dart';
 import 'package:pagenote/providers/settings_provider.dart';
 import 'package:pagenote/providers/template_provider.dart';
 import 'package:pagenote/theme/app_theme.dart';
+import 'package:pagenote/storage/stored_files.dart';
 import 'package:pagenote/utils/sticker_store.dart';
 import 'package:pagenote/widgets/canvas/canvas_editor.dart';
 import 'package:pagenote/widgets/template_picker.dart';
@@ -41,8 +42,8 @@ void main() {
     // 必须使用同 isolate 的 ffi 工厂。
     databaseFactory = databaseFactoryFfiNoIsolate;
     documents = await Directory.systemTemp.createTemp('pagenote-library-docs');
-    previousDocumentsDir = StickerStore.documentsDir;
-    StickerStore.documentsDir = () async => documents.path;
+    previousDocumentsDir = StoredFilesImpl.documentsDir;
+    StoredFilesImpl.documentsDir = () async => documents.path;
   });
 
   setUp(() async {
@@ -51,7 +52,7 @@ void main() {
   });
 
   tearDownAll(() async {
-    StickerStore.documentsDir = previousDocumentsDir;
+    StoredFilesImpl.documentsDir = previousDocumentsDir;
     if (await documents.exists()) await documents.delete(recursive: true);
   });
 

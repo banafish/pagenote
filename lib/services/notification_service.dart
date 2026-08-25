@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,6 +5,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
+
+import '../utils/platforms.dart';
 
 /// 写作提醒通知（REQ-07）。仅 Android 支持本地通知；
 /// Windows 端在设置页展示降级说明（NFR-04）。
@@ -26,8 +27,8 @@ class NotificationService {
   static const _channelId = 'journal_reminder';
   static const _notificationId = 1001;
 
-  /// 平台是否支持写作提醒（Android）。
-  bool get supported => Platform.isAndroid;
+  /// 平台是否支持写作提醒（仅原生 Android；Web/桌面降级）。
+  bool get supported => isNativeAndroid;
 
   /// 提醒文案池（REQ-07.1：随机挑选）。
   static const reminderCopies = [

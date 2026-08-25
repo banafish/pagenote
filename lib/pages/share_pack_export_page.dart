@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +6,7 @@ import '../models/sticker_assets.dart';
 import '../providers/custom_sticker_provider.dart';
 import '../providers/template_provider.dart';
 import '../services/share_pack_service.dart';
+import '../widgets/stored_image.dart';
 import 'pack_actions.dart';
 
 /// 素材包导出页（REQ-21.1/21.2）：勾选模板与自定义贴纸后打包，
@@ -219,8 +219,8 @@ class _SharePackExportPageState extends State<SharePackExportPage> {
       clipBehavior: Clip.antiAlias,
       child: path == null
           ? Icon(Icons.image_outlined, size: 18, color: scheme.onSurfaceVariant)
-          : Image.file(
-              File(path),
+          : Image(
+              image: storedImageProvider(path),
               fit: BoxFit.contain,
               errorBuilder: (_, _, _) => Icon(
                 Icons.broken_image_outlined,

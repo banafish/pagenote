@@ -18,6 +18,7 @@ import 'package:pagenote/providers/custom_sticker_provider.dart';
 import 'package:pagenote/services/backup_restore.dart';
 import 'package:pagenote/services/backup_service.dart';
 import 'package:pagenote/utils/pack_cover_store.dart';
+import 'package:pagenote/storage/stored_files.dart';
 import 'package:pagenote/utils/sticker_store.dart';
 
 void main() {
@@ -28,7 +29,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
     documents = await Directory.systemTemp.createTemp('pagenote-sticker-docs');
     // 落盘全部改指临时目录，不污染真实文档目录。
-    StickerStore.documentsDir = () async => documents.path;
+    StoredFilesImpl.documentsDir = () async => documents.path;
   });
 
   setUp(() async {
@@ -108,8 +109,12 @@ void main() {
     return img.encodePng(image);
   }
 
+  /// 存储层逻辑键（stickers/<sha1>.png 等）在测试文档目录下的真实位置。
+  String storedPath(String key) => p.join(documents.path, key);
+
   Future<List<File>> storedFiles() async {
-    final dir = await StickerStore.ensureDir();
+    final dir = Directory(p.join(documents.path, 'stickers'));
+    if (!await dir.exists()) return const [];
     return dir.listSync().whereType<File>().toList();
   }
 
@@ -197,7 +202,7 @@ void main() {
       fileOf(pngOf(48, 48), '原名.png'),
     ))!;
     final path = StickerStore.pathOf(sticker.id, sticker.ext);
-    expect(File(path).existsSync(), isTrue);
+    expect(File(storedPath(path)).existsSync(), isTrue);
 
     await provider.rename(sticker.id, '新名字');
     expect(provider.byId(sticker.id)!.name, '新名字');
@@ -259,8 +264,8 @@ void main() {
 
     final path = CustomStickerIndex.instance.pathOf(sticker.id);
     expect(path, isNotNull);
-    expect(File(path!).existsSync(), isTrue);
-    expect(p.isWithin(documents.path, path), isTrue, reason: '落在文档目录内');
+    // 索引里是存储层逻辑键，渲染端经 storedImageProvider 异步取字节。
+    expect(p.isWithin('stickers', path!), isTrue, reason: '落在 stickers/ 目录内');
     expect(CustomStickerIndex.instance.nameOf(sticker.id), '索引');
     expect(isKnownStickerKey(sticker.stickerKey), isTrue);
 
@@ -456,7 +461,7 @@ void main() {
     expect(provider.byId(b.id), isNotNull, reason: '解散不动素材');
     expect(provider.byId(b.id)!.packId, isNull);
     expect(
-      File(StickerStore.pathOf(b.id, b.ext)).existsSync(),
+      File(storedPath(StickerStore.pathOf(b.id, b.ext))).existsSync(),
       isTrue,
       reason: '解散不动文件',
     );
@@ -468,7 +473,10 @@ void main() {
     await provider.deletePack(pack2.id);
     expect(provider.stickers, isEmpty);
     expect(provider.packs, isEmpty);
-    expect(File(StickerStore.pathOf(a.id, a.ext)).existsSync(), isFalse);
+    expect(
+      File(storedPath(StickerStore.pathOf(a.id, a.ext))).existsSync(),
+      isFalse,
+    );
     final afterDelete = await newProvider(database: db);
     expect(afterDelete.stickers, isEmpty);
     expect(afterDelete.packs, isEmpty);
@@ -591,18 +599,15 @@ void main() {
     expect(saved, isNotNull, reason: '扩展名非法只降级为 .png，不该整张丢弃');
     expect(saved!.ext, '.png');
     // 落盘位置必须仍在素材目录内，文档目录里不能凭空多出文件。
-    final stickerDir = await StickerStore.ensureDir();
     final escaped = File(p.join(documents.path, '越权.png'));
     expect(await escaped.exists(), isFalse, reason: '不得写到素材目录之外');
     expect(
-      p.equals(
-        p.dirname(StickerStore.pathOf(saved.id, saved.ext)),
-        stickerDir.path,
-      ),
-      isTrue,
+      StickerStore.pathOf(saved.id, saved.ext),
+      startsWith('stickers/'),
+      reason: '素材键必须落在 stickers/ 目录内',
     );
     expect(
-      await File(StickerStore.pathOf(saved.id, saved.ext)).exists(),
+      await File(storedPath(StickerStore.pathOf(saved.id, saved.ext))).exists(),
       isTrue,
     );
 
@@ -627,7 +632,7 @@ void main() {
     // 与贴纸的 stickers/ 分目录存放，不污染自定义贴纸索引。
     expect(p.basename(PackCoverStore.pathOf(cover)), cover);
     expect(
-      await File(PackCoverStore.pathOf(cover)).exists(),
+      await File(storedPath(PackCoverStore.pathOf(cover))).exists(),
       isTrue,
       reason: '封面文件应真实落盘',
     );
@@ -642,13 +647,13 @@ void main() {
     );
     final next = nextOrNull!;
     await provider.setPackCover(pack.id, next);
-    expect(await File(PackCoverStore.pathOf(cover)).exists(), isFalse);
+    expect(await File(storedPath(PackCoverStore.pathOf(cover))).exists(), isFalse);
     expect(provider.packById(pack.id)!.coverPath, next);
 
     // 移除封面：置空并清理文件。
     await provider.setPackCover(pack.id, null);
     expect(provider.packById(pack.id)!.coverPath, isNull);
-    expect(await File(PackCoverStore.pathOf(next)).exists(), isFalse);
+    expect(await File(storedPath(PackCoverStore.pathOf(next))).exists(), isFalse);
   });
 
   test('解散与删除包时封面文件一并清理（REQ-27.8）', () async {
@@ -663,9 +668,9 @@ void main() {
     await provider.setPackCover(deleted.id, coverB);
 
     await provider.dissolvePack(dissolved.id);
-    expect(await File(PackCoverStore.pathOf(coverA)).exists(), isFalse);
+    expect(await File(storedPath(PackCoverStore.pathOf(coverA))).exists(), isFalse);
     await provider.deletePack(deleted.id);
-    expect(await File(PackCoverStore.pathOf(coverB)).exists(), isFalse);
+    expect(await File(storedPath(PackCoverStore.pathOf(coverB))).exists(), isFalse);
   });
 
   test('封面尺寸闸与压缩：巨图拒收、超限压到上限内（REQ-27.4、NFR-14）', () async {
@@ -674,7 +679,7 @@ void main() {
     // 长边超 1024 的正常图压缩落盘，长边进上限。
     final stored =
         (await PackCoverStore.importFromBytes(pngOf(2000, 1000)))!;
-    final saved = await File(PackCoverStore.pathOf(stored)).readAsBytes();
+    final saved = await File(storedPath(PackCoverStore.pathOf(stored))).readAsBytes();
     final decoded = img.decodeImage(saved)!;
     expect(decoded.width, lessThanOrEqualTo(PackCoverStore.maxEdge));
     expect(decoded.height, lessThanOrEqualTo(PackCoverStore.maxEdge));
@@ -716,7 +721,7 @@ void main() {
     expect(restoredPack, isNotNull);
     expect(restoredPack!.coverPath, isNotNull, reason: '封面应恢复');
     expect(
-      await File(PackCoverStore.pathOf(restoredPack.coverPath!)).exists(),
+      await File(storedPath(PackCoverStore.pathOf(restoredPack.coverPath!))).exists(),
       isTrue,
     );
 

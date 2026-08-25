@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +13,7 @@ import '../utils/sticker_store.dart';
 import '../widgets/canvas/canvas_view.dart';
 import '../widgets/pack_cover.dart';
 import '../widgets/sticker_pack_sheet.dart';
+import '../widgets/stored_image.dart';
 import 'editor_page.dart';
 import 'pack_actions.dart';
 
@@ -1013,8 +1013,10 @@ class _PackDetailPageState extends State<PackDetailPage>
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(8, 10, 8, 2),
-                    child: Image.file(
-                      File(StickerStore.pathOf(sticker.id, sticker.ext)),
+                    child: Image(
+                      image: storedImageProvider(
+                        StickerStore.pathOf(sticker.id, sticker.ext),
+                      ),
                       fit: BoxFit.contain,
                       errorBuilder: (_, _, _) => Icon(
                         Icons.broken_image_outlined,

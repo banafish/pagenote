@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -6,15 +5,18 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../models/sticker_assets.dart';
+import '../storage/stored_files.dart';
 
 /// 自定义图片贴纸的落盘层（REQ-20）：文件按内容 sha1 命名存入
-/// documents/stickers/。内容寻址天然去重（REQ-20.2），也让 `img:<sha1>`
-/// 这个 key 跨设备稳定，是分享包能正确引用素材的基础（REQ-21）。
+/// 存储层的 stickers/ 目录。内容寻址天然去重（REQ-20.2），也让
+/// `img:<sha1>` 这个 key 跨设备稳定，是分享包能正确引用素材的基础（REQ-21）。
 class StickerStore {
   StickerStore._();
+
+  /// 贴纸在存储层下的逻辑目录名。
+  static const _dir = 'stickers';
 
   /// 单张素材上限（REQ-20.5）：长边 1024px、2MB，超限自动压缩。
   static const maxEdge = 1024;
@@ -35,9 +37,6 @@ class StickerStore {
     label: '图片',
     extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'],
   );
-
-  /// 素材目录绝对路径，[ensureDir] 后可用；同步的 [pathOf] 依赖它。
-  static String _root = '';
 
   /// 打开系统图片选择器（REQ-20.1）；用户取消返回空。
   static Future<List<XFile>> pickImages() =>
@@ -165,10 +164,10 @@ class StickerStore {
   /// 字节内容的 sha1，即贴纸 id 与文件名主干（分享包打包时复用）。
   static String idOf(List<int> bytes) => sha1.convert(bytes).toString();
 
-  /// 已知 id 的文件路径；需先 [ensureDir]（provider 加载时已调用）。
-  /// 扩展名经 [safeExt] 消毒，读写两侧算出的文件名始终一致。
+  /// 已知 id 的存储路径（逻辑键）；扩展名经 [safeExt] 消毒，
+  /// 读写两侧算出的文件名始终一致。
   static String pathOf(String id, String ext) =>
-      p.join(_root, '$id${safeExt(ext)}');
+      '$_dir/$id${safeExt(ext)}';
 
   /// 落盘用的安全扩展名（NFR-06 路径消毒）。
   ///
@@ -180,67 +179,19 @@ class StickerStore {
   static final _extPattern = RegExp(r'^\.[A-Za-z0-9]{1,8}$');
 
   /// 读取素材字节（备份 REQ-20.6 与分享包 REQ-21.3 打包用）；缺失返回 null。
-  static Future<Uint8List?> readBytes(String id, String ext) async {
-    try {
-      final file = File(pathOf(id, ext));
-      if (!await file.exists()) return null;
-      return await file.readAsBytes();
-    } on IOException {
-      return null;
-    }
-  }
-
-  /// 素材目录（不存在则创建），并缓存路径供同步的 [pathOf] 使用。
-  static Future<Directory> ensureDir() async {
-    final dir = Directory(p.join(await documentsDir(), 'stickers'));
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    _root = dir.path;
-    return dir;
-  }
+  static Future<Uint8List?> readBytes(String id, String ext) =>
+      storedFiles.read(pathOf(id, ext));
 
   /// 清空素材目录中的全部文件（覆盖导入前调用）。
-  static Future<void> clearAll() async {
-    final dir = await ensureDir();
-    await for (final entity in dir.list()) {
-      if (entity is File) {
-        try {
-          await entity.delete();
-        } on IOException {
-          // 忽略单个文件删除失败。
-        }
-      }
-    }
-  }
+  static Future<void> clearAll() => storedFiles.clearDir(_dir);
 
-  /// 文档根目录；测试可替换该钩子以避开 path_provider 插件。
-  static Future<String> Function() documentsDir = _documentsDir;
-
-  static Future<String> _documentsDir() async =>
-      (await getApplicationDocumentsDirectory()).path;
-
-  /// 删除素材文件；测试可替换该钩子以拦截文件操作。
+  /// 删除素材文件；测试可替换该钩子以拦截删除操作。
   static Future<void> Function(String path) delete = deleteFile;
 
-  static Future<void> deleteFile(String path) async {
-    try {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
-    } on IOException {
-      // 忽略删除失败（文件可能已被移动）。
-    }
-  }
+  static Future<void> deleteFile(String path) => storedFiles.delete(path);
 
-  static Future<String> _write(String id, Uint8List bytes, String ext) async {
-    final dir = await ensureDir();
-    final target = p.join(dir.path, '$id${safeExt(ext)}');
-    final file = File(target);
-    if (!await file.exists()) {
-      await file.writeAsBytes(bytes, flush: true);
-    }
-    return target;
-  }
+  static Future<String> _write(String id, Uint8List bytes, String ext) =>
+      storedFiles.write(pathOf(id, ext), bytes);
 
   /// 归一化为 PNG（REQ-20.5）：长边超限先等比缩放，体积仍超 2MB 则
   /// 逐档降尺寸重试。放在后台 isolate 执行，避免大图卡住导入动画。

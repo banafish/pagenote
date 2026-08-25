@@ -54,8 +54,6 @@ class CustomStickerProvider extends ChangeNotifier {
   /// 读 DB 并刷新全局索引。渲染端（CanvasView / 分享长图）拿不到 Provider，
   /// 一律经 [CustomStickerIndex] 取路径，因此增删改后都要同步这份索引。
   Future<void> load() async {
-    await StickerStore.ensureDir();
-    await PackCoverStore.ensureDir();
     _backing = await _db.getAllCustomStickers();
     _packBacking = await _db.getAllStickerPacks();
     _syncIndex();

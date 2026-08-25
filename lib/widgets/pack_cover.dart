@@ -1,9 +1,9 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../models/sticker_assets.dart';
 import '../utils/pack_cover_store.dart';
+import 'stored_image.dart';
 
 /// 包封面缩略（REQ-27.1）：有封面显示图片；未设置显示统一占位
 /// ——主色底 + 包名首字（名字为空回退包图标）。
@@ -18,8 +18,8 @@ class PackCoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final cover = pack.coverPath;
     if (cover != null) {
-      return Image.file(
-        File(PackCoverStore.pathOf(cover)),
+      return Image(
+        image: storedImageProvider(PackCoverStore.pathOf(cover)),
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => _placeholder(context),
       );
