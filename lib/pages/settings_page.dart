@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -36,6 +37,10 @@ class SettingsPage extends StatelessWidget {
             _SettingsLabel('主题模式'),
             const SizedBox(height: 10),
             SegmentedButton<ThemeMode>(
+              // Web 端 CanvasKit 对中文回退字体的宽度测量约为实际一半，
+              // 按固有宽度分配分段会把「跟随系统」等标签挤成竖排换行；
+              // 改为按父约束均分宽度，绕开文字测量（仅 web，原生保持原样）。
+              expandedInsets: kIsWeb ? EdgeInsets.zero : null,
               segments: const [
                 ButtonSegment(
                   value: ThemeMode.light,

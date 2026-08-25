@@ -1,4 +1,5 @@
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -1774,6 +1775,10 @@ Future<bool> showImageElementEditor(
               ),
               const SizedBox(height: 14),
               SegmentedButton<ImageMask>(
+                // Web 端 CanvasKit 对中文回退字体的宽度测量约为实际一半，
+                // 按固有宽度分配分段会把标签挤到换行；改为按父约束均分
+                // 宽度绕开文字测量（仅 web，原生保持原样）。
+                expandedInsets: kIsWeb ? EdgeInsets.zero : null,
                 segments: const [
                   ButtonSegment(value: ImageMask.none, label: Text('原图')),
                   ButtonSegment(value: ImageMask.circle, label: Text('圆形')),

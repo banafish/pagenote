@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -231,6 +232,21 @@ class _TrendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Web 端 CanvasKit 对中文回退字体的宽度测量约为实际一半，
+    // 按固有宽度分配分段会把「30 天」挤到换行；改为占满剩余
+    // 空间并按约束均分宽度，绕开文字测量（仅 web，原生保持原样）。
+    final rangeButton = SegmentedButton<int>(
+      expandedInsets: kIsWeb ? EdgeInsets.zero : null,
+      segments: const [
+        ButtonSegment(value: 7, label: Text('7 天')),
+        ButtonSegment(value: 30, label: Text('30 天')),
+        ButtonSegment(value: 90, label: Text('90 天')),
+      ],
+      selected: {days},
+      onSelectionChanged: (set) => onChanged(set.first),
+      showSelectedIcon: false,
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+    );
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       decoration: BoxDecoration(
@@ -253,17 +269,7 @@ class _TrendCard extends StatelessWidget {
                   ),
                 ),
               ),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 7, label: Text('7 天')),
-                  ButtonSegment(value: 30, label: Text('30 天')),
-                  ButtonSegment(value: 90, label: Text('90 天')),
-                ],
-                selected: {days},
-                onSelectionChanged: (set) => onChanged(set.first),
-                showSelectedIcon: false,
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              ),
+              if (kIsWeb) Expanded(child: rangeButton) else rangeButton,
             ],
           ),
           const SizedBox(height: 14),
