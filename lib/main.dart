@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -9,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'database/configure_database.dart';
 import 'pages/editor_page.dart';
+import 'pages/landing_page.dart';
 import 'providers/custom_sticker_provider.dart';
 import 'providers/journal_provider.dart';
 import 'providers/settings_provider.dart';
@@ -141,7 +143,11 @@ class PageNoteApp extends StatelessWidget {
               }
               return null;
             },
-            home: const LockGate(child: SharePackGate(child: RootShell())),
+            home: kIsWeb
+                // Web 端先展示品牌主页，「开始使用」后再进入应用本体；
+                // 原生端保持直接进入应用。
+                ? const LandingPage()
+                : const LockGate(child: SharePackGate(child: RootShell())),
           );
         },
       ),
