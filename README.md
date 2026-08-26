@@ -68,7 +68,10 @@ flutter build web --release
 
 Web 品牌页的 GitHub / 客户端下载入口通过 `--dart-define` 在构建期注入，
 未注入的入口会自动隐藏。Cloudflare Pages 构建命令使用
-`bash tool/build_web.sh`（输出目录 `build/web`），脚本会读取下列同名
+`bash tool/build_web.sh`（输出目录 `build/web`）；Pages 构建机没有预装
+Flutter，脚本会在 PATH 上找不到 flutter 时自动下载官方 Linux 稳定版
+SDK（默认钉住 3.44.6，可用环境变量 `FLUTTER_VERSION` 覆盖），因此
+每次 CI 构建会多花几分钟，属预期行为。脚本会读取下列同名
 环境变量（Pages 控制台 Settings → Environment variables 配置）并透传：
 
 | 环境变量 | 说明 |
@@ -77,6 +80,7 @@ Web 品牌页的 GitHub / 客户端下载入口通过 `--dart-define` 在构建�
 | `PAGENOTE_GITHUB_RELEASES` | GitHub Releases 下载页 |
 | `PAGENOTE_DOWNLOAD_ANDROID` | 安卓客户端直接下载地址（APK） |
 | `PAGENOTE_DOWNLOAD_PC` | PC 客户端直接下载地址（Windows） |
+| `FLUTTER_VERSION` | 覆盖 CI 自动安装的 Flutter 版本（默认 3.44.6） |
 
 本地带外链预览：`flutter run -d chrome --dart-define=PAGENOTE_GITHUB_REPO=https://github.com/xxx/pagenote ...`。
 
