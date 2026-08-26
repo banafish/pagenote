@@ -675,16 +675,24 @@ class _LandingPageState extends State<LandingPage>
             children: [
               Row(
                 children: [
-                  Text(
-                    dateLabel,
-                    style: const TextStyle(
-                      fontFamily: 'LXGW WenKai',
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: _inkSoft,
+                  // 正文字号放大时纸页宽度固定，日期文本可能放不下，需可收缩。
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        dateLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'LXGW WenKai',
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: _inkSoft,
+                        ),
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 6),
                   chip('☀️ 晴'),
                   const SizedBox(width: 6),
                   chip('😊 开心'),
@@ -851,7 +859,10 @@ class _LandingPageState extends State<LandingPage>
     final cols = width >= 1060 ? 3 : (width >= 620 ? 2 : 1);
     final titleSize = math.max(25.0, math.min(width * 0.045, 32.0));
 
-    // 按 cols 分行，用 IntrinsicHeight 保证同排卡片等高且不溢出。
+    // 按 cols 分行，卡片取自然高度、顶对齐。
+    // 不能用 IntrinsicHeight + stretch 强制等高：Web 端字体异步加载完成后，
+    // 文本度量变化无法穿过紧高度约束的重布局边界，首帧（字体未就绪时）偏矮
+    // 的行高会被永久冻结，导致卡片内容溢出一行。
     final rows = <List<_Feature>>[];
     for (var i = 0; i < _featureCards.length; i += cols) {
       rows.add(
@@ -899,16 +910,14 @@ class _LandingPageState extends State<LandingPage>
               const SizedBox(height: 48),
               for (var r = 0; r < rows.length; r++) ...[
                 if (r > 0) const SizedBox(height: 18),
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var c = 0; c < rows[r].length; c++) ...[
-                        if (c > 0) const SizedBox(width: 18),
-                        Expanded(child: _FeatureCard(feature: rows[r][c])),
-                      ],
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var c = 0; c < rows[r].length; c++) ...[
+                      if (c > 0) const SizedBox(width: 18),
+                      Expanded(child: _FeatureCard(feature: rows[r][c])),
                     ],
-                  ),
+                  ],
                 ),
               ],
             ],
