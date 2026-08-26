@@ -60,8 +60,12 @@ flutter run -d chrome
 
 ```bash
 flutter build windows --release
-flutter build apk --release
 flutter build web --release
+
+# Android：先出分架构包（推荐分发，体积约为通用包一半），
+# 再出全 ABI 通用包兜底模拟器与未适配机型
+flutter build apk --release --split-per-abi
+flutter build apk --release
 ```
 
 ### Web 部署（Cloudflare Pages）与品牌页外链
