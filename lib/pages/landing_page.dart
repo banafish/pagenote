@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../models/sticker_assets.dart';
+import '../utils/landing_links.dart';
+import '../utils/open_external_url.dart';
 import '../widgets/lock_gate.dart';
 import '../widgets/share_pack_gate.dart';
 
@@ -75,6 +77,7 @@ class _LandingPageState extends State<LandingPage>
             _buildNav(scheme, wide, sidePad),
             _buildHero(scheme, wide, sidePad),
             _buildFeatures(scheme, wide, sidePad),
+            if (_hasExternalLinks) _buildDownload(scheme, wide, sidePad),
             _buildFooter(scheme),
           ],
         ),
@@ -946,6 +949,213 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
+  // ----------------------------------------------------------------- 下载
+
+  /// 任一外链经 `--dart-define` 注入时才展示下载区块（本地默认构建隐藏）。
+  bool get _hasExternalLinks =>
+      kLandingGithubRepoUrl.isNotEmpty ||
+      kLandingGithubReleasesUrl.isNotEmpty ||
+      kLandingDownloadAndroidUrl.isNotEmpty ||
+      kLandingDownloadPcUrl.isNotEmpty;
+
+  Widget _buildDownload(ColorScheme scheme, bool wide, double sidePad) {
+    final width = MediaQuery.sizeOf(context).width;
+    final titleSize = math.max(25.0, math.min(width * 0.045, 32.0));
+
+    final cards = <Widget>[
+      if (kLandingDownloadAndroidUrl.isNotEmpty)
+        _downloadCard(
+          scheme,
+          icon: Icons.smartphone_rounded,
+          title: '安卓版',
+          subtitle: 'APK 安装包',
+          url: kLandingDownloadAndroidUrl,
+        ),
+      if (kLandingDownloadPcUrl.isNotEmpty)
+        _downloadCard(
+          scheme,
+          icon: Icons.desktop_windows_rounded,
+          title: 'Windows 版',
+          subtitle: '桌面安装包',
+          url: kLandingDownloadPcUrl,
+        ),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: sidePad,
+        vertical: wide ? 84.0 : 60.0,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1160),
+          child: Column(
+            children: [
+              _sectionPill(scheme, '客户端下载'),
+              const SizedBox(height: 16),
+              Text(
+                '把拾页装进你的设备',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: titleSize,
+                  fontWeight: FontWeight.w800,
+                  height: 1.3,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '安卓与 Windows 客户端同样免费、数据留在本机，'
+                '也可以现在就在浏览器里开始记录。',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'LXGW WenKai',
+                  fontSize: 15,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              if (cards.isNotEmpty) ...[
+                const SizedBox(height: 44),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: cards.length == 2 && width >= 620
+                        ? Row(
+                            children: [
+                              Expanded(child: cards[0]),
+                              const SizedBox(width: 18),
+                              Expanded(child: cards[1]),
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              for (var i = 0; i < cards.length; i++) ...[
+                                if (i > 0) const SizedBox(height: 18),
+                                cards[i],
+                              ],
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+              if (kLandingGithubRepoUrl.isNotEmpty ||
+                  kLandingGithubReleasesUrl.isNotEmpty) ...[
+                const SizedBox(height: 30),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (kLandingGithubRepoUrl.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () =>
+                            openExternalUrl(kLandingGithubRepoUrl),
+                        icon: const Icon(Icons.code_rounded, size: 18),
+                        label: const Text('GitHub 仓库'),
+                      ),
+                    if (kLandingGithubRepoUrl.isNotEmpty &&
+                        kLandingGithubReleasesUrl.isNotEmpty)
+                      const SizedBox(width: 8),
+                    if (kLandingGithubReleasesUrl.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () =>
+                            openExternalUrl(kLandingGithubReleasesUrl),
+                        icon: const Icon(Icons.download_rounded, size: 18),
+                        label: const Text('GitHub Releases'),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 平台下载卡片：图标 + 平台名 + 直链下载按钮。
+  Widget _downloadCard(
+    ColorScheme scheme, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String url,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(26),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(icon, color: scheme.primary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => openExternalUrl(url),
+              icon: const Icon(Icons.download_rounded, size: 19),
+              label: const Text('直接下载'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ------------------------------------------------------------------ 页脚
 
   Widget _buildFooter(ColorScheme scheme) {
@@ -973,6 +1183,27 @@ class _LandingPageState extends State<LandingPage>
               color: scheme.onSurfaceVariant,
             ),
           ),
+          if (kLandingGithubRepoUrl.isNotEmpty ||
+              kLandingGithubReleasesUrl.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (kLandingGithubRepoUrl.isNotEmpty)
+                  _footerLink(scheme, 'GitHub 仓库', kLandingGithubRepoUrl),
+                if (kLandingGithubRepoUrl.isNotEmpty &&
+                    kLandingGithubReleasesUrl.isNotEmpty)
+                  _footerChipDivider(scheme),
+                if (kLandingGithubReleasesUrl.isNotEmpty)
+                  _footerLink(
+                    scheme,
+                    'GitHub Releases',
+                    kLandingGithubReleasesUrl,
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 18),
           Text(
             'Flutter 构建 · 全部素材程序自绘 · 中文字体遵循 SIL OFL 开源许可',
@@ -994,6 +1225,33 @@ class _LandingPageState extends State<LandingPage>
       ),
     );
   }
+
+  /// 页脚小号文字链接。
+  Widget _footerLink(ColorScheme scheme, String label, String url) {
+    return TextButton(
+      onPressed: () => openExternalUrl(url),
+      style: TextButton.styleFrom(
+        foregroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+      ),
+      child: Text(label),
+    );
+  }
+
+  /// 页脚链接之间的「·」分隔点。
+  Widget _footerChipDivider(ColorScheme scheme) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Text(
+          '·',
+          style: TextStyle(
+            fontSize: 12.5,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+          ),
+        ),
+      );
 
   // ------------------------------------------------------------- 小组件封装
 

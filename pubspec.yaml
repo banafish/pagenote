@@ -87,6 +87,10 @@ dependencies:
   http: ^1.6.0
   idb_shim: ^2.9.8
 
+  # 品牌页外链新开标签页（Web DOM API）。此前已是依赖树中的传递依赖，
+  # 这里转为直接依赖以在 lib 中显式 import。
+  web: ^1.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

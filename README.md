@@ -64,6 +64,22 @@ flutter build apk --release
 flutter build web --release
 ```
 
+### Web 部署（Cloudflare Pages）与品牌页外链
+
+Web 品牌页的 GitHub / 客户端下载入口通过 `--dart-define` 在构建期注入，
+未注入的入口会自动隐藏。Cloudflare Pages 构建命令使用
+`bash tool/build_web.sh`（输出目录 `build/web`），脚本会读取下列同名
+环境变量（Pages 控制台 Settings → Environment variables 配置）并透传：
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `PAGENOTE_GITHUB_REPO` | GitHub 仓库地址 |
+| `PAGENOTE_GITHUB_RELEASES` | GitHub Releases 下载页 |
+| `PAGENOTE_DOWNLOAD_ANDROID` | 安卓客户端直接下载地址（APK） |
+| `PAGENOTE_DOWNLOAD_PC` | PC 客户端直接下载地址（Windows） |
+
+本地带外链预览：`flutter run -d chrome --dart-define=PAGENOTE_GITHUB_REPO=https://github.com/xxx/pagenote ...`。
+
 ## 📁 结构
 
 ```
