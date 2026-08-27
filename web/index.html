@@ -32,8 +32,125 @@
 
   <title>拾页 PageNote</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* 引擎首帧前的品牌加载页：全部内联、不依赖任何外部资源，弱网下也能即时渲染，
+       避免 Flutter 引擎初始化（下载 main.dart.js / CanvasKit / 字体）期间一片空白。
+       配色取自 AppTheme（浅 #FAF6F1 / 深 #16130F / 种子暖橘 #E8734A）。 */
+    #boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #faf6f1;
+      color: #6e604f;
+      font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif;
+      transition: opacity .3s ease;
+      user-select: none;
+    }
+    #boot-splash.done {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #boot-splash .badge {
+      width: 76px;
+      height: 76px;
+      padding: 7px;
+      box-sizing: border-box;
+      background: #fff;
+      border-radius: 24px;
+      border: 1px solid rgba(110, 96, 79, .18);
+      box-shadow: 0 8px 28px rgba(107, 84, 51, .14);
+      animation: boot-float 2.8s ease-in-out infinite;
+    }
+    #boot-splash .badge img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border-radius: 17px;
+    }
+    #boot-splash .name {
+      margin-top: 18px;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #43392d;
+    }
+    #boot-splash .spinner {
+      margin-top: 20px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2.5px solid rgba(232, 115, 74, .22);
+      border-top-color: #e8734a;
+      animation: boot-spin .85s linear infinite;
+    }
+    #boot-splash .tip {
+      margin-top: 12px;
+      font-size: 13px;
+      letter-spacing: .5px;
+    }
+    #boot-splash .slow {
+      opacity: 0;
+      transition: opacity .4s ease;
+    }
+    #boot-splash .slow.show {
+      opacity: .75;
+    }
+    @keyframes boot-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-7px); }
+    }
+    @keyframes boot-spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-color-scheme: dark) {
+      #boot-splash {
+        background: #16130f;
+        color: #a89a85;
+      }
+      #boot-splash .badge {
+        background: #221e18;
+        border-color: rgba(168, 154, 133, .25);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, .45);
+      }
+      #boot-splash .name {
+        color: #e8ddcc;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #boot-splash .badge,
+      #boot-splash .spinner {
+        animation: none;
+      }
+    }
+  </style>
 </head>
 <body>
+  <!-- Flutter 首帧渲染完成后由下方脚本淡出移除。 -->
+  <div id="boot-splash" role="status" aria-label="加载中">
+    <div class="badge"><img src="icons/Icon-192.png" alt="拾页图标"></div>
+    <div class="name">拾页</div>
+    <div class="spinner"></div>
+    <div class="tip">正在加载…</div>
+    <div class="tip slow" id="boot-slow">网络较慢，仍在加载，请稍候…</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('boot-splash');
+      if (!splash) return;
+      splash.classList.add('done');
+      setTimeout(function () { splash.remove(); }, 320);
+    });
+    // 弱网兜底：8 秒仍未收到首帧事件时亮出慢速提示，避免用户以为页面卡死。
+    setTimeout(function () {
+      var slow = document.getElementById('boot-slow');
+      if (slow) slow.classList.add('show');
+    }, 8000);
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
