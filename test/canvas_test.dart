@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -62,9 +63,7 @@ void main() {
       expect(freeText.rotation, -15);
       expect(freeText.opacity, 0.6);
 
-      final polaroid = restored.elements
-          .whereType<ImageElement>()
-          .first;
+      final polaroid = restored.elements.whereType<ImageElement>().first;
       expect(polaroid.path, '/tmp/a.jpg');
       expect(polaroid.mask, ImageMask.polaroid);
       expect(polaroid.radius, 0.05);
@@ -87,8 +86,11 @@ void main() {
       expect(decodeCanvas(''), isNull);
       expect(decodeCanvas('   '), isNull);
       expect(decodeCanvas('not json'), isNull);
-      expect(decodeCanvas('{"paper":"x","elements":[{"t":"bogus"}]}'), isNotNull,
-          reason: '未知元素类型被跳过,画布仍可解析');
+      expect(
+        decodeCanvas('{"paper":"x","elements":[{"t":"bogus"}]}'),
+        isNotNull,
+        reason: '未知元素类型被跳过,画布仍可解析',
+      );
       expect(
         decodeCanvas('{"paper":"x","elements":[{"t":"bogus"}]}')!.elements,
         isEmpty,
@@ -102,9 +104,10 @@ void main() {
         date: '2026-08-17',
         title: 't',
         content: 'c',
-        canvas: JournalCanvas(paperId: 'mist', elements: [
-          TextElement(text: 'hello', role: 'body'),
-        ]),
+        canvas: JournalCanvas(
+          paperId: 'mist',
+          elements: [TextElement(text: 'hello', role: 'body')],
+        ),
         createdAt: now,
         updatedAt: now,
       );
@@ -257,10 +260,10 @@ void main() {
       }
       for (final style in tapeStyles) {
         for (final color in tapePalette) {
-          TapePainter(style: style.id, color: Color(color)).paint(
-            canvas,
-            const Size(96, 28),
-          );
+          TapePainter(
+            style: style.id,
+            color: Color(color),
+          ).paint(canvas, const Size(96, 28));
         }
       }
       recorder.endRecording().dispose();
@@ -297,12 +300,51 @@ void main() {
       expect(resolvePaperEnd(mist, dark: true)!, isNot(mist.end));
     });
 
-    test('花样字体注册表：3 款开源中文字体（调研一阶段第 2 条）', () {
-      final families = appFonts.map((f) => f.family).toList();
-      expect(families, containsAll(['LXGW WenKai', 'Ma Shan Zheng', 'ZCOOL KuaiLe']));
+    test('花样字体注册表：10 款开源中文字体（NFR-08：family 只增不删）', () {
+      final custom = appFonts.where((f) => f.family.isNotEmpty).toList();
+      expect(custom, hasLength(10));
+      // 已随历史版本分发的 family 不得重命名或删除（素材与模板管理需求 NFR-08）。
+      final families = custom.map((f) => f.family).toList();
+      expect(
+        families,
+        containsAll([
+          'LXGW WenKai',
+          'Ma Shan Zheng',
+          'ZCOOL KuaiLe',
+          'ZCOOL XiaoWei',
+          'ZCOOL QingKe HuangYou',
+          'Long Cang',
+          'Zhi Mang Xing',
+          'Liu Jian Mao Cao',
+          'Smiley Sans',
+          'Zhuque Fangsong',
+        ]),
+      );
+      expect(
+        families.toSet(),
+        hasLength(families.length),
+        reason: 'family 不得重复',
+      );
       expect(fontByFamily('LXGW WenKai')!.name, '霞鹜文楷');
+      expect(fontByFamily('Smiley Sans')!.name, '得意黑');
       expect(fontByFamily(''), isNull, reason: '空串表示应用默认字体');
       expect(canvasFontFallback, isNotEmpty);
+      // 每款自定义字体都应指向真实存在的字体文件（与 pubspec 一致）。
+      for (final font in custom) {
+        expect(
+          font.asset,
+          endsWith('.ttf'),
+          reason: '${font.family} 的 asset 路径异常',
+        );
+        expect(
+          File(font.asset).existsSync(),
+          isTrue,
+          reason: '缺少字体文件 ${font.asset}',
+        );
+      }
+      // web 急加载名单必须是注册表的子集。
+      final all = families.toSet();
+      expect(webEagerFontFamilies.every(all.contains), isTrue);
     });
   });
 
@@ -334,7 +376,10 @@ void main() {
       final restored = JournalTemplate.fromMap(template.toMap());
       expect(restored.canvas, isNotNull);
       expect(restored.canvas!.paperId, template.canvas!.paperId);
-      expect(restored.canvas!.elements.length, template.canvas!.elements.length);
+      expect(
+        restored.canvas!.elements.length,
+        template.canvas!.elements.length,
+      );
     });
   });
 }

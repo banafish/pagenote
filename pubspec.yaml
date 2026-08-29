@@ -139,6 +139,27 @@ flutter:
     - family: ZCOOL KuaiLe
       fonts:
         - asset: fonts/ZCOOLKuaiLe-Regular.ttf
+    - family: ZCOOL XiaoWei
+      fonts:
+        - asset: fonts/ZCOOLXiaoWei-Regular.ttf
+    - family: ZCOOL QingKe HuangYou
+      fonts:
+        - asset: fonts/ZCOOLQingKeHuangYou-Regular.ttf
+    - family: Long Cang
+      fonts:
+        - asset: fonts/LongCang-Regular.ttf
+    - family: Liu Jian Mao Cao
+      fonts:
+        - asset: fonts/LiuJianMaoCao-Regular.ttf
+    - family: Zhi Mang Xing
+      fonts:
+        - asset: fonts/ZhiMangXing-Regular.ttf
+    - family: Smiley Sans
+      fonts:
+        - asset: fonts/SmileySans-Oblique.ttf
+    - family: Zhuque Fangsong
+      fonts:
+        - asset: fonts/ZhuqueFangsong-Regular.ttf
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

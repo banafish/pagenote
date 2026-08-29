@@ -149,9 +149,7 @@ class _LandingPageState extends State<LandingPage>
       decoration: BoxDecoration(
         color: isLight ? Colors.white : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(size * 0.32),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         boxShadow: [
           BoxShadow(
             color: scheme.shadow.withValues(alpha: 0.08),
@@ -175,16 +173,8 @@ class _LandingPageState extends State<LandingPage>
       children: [
         // 柔和色斑背景。
         Positioned(left: -150, top: -80, child: _blob(400, scheme.primary)),
-        Positioned(
-          right: -170,
-          top: 140,
-          child: _blob(480, scheme.tertiary),
-        ),
-        Positioned(
-          left: 40,
-          bottom: -180,
-          child: _blob(340, scheme.secondary),
-        ),
+        Positioned(right: -170, top: 140, child: _blob(480, scheme.tertiary)),
+        Positioned(left: 40, bottom: -180, child: _blob(340, scheme.secondary)),
         Padding(
           padding: EdgeInsets.fromLTRB(
             sidePad,
@@ -427,11 +417,10 @@ class _LandingPageState extends State<LandingPage>
       style: buttonStyle,
     );
     if (wide) {
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        primary,
-        const SizedBox(width: 14),
-        secondary,
-      ]);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [primary, const SizedBox(width: 14), secondary],
+      );
     }
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -442,29 +431,25 @@ class _LandingPageState extends State<LandingPage>
 
   Widget _hintRow(ColorScheme scheme, bool wide) {
     Widget item(String text) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.check_circle_rounded,
-              size: 14,
-              color: scheme.primary.withValues(alpha: 0.8),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 13,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
-              ),
-            ),
-          ],
-        );
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.check_circle_rounded,
+          size: 14,
+          color: scheme.primary.withValues(alpha: 0.8),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+          ),
+        ),
+      ],
+    );
 
-    final items = [
-      item('无需注册'),
-      item('免费无广告'),
-      item('离线可用'),
-    ];
+    final items = [item('无需注册'), item('免费无广告'), item('离线可用')];
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -475,39 +460,36 @@ class _LandingPageState extends State<LandingPage>
         items[2],
       ],
     );
-    return wide
-        ? row
-        : Center(
-            child: row,
-          );
+    return wide ? row : Center(child: row);
   }
 
   Widget _statsRow(ColorScheme scheme, bool wide) {
     Widget stat(String number, String label) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment:
-              wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-          children: [
-            Text(
-              number,
-              style: const TextStyle(
-                fontFamily: 'LXGW WenKai',
-                fontSize: 25,
-                fontWeight: FontWeight.w700,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                letterSpacing: 0.5,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
-              ),
-            ),
-          ],
-        );
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: wide
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Text(
+          number,
+          style: const TextStyle(
+            fontFamily: 'LXGW WenKai',
+            fontSize: 25,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            letterSpacing: 0.5,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+          ),
+        ),
+      ],
+    );
 
     final stats = [
       stat('81+', '矢量贴纸'),
@@ -517,10 +499,10 @@ class _LandingPageState extends State<LandingPage>
     ];
 
     Widget separator() => Container(
-          width: 1,
-          height: 30,
-          color: scheme.outlineVariant.withValues(alpha: 0.6),
-        );
+      width: 1,
+      height: 30,
+      color: scheme.outlineVariant.withValues(alpha: 0.6),
+    );
 
     final row = Row(
       mainAxisSize: MainAxisSize.min,
@@ -540,11 +522,7 @@ class _LandingPageState extends State<LandingPage>
         stats[3],
       ],
     );
-    return wide
-        ? row
-        : Center(
-            child: FittedBox(child: row),
-          );
+    return wide ? row : Center(child: FittedBox(child: row));
   }
 
   // ------------------------------------------------------------ 手账页样张
@@ -552,7 +530,9 @@ class _LandingPageState extends State<LandingPage>
   /// 右侧展示区：一张「正在书写的手账页」，叠加拍立得与便利贴，
   /// 全部由应用内置素材绘制器拼贴而成，随呼吸轻轻漂浮。
   Widget _mockup(ColorScheme scheme, bool wide) {
-    final pw = wide ? 348.0 : math.min(352.0, MediaQuery.sizeOf(context).width - 88);
+    final pw = wide
+        ? 348.0
+        : math.min(352.0, MediaQuery.sizeOf(context).width - 88);
     final compact = !wide;
 
     return AnimatedBuilder(
@@ -570,10 +550,7 @@ class _LandingPageState extends State<LandingPage>
                 dy: 7,
                 dx: 3,
                 phase: 1.4,
-                child: Transform.rotate(
-                  angle: -0.13,
-                  child: _polaroid(),
-                ),
+                child: Transform.rotate(angle: -0.13, child: _polaroid()),
               ),
             ),
             // 右下方：便利贴。
@@ -584,10 +561,7 @@ class _LandingPageState extends State<LandingPage>
                 dy: 8,
                 dx: 3,
                 phase: 3.9,
-                child: Transform.rotate(
-                  angle: 0.1,
-                  child: _stickyNote(),
-                ),
+                child: Transform.rotate(angle: 0.1, child: _stickyNote()),
               ),
             ),
             // 主手账纸。
@@ -643,16 +617,13 @@ class _LandingPageState extends State<LandingPage>
     final dateLabel = '${now.month}月${now.day}日 · ${weeks[now.weekday - 1]}';
 
     Widget chip(String text) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-            color: _paperChip,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 11, color: _inkSoft),
-          ),
-        );
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: _paperChip,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(text, style: const TextStyle(fontSize: 11, color: _inkSoft)),
+    );
 
     return Stack(
       clipBehavior: Clip.none,
@@ -790,18 +761,11 @@ class _LandingPageState extends State<LandingPage>
             ),
             child: Stack(
               children: [
-                Positioned(
-                  right: 14,
-                  top: 12,
-                  child: _sticker('sun', 34),
-                ),
+                Positioned(right: 14, top: 12, child: _sticker('sun', 34)),
                 Positioned(
                   left: 12,
                   bottom: 10,
-                  child: Opacity(
-                    opacity: 0.95,
-                    child: _sticker('wave', 44),
-                  ),
+                  child: Opacity(opacity: 0.95, child: _sticker('wave', 44)),
                 ),
               ],
             ),
@@ -809,7 +773,11 @@ class _LandingPageState extends State<LandingPage>
           const SizedBox(height: 6),
           const Text(
             '周末的海边',
-            style: TextStyle(fontFamily: 'ZCOOL KuaiLe', fontSize: 12.5, color: _ink),
+            style: TextStyle(
+              fontFamily: 'ZCOOL KuaiLe',
+              fontSize: 12.5,
+              color: _ink,
+            ),
           ),
         ],
       ),
@@ -1047,8 +1015,7 @@ class _LandingPageState extends State<LandingPage>
                   children: [
                     if (kLandingGithubRepoUrl.isNotEmpty)
                       TextButton.icon(
-                        onPressed: () =>
-                            openExternalUrl(kLandingGithubRepoUrl),
+                        onPressed: () => openExternalUrl(kLandingGithubRepoUrl),
                         icon: const Icon(Icons.code_rounded, size: 18),
                         label: const Text('GitHub 仓库'),
                       ),
@@ -1085,9 +1052,7 @@ class _LandingPageState extends State<LandingPage>
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         boxShadow: [
           BoxShadow(
             color: scheme.shadow.withValues(alpha: 0.05),
@@ -1243,15 +1208,15 @@ class _LandingPageState extends State<LandingPage>
 
   /// 页脚链接之间的「·」分隔点。
   Widget _footerChipDivider(ColorScheme scheme) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Text(
-          '·',
-          style: TextStyle(
-            fontSize: 12.5,
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
-          ),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: Text(
+      '·',
+      style: TextStyle(
+        fontSize: 12.5,
+        color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+      ),
+    ),
+  );
 
   // ------------------------------------------------------------- 小组件封装
 
@@ -1309,8 +1274,10 @@ class _LandingPageState extends State<LandingPage>
       CustomPaint(size: Size.square(size), painter: StickerPainter(id));
 
   /// 和纸胶带条。
-  Widget _tape(double w, double h, String style, Color color) =>
-      CustomPaint(size: Size(w, h), painter: TapePainter(style: style, color: color));
+  Widget _tape(double w, double h, String style, Color color) => CustomPaint(
+    size: Size(w, h),
+    painter: TapePainter(style: style, color: color),
+  );
 }
 
 /// 功能卡片数据。
@@ -1361,7 +1328,7 @@ const List<_Feature> _featureCards = [
   (
     icon: Icons.nightlight_round,
     title: '舒适夜间书写',
-    desc: '深浅双主题、6 种强调色与 3 款花样字体，深夜的记录也温柔护眼。',
+    desc: '深浅双主题、6 种强调色与 10 款花样字体，深夜的记录也温柔护眼。',
     bg: Color(0xFFFAE8EF),
     fg: Color(0xFFB4576B),
   ),

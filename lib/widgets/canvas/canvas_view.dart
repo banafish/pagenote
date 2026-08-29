@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../../models/canvas_page.dart';
 import '../../models/decoration.dart';
 import '../../models/journal_entry.dart';
 import '../../models/sticker_assets.dart';
+import '../../services/font_loader_service.dart';
 import '../../utils/date_utils.dart';
 import '../stored_image.dart';
 
@@ -33,44 +35,49 @@ class CanvasView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final pageWidth = constraints.maxWidth;
-        final pageHeight = canvas.effectiveHeight * pageWidth;
-        final paper = paperById(canvas.paperId);
+    // web 端非急加载字体经 AppFontLoader 注册完成后重绘，
+    // 使按需字体从兜底字体切换到真字体（原生注册在启动期，无此需求）。
+    return AnimatedBuilder(
+      animation: AppFontLoader.instance,
+      builder: (context, _) => LayoutBuilder(
+        builder: (context, constraints) {
+          final pageWidth = constraints.maxWidth;
+          final pageHeight = canvas.effectiveHeight * pageWidth;
+          final paper = paperById(canvas.paperId);
 
-        return SizedBox(
-          width: pageWidth,
-          height: pageHeight,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: paper == null
-                    ? const ColoredBox(color: Colors.white)
-                    : CustomPaint(
-                        painter: PaperPainter(paper),
-                        size: Size(pageWidth, pageHeight),
+          return SizedBox(
+            width: pageWidth,
+            height: pageHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: paper == null
+                      ? const ColoredBox(color: Colors.white)
+                      : CustomPaint(
+                          painter: PaperPainter(paper),
+                          size: Size(pageWidth, pageHeight),
+                        ),
+                ),
+                for (final element in canvas.elements)
+                  Positioned(
+                    left: element.x * pageWidth,
+                    top: element.y * pageWidth,
+                    width: element.w * pageWidth,
+                    height: _elementHeight(element, pageWidth),
+                    child: Opacity(
+                      opacity: element.opacity.clamp(0.0, 1.0),
+                      child: Transform.rotate(
+                        angle: element.rotation * math.pi / 180,
+                        child: _buildElement(context, element, pageWidth),
                       ),
-              ),
-              for (final element in canvas.elements)
-                Positioned(
-                  left: element.x * pageWidth,
-                  top: element.y * pageWidth,
-                  width: element.w * pageWidth,
-                  height: _elementHeight(element, pageWidth),
-                  child: Opacity(
-                    opacity: element.opacity.clamp(0.0, 1.0),
-                    child: Transform.rotate(
-                      angle: element.rotation * math.pi / 180,
-                      child: _buildElement(context, element, pageWidth),
                     ),
                   ),
-                ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -86,18 +93,15 @@ class CanvasView extends StatelessWidget {
     return switch (e) {
       TextElement() => _TextElementView(element: e, pw: pw),
       ImageElement() => _ImageElementView(
-          element: e,
-          pw: pw,
-          placeholder: placeholderImages,
-        ),
+        element: e,
+        pw: pw,
+        placeholder: placeholderImages,
+      ),
       StickerElement() => _StickerElementView(element: e, pw: pw),
       TapeElement() => CustomPaint(
-          size: Size(e.w * pw, e.h * pw),
-          painter: TapePainter(
-            style: e.style,
-            color: Color(e.color),
-          ),
-        ),
+        size: Size(e.w * pw, e.h * pw),
+        painter: TapePainter(style: e.style, color: Color(e.color)),
+      ),
       StructuredElement() => _ComponentView(element: e, entry: entry, pw: pw),
     };
   }
@@ -112,6 +116,9 @@ class _TextElementView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // web 端非急加载字体可能尚未注册：触发按需加载，CanvasView 根部的
+    // AnimatedBuilder 会在注册完成后重绘，从兜底字体切换到真字体。
+    unawaited(AppFontLoader.instance.ensure(element.fontFamily));
     final align = switch (element.align) {
       1 => TextAlign.center,
       2 => TextAlign.right,
@@ -125,8 +132,9 @@ class _TextElementView extends StatelessWidget {
           height: element.lineHeight,
           color: Color(element.color),
           fontFamily: element.fontFamily.isEmpty ? null : element.fontFamily,
-          fontFamilyFallback:
-              element.fontFamily.isEmpty ? null : canvasFontFallback,
+          fontFamilyFallback: element.fontFamily.isEmpty
+              ? null
+              : canvasFontFallback,
           fontWeight: element.bold ? FontWeight.w700 : FontWeight.w400,
         ),
         textAlign: align,
@@ -160,36 +168,36 @@ class _ImageElementView extends StatelessWidget {
     );
     return switch (element.mask) {
       ImageMask.circle => AspectRatio(
-          aspectRatio: 1,
-          child: ClipOval(child: image),
-        ),
+        aspectRatio: 1,
+        child: ClipOval(child: image),
+      ),
       ImageMask.polaroid => Container(
-          padding: EdgeInsets.only(
-            left: 0.02 * pw,
-            right: 0.02 * pw,
-            top: 0.02 * pw,
-            bottom: 0.07 * pw,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 0.01 * pw,
-                offset: Offset(0, 0.004 * pw),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(1.5),
-            child: AspectRatio(aspectRatio: 1, child: image),
-          ),
+        padding: EdgeInsets.only(
+          left: 0.02 * pw,
+          right: 0.02 * pw,
+          top: 0.02 * pw,
+          bottom: 0.07 * pw,
         ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 0.01 * pw,
+              offset: Offset(0, 0.004 * pw),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(1.5),
+          child: AspectRatio(aspectRatio: 1, child: image),
+        ),
+      ),
       ImageMask.none => ClipRRect(
-          borderRadius: BorderRadius.circular(element.radius * pw),
-          child: image,
-        ),
+        borderRadius: BorderRadius.circular(element.radius * pw),
+        child: image,
+      ),
     };
   }
 
@@ -198,10 +206,7 @@ class _ImageElementView extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: scheme.outlineVariant,
-          width: 1.2,
-        ),
+        border: Border.all(color: scheme.outlineVariant, width: 1.2),
       ),
       alignment: Alignment.center,
       child: placeholder
@@ -283,7 +288,11 @@ class _StickerElementView extends StatelessWidget {
 /// 结构化组件元素：日期 / 心情 / 天气 / 活动。
 /// 数据实时读自条目结构化字段 —— 统计页照常可用（差异化定位）。
 class _ComponentView extends StatelessWidget {
-  const _ComponentView({required this.element, required this.entry, required this.pw});
+  const _ComponentView({
+    required this.element,
+    required this.entry,
+    required this.pw,
+  });
 
   final StructuredElement element;
   final JournalEntry entry;

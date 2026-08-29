@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +9,7 @@ import '../../models/sticker_assets.dart';
 import '../../pages/library_page.dart';
 import '../../providers/custom_sticker_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/font_loader_service.dart';
 import '../../utils/sticker_store.dart';
 import '../pack_cover.dart';
 import '../stored_image.dart';
@@ -216,7 +216,8 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
               children: [
                 _header(scheme),
                 _searchField(scheme),
-                if (_query.isEmpty && (favorites.isNotEmpty || recent.isNotEmpty))
+                if (_query.isEmpty &&
+                    (favorites.isNotEmpty || recent.isNotEmpty))
                   _quickStrip(favorites, recent),
                 if (!_collapsed) ...[
                   if (_query.isEmpty)
@@ -330,8 +331,8 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
   /// 两侧都空则整条不出场（build 里已挡）。
   Widget _quickStrip(List<String> favorites, List<String> recent) {
     final scheme = Theme.of(context).colorScheme;
-    final showFavorites = favorites.isNotEmpty &&
-        (recent.isEmpty || _showFavorites);
+    final showFavorites =
+        favorites.isNotEmpty && (recent.isEmpty || _showFavorites);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -849,9 +850,9 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
       children: [
         _minePackStrip(packs),
         Expanded(
-              child: stickers.isEmpty
-                  ? _mineEmpty(scheme)
-                  : SingleChildScrollView(
+          child: stickers.isEmpty
+              ? _mineEmpty(scheme)
+              : SingleChildScrollView(
                   // 与贴纸页签同一套分节样式：标题 + 收缩网格；
                   // 不在任何包里的贴纸（「我的素材」）固定放在最顶上一节。
                   // 整列直建（不懒加载）,预览条点击才能定位到任意分节。
@@ -1001,11 +1002,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
             child: hasCover
                 ? SizedBox.expand(child: cover)
                 : Center(
-                    child: Icon(
-                      icon,
-                      size: 16,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    child: Icon(icon, size: 16, color: scheme.onSurfaceVariant),
                   ),
           ),
         ),
@@ -1120,9 +1117,7 @@ class _StickerPaletteSheetState extends State<_StickerPaletteSheet>
           // 「我的」分节网格整列直建,解码宽度钉在格子量级,
           // 避免大量素材一次性全尺寸解码。
           image: ResizeImage(
-            storedImageProvider(
-              StickerStore.pathOf(sticker.id, sticker.ext),
-            ),
+            storedImageProvider(StickerStore.pathOf(sticker.id, sticker.ext)),
             width: 220,
             policy: ResizeImagePolicy.exact,
           ),
@@ -1328,7 +1323,8 @@ Widget _ratioSection(
             onSelected: (_) async {
               final height = await showDialog<double>(
                 context: context,
-                builder: (_) => _CustomRatioDialog(currentHeight: currentHeight),
+                builder: (_) =>
+                    _CustomRatioDialog(currentHeight: currentHeight),
               );
               if (height == null || !context.mounted) return;
               Navigator.pop(context, (paper: currentPaper, height: height));
@@ -1393,8 +1389,9 @@ class _CustomRatioDialogState extends State<_CustomRatioDialog> {
     var preview = '请输入大于 0 的宽和高';
     if (clamped != null) {
       final (w, h) = _simplestRatio(clamped);
-      final orientation =
-          (clamped - 1).abs() < 0.01 ? '方形' : (clamped > 1 ? '竖版' : '横版');
+      final orientation = (clamped - 1).abs() < 0.01
+          ? '方形'
+          : (clamped > 1 ? '竖版' : '横版');
       preview = '约为 $w:$h $orientation';
       if ((clamped - raw!).abs() > 1e-9) preview += '（已限制在 0.5–6 倍页宽内）';
     }
@@ -1448,10 +1445,7 @@ class _CustomRatioDialogState extends State<_CustomRatioDialog> {
             const SizedBox(height: 12),
             Text(
               preview,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 4),
             Text(
@@ -1540,10 +1534,8 @@ Widget _paperSwatch(
   final scheme = Theme.of(context).colorScheme;
   final selected = paper == null ? current.isEmpty : current == paper.id;
   return GestureDetector(
-    onTap: () => Navigator.pop(
-      context,
-      (paper: paper?.id ?? '', height: currentHeight),
-    ),
+    onTap: () =>
+        Navigator.pop(context, (paper: paper?.id ?? '', height: currentHeight)),
     child: Tooltip(
       message: paper?.name ?? '无',
       child: AnimatedContainer(
@@ -1615,120 +1607,137 @@ class _TextElementDialogState extends State<_TextElementDialog> {
     final e = widget.element;
     return AlertDialog(
       title: const Text('编辑文字'),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: _controller,
-                maxLines: 4,
-                minLines: 2,
-                decoration: const InputDecoration(hintText: '写点什么…'),
-                style: TextStyle(
-                  fontFamily: e.fontFamily.isEmpty ? null : e.fontFamily,
-                  fontFamilyFallback: canvasFontFallback,
+      // web 端按需字体注册完成后重绘，文字框与字体芯片切换到真字体。
+      content: AnimatedBuilder(
+        animation: AppFontLoader.instance,
+        builder: (context, _) => SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _controller,
+                  maxLines: 4,
+                  minLines: 2,
+                  decoration: const InputDecoration(hintText: '写点什么…'),
+                  style: TextStyle(
+                    fontFamily: e.fontFamily.isEmpty ? null : e.fontFamily,
+                    fontFamilyFallback: canvasFontFallback,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                '花样字体',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: scheme.onSurfaceVariant,
+                const SizedBox(height: 14),
+                Text(
+                  '花样字体',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final font in appFonts)
-                    ChoiceChip(
-                      label: Text(
-                        font.name,
-                        style: TextStyle(
-                          fontFamily: font.family.isEmpty ? null : font.family,
-                          fontFamilyFallback: canvasFontFallback,
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final font in appFonts)
+                      ChoiceChip(
+                        label: Text(
+                          font.name,
+                          style: TextStyle(
+                            fontFamily: font.family.isEmpty
+                                ? null
+                                : font.family,
+                            fontFamilyFallback: canvasFontFallback,
+                          ),
                         ),
+                        selected: e.fontFamily == font.family,
+                        onSelected: (_) {
+                          setState(() => e.fontFamily = font.family);
+                          // web 端按需字体下载完成后重绘文字框与画布。
+                          AppFontLoader.instance.ensure(font.family).then((_) {
+                            if (mounted) setState(() {});
+                          });
+                        },
                       ),
-                      selected: e.fontFamily == font.family,
-                      onSelected: (_) =>
-                          setState(() => e.fontFamily = font.family),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  const Text('字号'),
-                  Expanded(
-                    child: Slider(
-                      value: (e.fontScale * 400).clamp(10, 34),
-                      min: 10,
-                      max: 34,
-                      divisions: 24,
-                      label: '${(e.fontScale * 400).round()}',
-                      onChanged: (v) => setState(() => e.fontScale = v / 400),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: e.bold ? '取消加粗' : '加粗',
-                    isSelected: e.bold,
-                    icon: const Icon(Icons.format_bold_rounded),
-                    onPressed: () => setState(() => e.bold = !e.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '墨色',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: scheme.onSurfaceVariant,
+                  ],
                 ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (final color in textInkColors)
-                    GestureDetector(
-                      onTap: () => setState(() => e.color = color),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: Color(color),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: e.color == color
-                                ? scheme.primary
-                                : Colors.transparent,
-                            width: 3,
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Text('字号'),
+                    Expanded(
+                      child: Slider(
+                        value: (e.fontScale * 400).clamp(10, 34),
+                        min: 10,
+                        max: 34,
+                        divisions: 24,
+                        label: '${(e.fontScale * 400).round()}',
+                        onChanged: (v) => setState(() => e.fontScale = v / 400),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: e.bold ? '取消加粗' : '加粗',
+                      isSelected: e.bold,
+                      icon: const Icon(Icons.format_bold_rounded),
+                      onPressed: () => setState(() => e.bold = !e.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '墨色',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final color in textInkColors)
+                      GestureDetector(
+                        onTap: () => setState(() => e.color = color),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Color(color),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: e.color == color
+                                  ? scheme.primary
+                                  : Colors.transparent,
+                              width: 3,
+                            ),
                           ),
                         ),
                       ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 0,
+                      icon: Icon(Icons.format_align_left),
                     ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, icon: Icon(Icons.format_align_left)),
-                  ButtonSegment(
-                    value: 1,
-                    icon: Icon(Icons.format_align_center),
-                  ),
-                  ButtonSegment(value: 2, icon: Icon(Icons.format_align_right)),
-                ],
-                selected: {e.align},
-                onSelectionChanged: (s) => setState(() => e.align = s.first),
-              ),
-            ],
+                    ButtonSegment(
+                      value: 1,
+                      icon: Icon(Icons.format_align_center),
+                    ),
+                    ButtonSegment(
+                      value: 2,
+                      icon: Icon(Icons.format_align_right),
+                    ),
+                  ],
+                  selected: {e.align},
+                  onSelectionChanged: (s) => setState(() => e.align = s.first),
+                ),
+              ],
+            ),
           ),
         ),
       ),
