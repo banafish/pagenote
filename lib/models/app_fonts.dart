@@ -58,13 +58,20 @@ const int fontPackVersion = 1;
 /// 保持一致，test/font_packaging_test.dart 校验。
 const bundledFontAssets = {'fonts/LXGWWenKaiLite-Regular.ttf'};
 
+/// web 落地页专用霞鹜文楷子集（tool/make_landing_font_subset.py 生成并
+/// 入库）：落地页文案固定，只含其出现的字符约 236KB；完整字库仍随包部署，
+/// 编辑器内由 AppFontLoader 首次使用时经 rootBundle 补注册。构建期由
+/// tool/strip_web_font_manifest.dart 换入 FontManifest。
+const landingSubsetFontAsset = 'fonts/LXGWWenKaiLite-LandingSubset.ttf';
+
 /// web 端随 FontManifest 急加载的字体：web 引擎初始化会等 FontManifest 里
-/// 全部字体下载完才出首帧，只保留落地页与内置模板在首帧就要用的这三款；
-/// 其余在构建期从 FontManifest 剥离（tool/strip_web_font_manifest.dart），
-/// 运行时由 AppFontLoader 首次使用时按需注册。原生端 Windows 与 Android
-/// debug 全量随包静态注册；Android release 仅内置 [bundledFontAssets]，
-/// 其余同样由 AppFontLoader 首次使用时补齐。
-const webEagerFontFamilies = {'LXGW WenKai', 'Ma Shan Zheng', 'ZCOOL KuaiLe'};
+/// 全部字体下载完才出首帧，只保留落地页首帧要用的霞鹜文楷。构建期
+/// （tool/strip_web_font_manifest.dart）会把该族换指落地页专用子集
+/// [landingSubsetFontAsset]，其余字体在构建期从 FontManifest 剥离，运行时
+/// 由 AppFontLoader 首次使用时经 rootBundle 注册完整字库。原生端 Windows
+/// 与 Android debug 全量随包静态注册；Android release 仅内置
+/// [bundledFontAssets]，其余同样由 AppFontLoader 首次使用时补齐。
+const webEagerFontFamilies = {'LXGW WenKai'};
 
 AppFont? fontByFamily(String family) => family.isEmpty
     ? null

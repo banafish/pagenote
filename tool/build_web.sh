@@ -74,7 +74,7 @@ add_define PAGENOTE_DOWNLOAD_PC
 # bash 3.2（macOS 自带）下空数组 + set -u 会报错，用条件展开兜底。
 flutter build web --release "${defines[@]+${defines[@]}}"
 
-# web 引擎首帧前会全量下载 FontManifest 里的字体：剥离按需加载的
-# 花样字体（落地页与内置模板要用的三款保留），运行时由 AppFontLoader
-# 首次使用时经 rootBundle + FontLoader 注册。
+# web 引擎首帧前会全量下载 FontManifest 里的字体：剥离按需加载的花样
+# 字体，并把霞鹜文楷换指落地页专用子集，运行时由 AppFontLoader 首次
+# 使用时经 rootBundle + FontLoader 注册完整字库。
 dart run tool/strip_web_font_manifest.dart

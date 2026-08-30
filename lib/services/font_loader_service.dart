@@ -18,9 +18,9 @@ const fontBaseUrl = String.fromEnvironment('PAGENOTE_FONT_BASE_URL');
 /// 花样字体按需加载器。
 ///
 /// 各构建形态下的字体可用性：
-/// - Windows / Android debug / web 急加载三款：随包或 FontManifest 静态
-///   注册，直接可用；
-/// - web 非急加载：字体文件与部署同源，经 rootBundle 取回后注册；
+/// - Windows / Android debug：随包静态注册，直接可用；
+/// - web：FontManifest 只声明落地页子集（见 webEagerFontFamilies），画布
+///   与选择器要用的完整字库由 [ensure] 统一经 rootBundle 取回后补注册；
 /// - Android release：除 bundledFontAssets 外的字体已在打包期剔除
 ///   （android/app/build.gradle.kts），首次使用时从远端下载、写入本地缓存
 ///   并经 FontLoader 注册（动态注册不跨进程持久，之后每次启动从缓存补注册）。
@@ -72,7 +72,11 @@ class AppFontLoader extends ChangeNotifier {
     try {
       final font = fontByFamily(family);
       if (font == null || font.asset.isEmpty) return;
-      if (await _staticallyRegistered(family)) {
+      // web 上 FontManifest 只声明落地页子集（见 webEagerFontFamilies）：
+      // 画布渲染任意文本需要完整字库，统一走 fetcher 用 rootBundle 全量
+      // 补注册——与清单子集同族并存，字形一致，子集缺字由全量兜底；
+      // 原生端清单声明即完整字库，可短路。
+      if (!kIsWeb && await _staticallyRegistered(family)) {
         _loaded.add(family);
         return;
       }
@@ -96,7 +100,8 @@ class AppFontLoader extends ChangeNotifier {
   }
 
   /// family 是否已随包静态注册（FontManifest 里声明即注册）：
-  /// Windows / Android debug 全量，Android release 仅内置字体，web 急加载。
+  /// Windows / Android debug 全量，Android release 仅内置字体，web 仅
+  /// 落地页子集——故 web 端 [_load] 不走该短路，一律补注册完整字库。
   Future<bool> _staticallyRegistered(String family) async {
     final override = manifestFamiliesOverride;
     if (override != null) return override.contains(family);
