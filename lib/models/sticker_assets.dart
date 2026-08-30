@@ -107,6 +107,8 @@ const List<StickerAsset> vectorStickers = [
   StickerAsset('snail', '可爱', '蜗牛', '动物 慢慢 壳 爬行 治愈'),
   StickerAsset('ghost', '可爱', '幽灵', '万圣节 捣蛋 夜晚 灵异 白色'),
   StickerAsset('paw', '可爱', '猫爪', '猫 动物 爪印 萌 宠物'),
+  StickerAsset('orangecat', '可爱', '橘猫', '猫 猫咪 宠物 萌 团子'),
+  StickerAsset('shiba', '可爱', '柴犬', '狗 小狗 宠物 汪汪 萌'),
   // ---- 旅行 ----
   StickerAsset('paperplane', '旅行', '纸飞机', '折纸 飞翔 出发 想念 童年'),
   StickerAsset('suitcase', '旅行', '行李箱', '旅行 出差 打包 度假 行李'),
@@ -488,6 +490,8 @@ const Map<String, void Function(Canvas)> _stickerPainters = {
   'snail': _snail,
   'ghost': _ghost,
   'paw': _paw,
+  'orangecat': _orangecat,
+  'shiba': _shiba,
   'paperplane': _paperplane,
   'suitcase': _suitcase,
   'tent': _tent,
@@ -2142,6 +2146,172 @@ void _paw(Canvas c) {
   _circle(c, const Offset(36, 62), 12, _p(_rose));
   _circle(c, const Offset(64, 62), 12, _p(_rose));
   _circle(c, const Offset(50, 66), 13, _p(_rose));
+}
+
+/// 趴成团子的橘猫：吐司形身体 + 眯眯眼 + ω 嘴，
+/// 尾巴从身侧翘出，奶白肚皮上两只埋起的前爪。
+void _orangecat(Canvas c) {
+  // 尾巴先画，根部被身体盖住。
+  final tail = Path()
+    ..moveTo(76, 78)
+    ..quadraticBezierTo(95, 74, 91, 88);
+  c.drawPath(tail, _p(_ink, stroke: true, width: 10));
+  c.drawPath(tail, _p(_orange, stroke: true, width: 6.5));
+  // 耳朵：先画，身体盖住耳根。
+  final earL = Path()
+    ..moveTo(25, 42)
+    ..lineTo(32, 13)
+    ..lineTo(48, 28)
+    ..close();
+  final earR = Path()
+    ..moveTo(75, 42)
+    ..lineTo(68, 13)
+    ..lineTo(52, 28)
+    ..close();
+  c.drawPath(earL, _p(_orange));
+  c.drawPath(earR, _p(_orange));
+  c.drawPath(earL, _p(_ink, stroke: true, width: 2));
+  c.drawPath(earR, _p(_ink, stroke: true, width: 2));
+  c.drawPath(
+    Path()
+      ..moveTo(30, 33)
+      ..lineTo(34, 19)
+      ..lineTo(41, 25)
+      ..close(),
+    _p(_pink),
+  );
+  c.drawPath(
+    Path()
+      ..moveTo(70, 33)
+      ..lineTo(66, 19)
+      ..lineTo(59, 25)
+      ..close(),
+    _p(_pink),
+  );
+  // 吐司形团子身体。
+  final body = Path()
+    ..moveTo(16, 72)
+    ..cubicTo(14, 44, 28, 30, 50, 30)
+    ..cubicTo(72, 30, 86, 44, 84, 72)
+    ..quadraticBezierTo(84, 86, 70, 86)
+    ..lineTo(30, 86)
+    ..quadraticBezierTo(16, 86, 16, 72)
+    ..close();
+  c.drawPath(body, _p(_orange));
+  c.drawOval(const Rect.fromLTRB(32, 68, 68, 86), _p(_cream));
+  c.drawPath(body, _p(_ink, stroke: true, width: 2.2));
+  // 额头虎斑纹。
+  final stripe = _p(_milkTea, stroke: true, width: 3.5);
+  c.drawLine(const Offset(42, 36), const Offset(41, 43), stripe);
+  c.drawLine(const Offset(50, 34), const Offset(50, 43), stripe);
+  c.drawLine(const Offset(58, 36), const Offset(59, 43), stripe);
+  // 眯眯眼（向上弧）与 ω 嘴。
+  c.drawArc(
+    const Rect.fromLTRB(31, 45, 45, 57),
+    math.pi,
+    math.pi,
+    false,
+    _p(_ink, stroke: true, width: 2.4),
+  );
+  c.drawArc(
+    const Rect.fromLTRB(55, 45, 69, 57),
+    math.pi,
+    math.pi,
+    false,
+    _p(_ink, stroke: true, width: 2.4),
+  );
+  c.drawPath(
+    Path()
+      ..moveTo(50, 55)
+      ..lineTo(46.5, 59)
+      ..lineTo(53.5, 59)
+      ..close(),
+    _p(_rose),
+  );
+  c.drawArc(
+    const Rect.fromLTRB(44, 57, 50, 65),
+    0,
+    math.pi,
+    false,
+    _p(_ink, stroke: true, width: 1.8),
+  );
+  c.drawArc(
+    const Rect.fromLTRB(50, 57, 56, 65),
+    0,
+    math.pi,
+    false,
+    _p(_ink, stroke: true, width: 1.8),
+  );
+  final whisker = _p(_ink, stroke: true, width: 1.6);
+  c.drawLine(const Offset(22, 52), const Offset(11, 48), whisker);
+  c.drawLine(const Offset(22, 58), const Offset(11, 60), whisker);
+  c.drawLine(const Offset(78, 52), const Offset(89, 48), whisker);
+  c.drawLine(const Offset(78, 58), const Offset(89, 60), whisker);
+  _circle(c, const Offset(27, 62), 4, _p(_pink));
+  _circle(c, const Offset(73, 62), 4, _p(_pink));
+  // 埋起的前爪缝。
+  final toe = _p(_milkTea, stroke: true, width: 2);
+  c.drawLine(const Offset(44, 76), const Offset(44, 84), toe);
+  c.drawLine(const Offset(56, 76), const Offset(56, 84), toe);
+}
+
+/// 柴犬：奶油色口鼻与眉点、咧嘴笑吐舌头。
+void _shiba(Canvas c) {
+  // 耳朵：先画，头圆盖住耳根。
+  final earL = Path()
+    ..moveTo(24, 36)
+    ..lineTo(32, 10)
+    ..lineTo(48, 26)
+    ..close();
+  final earR = Path()
+    ..moveTo(76, 36)
+    ..lineTo(68, 10)
+    ..lineTo(52, 26)
+    ..close();
+  c.drawPath(earL, _p(_orange));
+  c.drawPath(earR, _p(_orange));
+  c.drawPath(earL, _p(_ink, stroke: true, width: 2));
+  c.drawPath(earR, _p(_ink, stroke: true, width: 2));
+  c.drawPath(
+    Path()
+      ..moveTo(30, 29)
+      ..lineTo(34, 16)
+      ..lineTo(42, 23)
+      ..close(),
+    _p(_pink),
+  );
+  c.drawPath(
+    Path()
+      ..moveTo(70, 29)
+      ..lineTo(66, 16)
+      ..lineTo(58, 23)
+      ..close(),
+    _p(_pink),
+  );
+  _circle(c, const Offset(50, 54), 30, _p(_orange));
+  // 柴犬白手套：口鼻一圈与两枚眉点。
+  c.drawOval(const Rect.fromLTRB(36, 56, 64, 80), _p(_cream));
+  c.drawOval(const Rect.fromLTRB(33, 35, 41, 41), _p(_cream));
+  c.drawOval(const Rect.fromLTRB(59, 35, 67, 41), _p(_cream));
+  _circle(c, const Offset(50, 54), 30, _p(_ink, stroke: true, width: 2.2));
+  _circle(c, const Offset(37, 49), 3.2, _p(_ink));
+  _circle(c, const Offset(63, 49), 3.2, _p(_ink));
+  c.drawOval(const Rect.fromLTRB(44.5, 56, 55.5, 62.5), _p(_ink));
+  c.drawLine(
+    const Offset(50, 62.5),
+    const Offset(50, 66),
+    _p(_ink, stroke: true, width: 2),
+  );
+  c.drawArc(
+    const Rect.fromLTRB(41, 60, 59, 76),
+    0,
+    math.pi,
+    false,
+    _p(_ink, stroke: true, width: 2.2),
+  );
+  c.drawOval(const Rect.fromLTRB(45, 68, 55, 78), _p(_rose));
+  _circle(c, const Offset(27, 59), 4.2, _p(_pink));
+  _circle(c, const Offset(73, 59), 4.2, _p(_pink));
 }
 
 // ---------------------------------------------------------------------------
