@@ -1654,7 +1654,7 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                         selected: e.fontFamily == font.family,
                         onSelected: (_) {
                           setState(() => e.fontFamily = font.family);
-                          // web 端按需字体下载完成后重绘文字框与画布。
+                          // 按需字体下载完成后重绘文字框与画布。
                           AppFontLoader.instance.ensure(font.family).then((_) {
                             if (mounted) setState(() {});
                           });

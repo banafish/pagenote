@@ -11,7 +11,7 @@
 - **手账素材库** — 81 款程序绘制的免抠矢量贴纸（自然/美食/生活/可爱/旅行/心情 6 大类）+ 系统 emoji 贴纸，12 纹样 × 11 色和纸胶带，9 款纸张纹理 + 8 款纯色 + 5 款柔和渐变，全部离线自绘、零图片资产
 - **自定义贴纸** — 相册图片一键去白底转为专属贴纸，按内容哈希存储、跨设备稳定
 - **素材包** — 把贴纸、模板等组合成带封面署名的素材包，导出为 zip 分享给好友，也可导入他人分享的包
-- **花样字体** — 霞鹜文楷 / 马善政楷 / 快乐体 / 站酷小薇 / 庆科黄油体 / 龙藏体 / 志莽行书 / 柳建毛草 / 得意黑 / 朱雀仿宋 10 款开源可商用中文字体（OFL 1.1），文字框级可选
+- **花样字体** — 霞鹜文楷 / 马善政楷 / 快乐体 / 站酷小薇 / 庆科黄油体 / 龙藏体 / 志莽行书 / 柳建毛草 / 得意黑 / 朱雀仿宋 10 款开源可商用中文字体（OFL 1.1，GB2312 子集化后入库，见 `tool/subset_fonts.py`），文字框级可选；Android release 包仅内置霞鹜文楷，其余字体首次选用时从部署目录按需下载并缓存
 - **照片贴纸化** — 相册照片直接转为画布元素，支持圆形 / 拍立得遮罩与圆角
 - **整页版式模板** — 12 套内置模板自带纸张、贴纸预设、文字占位与字体，「今日手账」一键套用并自动填入每日一问；任意手账可另存为模板
 - **回顾** — 日历与统计合并为一个一级入口：月视图回看每一天、当日心情一目了然，可直达某天补写；窄屏切换查看、宽屏两栏同屏
@@ -63,12 +63,19 @@ flutter build windows --release
 flutter build web --release
 
 # Android：先出分架构包（推荐分发，体积约为通用包一半），
-# 再出全 ABI 通用包兜底模拟器与未适配机型
-flutter build apk --release --split-per-abi
+# 再出全 ABI 通用包兜底模拟器与未适配机型。
+# release 包只内置霞鹜文楷一款花样字体（其余在打包期剔除），
+# 需通过 PAGENOTE_FONT_BASE_URL 注入字体下载目录后其余字体才可按需下载；
+# debug 构建全量随包，不受影响。
+flutter build apk --release --split-per-abi \
+  --dart-define=PAGENOTE_FONT_BASE_URL=https://pagenote-web.pages.dev
 flutter build apk --release
 ```
 
 ### Web 部署（Cloudflare Pages）与品牌页外链
+
+线上站点：**https://pagenote-web.pages.dev**（Cloudflare Pages，花样字体
+的按需下载也以该域名为源）。
 
 Web 品牌页的 GitHub / 客户端下载入口通过 `--dart-define` 在构建期注入，
 未注入的入口会自动隐藏。Cloudflare Pages 构建命令使用
@@ -85,6 +92,11 @@ SDK（默认钉住 3.44.6，可用环境变量 `FLUTTER_VERSION` 覆盖），因
 | `PAGENOTE_DOWNLOAD_ANDROID` | 安卓客户端直接下载地址（APK） |
 | `PAGENOTE_DOWNLOAD_PC` | PC 客户端直接下载地址（Windows） |
 | `FLUTTER_VERSION` | 覆盖 CI 自动安装的 Flutter 版本（默认 3.44.6） |
+
+`PAGENOTE_FONT_BASE_URL` 不是 Pages 环境变量，而是构建 **Android release APK**
+时的 `--dart-define`：指向花样字体的下载目录，用线上站点
+`https://pagenote-web.pages.dev` 即可（字体文件位于其 `assets/fonts/` 下）。
+debug / Windows / web 构建全量随包，不需要该变量。
 
 本地带外链预览：`flutter run -d chrome --dart-define=PAGENOTE_GITHUB_REPO=https://github.com/xxx/pagenote ...`。
 
@@ -106,5 +118,6 @@ lib/
   widgets/            # 卡片、画布渲染器/编辑层、表情选择器、标签编辑器等
   theme/              # Material 3 主题
   utils/              # 日期、附件、平台判断等工具
-fonts/                # OFL 开源中文字体 10 款（霞鹜文楷/马善政/快乐体/得意黑/朱雀仿宋等,含许可证）
+fonts/                # OFL 开源中文字体 10 款（GB2312 子集化后入库，含许可证；
+                      #   重新子集化用 python tool/subset_fonts.py）
 ```

@@ -48,10 +48,22 @@ const List<AppFont> appFonts = [
   AppFont('Zhuque Fangsong', '朱雀仿宋', 'fonts/ZhuqueFangsong-Regular.ttf'),
 ];
 
+/// 字体数据版本：重新子集化或更换远端字体内容时 +1，旧缓存文件名随之
+/// 失配、触发重新下载（见 AppFontLoader 的缓存键）。
+const int fontPackVersion = 1;
+
+/// Android release 包内置的字体资产；其余花样字体在打包期由
+/// android/app/build.gradle.kts 从合并资产中剔除，首次使用时经
+/// AppFontLoader 从本地缓存或远端补齐。与 gradle 侧 bundledFontFiles
+/// 保持一致，test/font_packaging_test.dart 校验。
+const bundledFontAssets = {'fonts/LXGWWenKaiLite-Regular.ttf'};
+
 /// web 端随 FontManifest 急加载的字体：web 引擎初始化会等 FontManifest 里
 /// 全部字体下载完才出首帧，只保留落地页与内置模板在首帧就要用的这三款；
 /// 其余在构建期从 FontManifest 剥离（tool/strip_web_font_manifest.dart），
-/// 运行时由 AppFontLoader 首次使用时按需注册。原生平台不受影响（随包静态注册）。
+/// 运行时由 AppFontLoader 首次使用时按需注册。原生端 Windows 与 Android
+/// debug 全量随包静态注册；Android release 仅内置 [bundledFontAssets]，
+/// 其余同样由 AppFontLoader 首次使用时补齐。
 const webEagerFontFamilies = {'LXGW WenKai', 'Ma Shan Zheng', 'ZCOOL KuaiLe'};
 
 AppFont? fontByFamily(String family) => family.isEmpty

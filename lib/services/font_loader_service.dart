@@ -1,48 +1,172 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:flutter/services.dart' show ByteData, FontLoader, rootBundle;
+import 'package:http/http.dart' as http;
 
 import '../models/app_fonts.dart';
+import 'font_cache.dart';
 
-/// web 端花样字体按需加载器。
+/// 花样字体远端下载目录：通常指向 Cloudflare Pages 的 web 部署根（字体
+/// 文件位于其 `assets/fonts/` 下，与 web 端按需加载共用同一份构建产物）。
+/// 构建期经 --dart-define 注入；未注入时 Android release 的非内置字体
+/// 无法下载，按兜底字体渲染。
+const fontBaseUrl = String.fromEnvironment('PAGENOTE_FONT_BASE_URL');
+
+/// 花样字体按需加载器。
 ///
-/// web 引擎初始化会等 FontManifest.json 里全部字体下载完才出首帧
-/// （engine/initialization.dart 的 `_downloadAssetFonts`），构建期已把
-/// 非急加载字体从 FontManifest 剥离（见 tool/strip_web_font_manifest.dart），
-/// 因此首次使用时在此经 rootBundle + FontLoader 注册，完成后
-/// [notifyListeners] 触发画布重绘。原生平台字体已随包静态注册，
-/// [ensure] 直接返回。
+/// 各构建形态下的字体可用性：
+/// - Windows / Android debug / web 急加载三款：随包或 FontManifest 静态
+///   注册，直接可用；
+/// - web 非急加载：字体文件与部署同源，经 rootBundle 取回后注册；
+/// - Android release：除 bundledFontAssets 外的字体已在打包期剔除
+///   （android/app/build.gradle.kts），首次使用时从远端下载、写入本地缓存
+///   并经 FontLoader 注册（动态注册不跨进程持久，之后每次启动从缓存补注册）。
+///
+/// 统一入口 [ensure]：先查 FontManifest 判定是否已静态注册，再交由
+/// [FontFetcher] 取字节；失败进入冷却期——画布逐帧重绘不能放大成网络
+/// 风暴。成功后 [notifyListeners] 触发画布重绘。
 class AppFontLoader extends ChangeNotifier {
   AppFontLoader._();
 
   static final AppFontLoader instance = AppFontLoader._();
 
   final _pending = <String, Future<void>>{};
+  final _loaded = <String>{};
+  final _failedAt = <String, DateTime>{};
+  Set<String>? _manifestFamilies;
 
-  /// 确保 [family] 可用（web 端按需下载并注册，其余平台为空操作）。
-  /// 失败时按兜底字体渲染，可再次调用重试。
+  FontFetcher get _fetcher => fetcherOverride ?? _defaultFetcher;
+  final _defaultFetcher = FontFetcher();
+
+  /// 失败后的重试冷却期：冷却期内直接按兜底字体渲染。
+  static const retryCooldown = Duration(seconds: 60);
+
+  /// 测试注入点。
+  @visibleForTesting
+  FontFetcher? fetcherOverride;
+
+  /// 测试注入点：非 null 时替代 FontManifest 判定。
+  @visibleForTesting
+  Set<String>? manifestFamiliesOverride;
+
+  /// 测试注入点：清空运行状态。
+  @visibleForTesting
+  void debugReset() {
+    _pending.clear();
+    _loaded.clear();
+    _failedAt.clear();
+    _manifestFamilies = null;
+  }
+
+  /// 确保 [family] 可用：缺失时按需下载/注册，失败按兜底字体渲染，
+  /// 成功后重复调用为空操作。
   Future<void> ensure(String family) {
-    if (!kIsWeb ||
-        family.isEmpty ||
-        webEagerFontFamilies.contains(family) ||
-        _pending.containsKey(family)) {
-      return Future.value();
-    }
-    final future = _load(family);
-    _pending[family] = future;
-    return future;
+    if (family.isEmpty || _loaded.contains(family)) return Future.value();
+    return _pending.putIfAbsent(family, () => _load(family));
   }
 
   Future<void> _load(String family) async {
-    final font = fontByFamily(family);
-    if (font == null || font.asset.isEmpty) return;
     try {
-      final bytes = await rootBundle.load(font.asset);
+      final font = fontByFamily(family);
+      if (font == null || font.asset.isEmpty) return;
+      if (await _staticallyRegistered(family)) {
+        _loaded.add(family);
+        return;
+      }
+      final failedAt = _failedAt[family];
+      if (failedAt != null &&
+          DateTime.now().difference(failedAt) < retryCooldown) {
+        return;
+      }
+      final bytes = await _fetcher.fetch(font);
       final loader = FontLoader(family)..addFont(Future.value(bytes));
       await loader.load();
+      _loaded.add(family);
+      _failedAt.remove(family);
       notifyListeners();
     } catch (error) {
+      _failedAt[family] = DateTime.now();
       debugPrint('按需加载字体 $family 失败：$error');
+    } finally {
       _pending.remove(family);
+    }
+  }
+
+  /// family 是否已随包静态注册（FontManifest 里声明即注册）：
+  /// Windows / Android debug 全量，Android release 仅内置字体，web 急加载。
+  Future<bool> _staticallyRegistered(String family) async {
+    final override = manifestFamiliesOverride;
+    if (override != null) return override.contains(family);
+    try {
+      _manifestFamilies ??= await _readManifestFamilies();
+    } catch (_) {
+      // 清单读不到时宁可重新注册一次（重复注册仅告警，不致命）。
+      return false;
+    }
+    return _manifestFamilies!.contains(family);
+  }
+
+  Future<Set<String>> _readManifestFamilies() async {
+    final raw = await rootBundle.loadString('FontManifest.json');
+    final entries = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    return {
+      for (final entry in entries)
+        if (entry['family'] is String) entry['family'] as String,
+    };
+  }
+}
+
+/// 字体字节获取策略：rootBundle → 本地缓存 → 远端下载。
+/// 依赖全部可注入，单元测试可离线覆盖三条路径。
+class FontFetcher {
+  FontFetcher({
+    String? baseUrl,
+    FontCache? cache,
+    Future<ByteData> Function(String asset)? loadAsset,
+    http.Client Function()? clientFactory,
+  }) : _baseUrl = baseUrl ?? fontBaseUrl,
+       _cache = cache ?? fontCache,
+       _loadAsset = loadAsset ?? rootBundle.load,
+       _clientFactory = clientFactory ?? http.Client.new;
+
+  static const _downloadTimeout = Duration(seconds: 20);
+
+  final String _baseUrl;
+  final FontCache _cache;
+  final Future<ByteData> Function(String) _loadAsset;
+  final http.Client Function() _clientFactory;
+
+  Future<ByteData> fetch(AppFont font) async {
+    // 随包资产：web 按需字体与 Windows / Android debug 全量构建都在包内。
+    try {
+      return await _loadAsset(font.asset);
+    } catch (_) {
+      // Android release 已剔除该字体，继续走缓存/下载。
+    }
+
+    final name = font.asset.split('/').last;
+    final key = 'v$fontPackVersion/$name';
+    final cached = await _cache.read(key);
+    if (cached != null) return ByteData.sublistView(cached);
+
+    if (_baseUrl.isEmpty) {
+      throw StateError('未配置字体下载源（--dart-define=PAGENOTE_FONT_BASE_URL）');
+    }
+    final uri = Uri.parse(
+      '${_baseUrl.replaceAll(RegExp(r'/+$'), '')}/assets/fonts/$name',
+    );
+    final client = _clientFactory();
+    try {
+      final response = await client.get(uri).timeout(_downloadTimeout);
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+        throw StateError('下载 $name 失败：HTTP ${response.statusCode}');
+      }
+      // 先落缓存再返回：注册失败重试时不再重复下载。
+      await _cache.write(key, response.bodyBytes);
+      return ByteData.sublistView(response.bodyBytes);
+    } finally {
+      client.close();
     }
   }
 }

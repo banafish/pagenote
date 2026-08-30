@@ -116,8 +116,9 @@ class _TextElementView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // web 端非急加载字体可能尚未注册：触发按需加载，CanvasView 根部的
-    // AnimatedBuilder 会在注册完成后重绘，从兜底字体切换到真字体。
+    // 按需字体（web 非急加载、Android release 剔除包）可能尚未注册：
+    // 触发加载，CanvasView 根部的 AnimatedBuilder 会在注册完成后重绘，
+    // 从兜底字体切换到真字体。
     unawaited(AppFontLoader.instance.ensure(element.fontFamily));
     final align = switch (element.align) {
       1 => TextAlign.center,
