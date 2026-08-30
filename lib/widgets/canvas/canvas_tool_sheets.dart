@@ -1601,6 +1601,67 @@ class _TextElementDialogState extends State<_TextElementDialog> {
     super.dispose();
   }
 
+  /// 字体芯片标签：按需下载中的字体换为「转圈 + 名称」，名称回退默认
+  /// 字体渲染（真字体尚未注册，避免闪变）；其余按字体本身渲染。
+  Widget _fontChipLabel(AppFont font) {
+    if (font.family.isNotEmpty &&
+        AppFontLoader.instance.isDownloading(font.family)) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 1.8),
+          ),
+          const SizedBox(width: 6),
+          Text(font.name),
+        ],
+      );
+    }
+    return Text(
+      font.name,
+      style: TextStyle(
+        fontFamily: font.family.isEmpty ? null : font.family,
+        fontFamilyFallback: canvasFontFallback,
+      ),
+    );
+  }
+
+  /// 选中字体的下载状态提示：下载中明示「正在下载，完成后自动应用」，
+  /// 失败（含冷却期）说明暂按默认字体显示——避免下载完成时文字突然
+  /// 切换却没有交代。
+  Widget? get _fontStatusHint {
+    final font = fontByFamily(widget.element.fontFamily);
+    if (font == null) return null;
+    final style = TextStyle(
+      fontSize: 12.5,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    if (AppFontLoader.instance.isDownloading(font.family)) {
+      return Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 1.8),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text('「${font.name}」正在下载，完成后自动应用', style: style),
+          ),
+        ],
+      );
+    }
+    if (!AppFontLoader.instance.isLoaded(font.family)) {
+      return Text(
+        '「${font.name}」下载失败，暂按默认字体显示，可重选重试',
+        style: style,
+      );
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1642,19 +1703,12 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                   children: [
                     for (final font in appFonts)
                       ChoiceChip(
-                        label: Text(
-                          font.name,
-                          style: TextStyle(
-                            fontFamily: font.family.isEmpty
-                                ? null
-                                : font.family,
-                            fontFamilyFallback: canvasFontFallback,
-                          ),
-                        ),
+                        label: _fontChipLabel(font),
                         selected: e.fontFamily == font.family,
                         onSelected: (_) {
                           setState(() => e.fontFamily = font.family);
-                          // 按需字体下载完成后重绘文字框与画布。
+                          // 按需字体下载完成后重绘文字框与画布；失败同样
+                          // 要刷新，结束转圈并换成失败提示。
                           AppFontLoader.instance.ensure(font.family).then((_) {
                             if (mounted) setState(() {});
                           });
@@ -1662,6 +1716,10 @@ class _TextElementDialogState extends State<_TextElementDialog> {
                       ),
                   ],
                 ),
+                if (_fontStatusHint != null) ...[
+                  const SizedBox(height: 8),
+                  _fontStatusHint!,
+                ],
                 const SizedBox(height: 10),
                 Row(
                   children: [

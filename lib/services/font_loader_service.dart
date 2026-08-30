@@ -68,6 +68,12 @@ class AppFontLoader extends ChangeNotifier {
     return _pending.putIfAbsent(family, () => _load(family));
   }
 
+  /// [family] 是否正在按需下载/注册中：字体选择器据此展示下载指示。
+  bool isDownloading(String family) => _pending.containsKey(family);
+
+  /// [family] 是否已注册可用（[ensure] 成功后为真，含随包静态注册短路）。
+  bool isLoaded(String family) => _loaded.contains(family);
+
   Future<void> _load(String family) async {
     try {
       final font = fontByFamily(family);

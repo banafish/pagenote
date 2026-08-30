@@ -3,15 +3,19 @@
 // Android release 只内置 bundledFontAssets，其余字体经 AppFontLoader 在
 // 运行时补齐；内置清单分处 pubspec（字体声明）、android/app/build.gradle.kts
 // （打包剔除）与 lib/models/app_fonts.dart（Dart 注册表）三处，靠本文件兜住漂移。
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:pagenote/models/app_fonts.dart';
+import 'package:pagenote/models/canvas_page.dart';
 import 'package:pagenote/services/font_cache.dart';
 import 'package:pagenote/services/font_loader_service.dart';
+import 'package:pagenote/widgets/canvas/canvas_tool_sheets.dart';
 
 /// 内存版缓存，同时记录写入以供断言。
 class _MemoryFontCache implements FontCache {
@@ -236,9 +240,30 @@ void main() {
       );
       await AppFontLoader.instance.ensure('Ma Shan Zheng');
       expect(downloads, 1);
+      expect(AppFontLoader.instance.isLoaded('Ma Shan Zheng'), isFalse);
       // 冷却期内重试直接短路。
       await AppFontLoader.instance.ensure('Ma Shan Zheng');
       expect(downloads, 1);
+    });
+
+    test('下载期间 isDownloading 置位，成功后切换为 isLoaded', () async {
+      final gate = Completer<void>();
+      AppFontLoader.instance.fetcherOverride = FontFetcher(
+        baseUrl: 'http://localhost:1234',
+        cache: _MemoryFontCache(),
+        loadAsset: (_) => throw StateError('不在包内'),
+        clientFactory: () => MockClient((request) async {
+          await gate.future;
+          return http.Response.bytes(Uint8List(16), 200);
+        }),
+      );
+      final pending = AppFontLoader.instance.ensure('Ma Shan Zheng');
+      expect(AppFontLoader.instance.isDownloading('Ma Shan Zheng'), isTrue);
+      expect(AppFontLoader.instance.isLoaded('Ma Shan Zheng'), isFalse);
+      gate.complete();
+      await pending;
+      expect(AppFontLoader.instance.isDownloading('Ma Shan Zheng'), isFalse);
+      expect(AppFontLoader.instance.isLoaded('Ma Shan Zheng'), isTrue);
     });
 
     test('FontManifest 已声明的字体视为已注册，不做任何加载', () async {
@@ -255,6 +280,86 @@ void main() {
       // 测试环境 rootBundle 的 FontManifest 声明了全部注册表字体。
       await AppFontLoader.instance.ensure('Smiley Sans');
       expect(downloads, 0);
+    });
+  });
+
+  group('字体选择面板下载指示', () {
+    late TextElement element;
+
+    setUp(() {
+      AppFontLoader.instance.debugReset();
+      AppFontLoader.instance.manifestFamiliesOverride = const {};
+      element = TextElement()..text = '测试文字';
+    });
+
+    tearDown(() {
+      AppFontLoader.instance.debugReset();
+      AppFontLoader.instance.manifestFamiliesOverride = null;
+      AppFontLoader.instance.fetcherOverride = null;
+    });
+
+    Future<void> openPanel(WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: FilledButton(
+                  onPressed: () => showTextElementEditor(context, element),
+                  child: const Text('打开面板'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('打开面板'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('选中需下载的字体：芯片转圈并明示「正在下载」，完成后提示消失', (tester) async {
+      final gate = Completer<void>();
+      AppFontLoader.instance.fetcherOverride = FontFetcher(
+        baseUrl: 'http://localhost:1234',
+        cache: _MemoryFontCache(),
+        loadAsset: (_) => throw StateError('不在包内'),
+        clientFactory: () => MockClient((request) async {
+          await gate.future;
+          return http.Response.bytes(Uint8List(16), 200);
+        }),
+      );
+      await openPanel(tester);
+
+      await tester.tap(find.text('霞鹜文楷'));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
+      expect(find.textContaining('正在下载'), findsOneWidget);
+
+      // 下载完成：转圈与提示消失，选中保持。
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.textContaining('正在下载'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(element.fontFamily, 'LXGW WenKai');
+      expect(AppFontLoader.instance.isLoaded('LXGW WenKai'), isTrue);
+    });
+
+    testWidgets('下载失败时改显失败提示，选中保持等待重试', (tester) async {
+      AppFontLoader.instance.fetcherOverride = FontFetcher(
+        baseUrl: 'http://localhost:1234',
+        cache: _MemoryFontCache(),
+        loadAsset: (_) => throw StateError('不在包内'),
+        clientFactory: () =>
+            MockClient((request) async => http.Response('server error', 500)),
+      );
+      await openPanel(tester);
+
+      await tester.tap(find.text('霞鹜文楷'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('下载失败'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(element.fontFamily, 'LXGW WenKai');
     });
   });
 }
