@@ -17,6 +17,7 @@ import '../storage/user_file.dart';
 import '../utils/attachments.dart' show Attachments;
 import '../utils/journal_id.dart';
 import '../utils/platforms.dart';
+import 'foreign_pack_service.dart';
 
 /// 分享包损坏、格式不符或超出安全上限（REQ-21.10）。
 /// message 直接上屏，必须是可读中文。
@@ -42,6 +43,7 @@ class SharePackData {
     this.packId,
     this.photoBytes = const {},
     this.coverBytes,
+    this.isForeign = false,
   });
 
   /// 包名（pack.json 的 name）。
@@ -72,6 +74,10 @@ class SharePackData {
   /// 老包与不带封面的包为 null。这是不可信字节，落盘前仍要过
   /// PackCoverStore 的解码尺寸闸与压缩（NFR-06 / NFR-14）。
   final Uint8List? coverBytes;
+
+  /// 是否为外部格式转换来的包（REQ-29）：无 pack.json，从免抠图 zip 等
+  /// 外部压缩包转换而来，只有贴纸没有模板。预览页据此展示来源标识。
+  final bool isForeign;
 }
 
 /// 移动端导出去向（REQ-21.5）：直接存进用户挑的文件夹，或拉起系统分享。
@@ -102,6 +108,11 @@ class SharePackService {
 
   /// 单包体积上限（NFR-06）。
   static const maxPackBytes = 20 * 1024 * 1024;
+
+  /// 外部素材包的单包上限（REQ-29）：免抠图 zip 普遍比拾页包大一个量级，
+  /// 按分享包的 20MB 拦会把大部分外部包挡在门外。原始字节本身不落盘，
+  /// 内存天花板仍由解压体积闸（[maxUnpackedBytes]）守着。
+  static const maxForeignPackBytes = 100 * 1024 * 1024;
 
   /// 解包上限（NFR-06 防解压炸弹）：包内条目数与解压后总字节。
   /// 分享包的典型体积是数 KB～数百 KB，上限取得比备份包紧得多。
@@ -300,22 +311,91 @@ class SharePackService {
       throw SharePackFormatException('素材包体积过大（超过 $mb MB），已拒绝导入');
     }
 
-    Archive archive;
-    try {
-      archive = ZipDecoder().decodeBytes(bytes);
-    } catch (_) {
-      throw SharePackFormatException('这不是有效的拾页素材包（无法解压）');
-    }
+    final archive = _decodeZip(bytes, '这不是有效的拾页素材包（无法解压）');
     _guardArchive(archive);
 
-    final packFile = archive.findFile(_packFileName);
-    if (packFile == null) {
+    if (archive.findFile(_packFileName) == null) {
       throw SharePackFormatException('这不是拾页素材包（缺少 pack.json）');
     }
+    return _parsePagenotePack(archive);
+  }
 
+  /// 自动识别入口（REQ-29）：三个导入入口（素材页选择文件、Android
+  /// intent、Windows 双击）统一从这里走，单一入口决定「能不能导」。
+  ///
+  /// 与 [parsePack] 的差别：
+  /// - 单包上限放宽到 [maxForeignPackBytes]（外部素材包多为已压缩图片）；
+  /// - 拾页备份包（顶层 entries.json）给指路提示而不是误当素材包；
+  /// - 没有拾页格式特征的 zip 交给 [ForeignPackService] 转换成纯贴纸包，
+  ///   包括别的应用恰好也叫 pack.json 的情形（按 `app` 认亲字段区分）。
+  SharePackData parsePackAuto(Uint8List bytes, {String? sourceName}) {
+    if (bytes.lengthInBytes > maxForeignPackBytes) {
+      final mb = maxForeignPackBytes ~/ (1024 * 1024);
+      throw SharePackFormatException('素材包体积过大（超过 $mb MB），已拒绝导入');
+    }
+
+    // RAR / 7z 魔数先行识别（REQ-29.5）：zip 解析器对坏数据可能过于宽容
+    // （解出空包而不报错），不能依赖解码失败来触发诊断。
+    ForeignPackService.rejectUnsupportedContainer(bytes);
+
+    final archive = _decodeZip(bytes, null);
+    final declared = _guardArchive(archive);
+
+    // 备份包（REQ-03）不是素材包：整包恢复有专门入口，
+    // 走这里会把备份里的照片当成贴纸导进来。
+    if (archive.findFile('entries.json') != null) {
+      throw SharePackFormatException(
+        '这是拾页备份文件，请到「设置 → 备份与恢复」里导入',
+      );
+    }
+
+    if (archive.findFile(_packFileName) != null) {
+      // 先看认亲字段：别的应用的 pack.json 仍按外部包兜底转换；
+      // 是拾页自己的包才走原生解析（损坏、版本过高等错误照抛）。
+      final meta = _tryReadMeta(archive);
+      if (meta != null && meta['app'] == 'pagenote') {
+        return _parsePagenotePack(archive);
+      }
+    }
+    return ForeignPackService.instance.convert(
+      archive,
+      sourceName: sourceName,
+      declaredBaseBytes: declared,
+    );
+  }
+
+  /// 解出 zip；[corruptMessage] 非空时按拾页包口径报错（严格入口），
+  /// 为空（自动识别入口）时交给外部包诊断，识别 RAR / 7z 给出指引。
+  static Archive _decodeZip(Uint8List bytes, String? corruptMessage) {
+    try {
+      return ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      throw corruptMessage != null
+          ? SharePackFormatException(corruptMessage)
+          : ForeignPackService.describeUnreadable(bytes);
+    }
+  }
+
+  /// pack.json 的宽松读取：不存在或解析失败返回 null，
+  /// 供自动识别入口探认亲字段用；严格入口的报错在 [_parsePagenotePack] 里。
+  static Map<String, Object?>? _tryReadMeta(Archive archive) {
+    final packFile = archive.findFile(_packFileName);
+    if (packFile == null) return null;
+    try {
+      final decoded = jsonDecode(utf8.decode(packFile.content as List<int>));
+      return decoded is Map ? decoded.cast<String, Object?>() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 拾页格式部分的解析：调用方保证 pack.json 存在（REQ-21.10 的闸门顺序）。
+  SharePackData _parsePagenotePack(Archive archive) {
     final Map<String, Object?> meta;
     try {
-      meta = (jsonDecode(utf8.decode(packFile.content as List<int>)) as Map)
+      meta = (jsonDecode(
+        utf8.decode(archive.findFile(_packFileName)!.content as List<int>),
+      ) as Map)
           .cast<String, Object?>();
     } catch (_) {
       throw SharePackFormatException('素材包已损坏（pack.json 无法解析）');
@@ -399,13 +479,14 @@ class SharePackService {
 
   /// 解包前的安全校验（NFR-06）：条目数、解压后总体积与条目名合法性。
   /// 体积取自 zip 头部记录的原始大小，无需真正解压即可判断。
-  void _guardArchive(Archive archive) {
+  /// 返回累计的声明体积，外部包转换在其余量里继续算嵌套条目（REQ-29）。
+  int _guardArchive(Archive archive) {
     if (archive.length > maxArchiveFiles) {
       throw SharePackFormatException('素材包内容过多（超过 $maxArchiveFiles 项），已拒绝导入');
     }
     var total = 0;
     for (final f in archive) {
-      if (!_isSafeEntryName(f.name)) {
+      if (!isSafeEntryName(f.name)) {
         throw SharePackFormatException('素材包包含非法路径「${f.name}」，已拒绝导入');
       }
       total += f.size;
@@ -414,10 +495,12 @@ class SharePackService {
         throw SharePackFormatException('素材包解压后体积过大（超过 $mb MB），已拒绝导入');
       }
     }
+    return total;
   }
 
   /// 条目名是否安全（NFR-06 防路径穿越）：拒绝绝对路径与 `..` 回溯。
-  static bool _isSafeEntryName(String name) {
+  /// 外部包嵌套 zip 的内层条目同样用它把关（REQ-29）。
+  static bool isSafeEntryName(String name) {
     if (name.isEmpty) return false;
     final normalized = name.replaceAll('\\', '/');
     if (normalized.startsWith('/') || _driveLetter.hasMatch(normalized)) {

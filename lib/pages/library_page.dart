@@ -52,10 +52,15 @@ class _LibraryPageState extends State<LibraryPage> {
   // ---------------- 素材包导入 / 导出（REQ-21.12，入口自设置页上移） ----------------
 
   /// Windows 双击关联之外的兜底入口，Android 也可用。
-  /// 只负责取字节，勾选与校验都交给导入预览页（REQ-21.6），
+  /// 只负责取字节，识别与勾选都交给导入预览页（REQ-21.6 / REQ-29），
   /// 不沿用备份那种「一个确认框全量导入」的交互。
+  /// 扩展名放行外部手账应用的素材容器：GoodNotes / Zinnia 的素材文件
+  /// 同样以 zip 结构封装，选择后由服务层按内容自动识别。
   Future<void> _importSharePack() async {
-    const zipGroup = XTypeGroup(label: '素材包', extensions: ['zip']);
+    const zipGroup = XTypeGroup(
+      label: '素材包',
+      extensions: ['zip', 'goodnotes', 'zinnia'],
+    );
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final Uint8List bytes;

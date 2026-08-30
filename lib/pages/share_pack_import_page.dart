@@ -99,10 +99,14 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  /// 解析分享包（REQ-21.10）：只认服务层抛出的可读中文错误,其余一律兜底。
+  /// 解析素材包（REQ-21.10 / REQ-29）：自动识别拾页包与外部素材包，
+  /// 只认服务层抛出的可读中文错误,其余一律兜底。
   void _load() {
     try {
-      final pack = SharePackService.instance.parsePack(widget.bytes);
+      final pack = SharePackService.instance.parsePackAuto(
+        widget.bytes,
+        sourceName: widget.sourceName,
+      );
       if (!mounted) return;
       setState(() {
         _pack = pack;
@@ -289,7 +293,7 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
       // 落库过程中不让返回,避免写到一半退出。
       canPop: !_importing,
       child: Scaffold(
-        appBar: AppBar(title: const Text('导入分享包')),
+        appBar: AppBar(title: const Text('导入素材包')),
         body: _error != null
             ? _errorView(_error!)
             : pack == null
@@ -524,7 +528,10 @@ class _SharePackImportPageState extends State<SharePackImportPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  author.isEmpty ? '未署名' : '来自 $author',
+                  // 外部素材包（REQ-29）没有署名与 pack.json，标明来源类别。
+                  pack.isForeign
+                      ? '外部素材包 · 兼容其他手账应用'
+                      : (author.isEmpty ? '未署名' : '来自 $author'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
