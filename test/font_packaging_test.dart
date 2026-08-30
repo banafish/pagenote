@@ -122,7 +122,7 @@ void main() {
     test('缓存未命中时从远端下载并落缓存', () async {
       final cache = _MemoryFontCache();
       final fetcher = FontFetcher(
-        baseUrl: 'http://localhost:1234',
+        baseUrl: 'http://localhost:1234/assets/fonts',
         cache: cache,
         loadAsset: (_) => throw StateError('不在包内'),
         clientFactory: () => MockClient((request) async {
@@ -133,6 +133,34 @@ void main() {
       );
       final bytes = await fetcher.fetch(_fontOf('Ma Shan Zheng'));
       expect(bytes.lengthInBytes, 3);
+      expect(
+        cache.store['v$fontPackVersion/MaShanZheng-Regular.ttf'],
+        isNotNull,
+      );
+    });
+
+    test('首个源失败时按序回退到下一个源', () async {
+      final cache = _MemoryFontCache();
+      final requested = <String>[];
+      final fetcher = FontFetcher(
+        // 空白与结尾斜杠应被容忍，第二源直接指向目录本身（jsDelivr 形态）。
+        baseUrl: 'http://a.test/assets/fonts, http://b.test/fonts/',
+        cache: cache,
+        loadAsset: (_) => throw StateError('不在包内'),
+        clientFactory: () => MockClient((request) async {
+          requested.add(request.url.toString());
+          if (request.url.host == 'a.test') {
+            return http.Response('not found', 404);
+          }
+          return http.Response.bytes([4, 5, 6], 200);
+        }),
+      );
+      final bytes = await fetcher.fetch(_fontOf('Ma Shan Zheng'));
+      expect(bytes.lengthInBytes, 3);
+      expect(requested, [
+        'http://a.test/assets/fonts/MaShanZheng-Regular.ttf',
+        'http://b.test/fonts/MaShanZheng-Regular.ttf',
+      ]);
       expect(
         cache.store['v$fontPackVersion/MaShanZheng-Regular.ttf'],
         isNotNull,

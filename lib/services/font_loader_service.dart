@@ -7,8 +7,10 @@ import 'package:http/http.dart' as http;
 import '../models/app_fonts.dart';
 import 'font_cache.dart';
 
-/// 花样字体远端下载目录：通常指向 Cloudflare Pages 的 web 部署根（字体
-/// 文件位于其 `assets/fonts/` 下，与 web 端按需加载共用同一份构建产物）。
+/// 花样字体远端下载源（逗号分隔多个，按序回退）：每项直接指向字体所在
+/// 目录，如 Pages 部署的 `https://…/assets/fonts` 与 jsDelivr 仓库源的
+/// `https://cdn.jsdelivr.net/gh/<owner>/<repo>@<tag>/fonts`——两者服务
+/// 同一份入库字体，后者由公共 CDN 长期托管，单一部署下线不影响取字。
 /// 构建期经 --dart-define 注入；未注入时 Android release 的非内置字体
 /// 无法下载，按兜底字体渲染。
 const fontBaseUrl = String.fromEnvironment('PAGENOTE_FONT_BASE_URL');
@@ -117,8 +119,8 @@ class AppFontLoader extends ChangeNotifier {
   }
 }
 
-/// 字体字节获取策略：rootBundle → 本地缓存 → 远端下载。
-/// 依赖全部可注入，单元测试可离线覆盖三条路径。
+/// 字体字节获取策略：rootBundle → 本地缓存 → 远端下载（多源按序回退）。
+/// 依赖全部可注入，单元测试可离线覆盖各条路径。
 class FontFetcher {
   FontFetcher({
     String? baseUrl,
@@ -150,21 +152,36 @@ class FontFetcher {
     final cached = await _cache.read(key);
     if (cached != null) return ByteData.sublistView(cached);
 
-    if (_baseUrl.isEmpty) {
+    final sources = _baseUrl
+        .split(',')
+        .map((source) => source.trim().replaceAll(RegExp(r'/+$'), ''))
+        .where((source) => source.isNotEmpty)
+        .toList();
+    if (sources.isEmpty) {
       throw StateError('未配置字体下载源（--dart-define=PAGENOTE_FONT_BASE_URL）');
     }
-    final uri = Uri.parse(
-      '${_baseUrl.replaceAll(RegExp(r'/+$'), '')}/assets/fonts/$name',
-    );
+
     final client = _clientFactory();
+    final failures = <String>[];
     try {
-      final response = await client.get(uri).timeout(_downloadTimeout);
-      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
-        throw StateError('下载 $name 失败：HTTP ${response.statusCode}');
+      for (final source in sources) {
+        try {
+          final response = await client
+              .get(Uri.parse('$source/$name'))
+              .timeout(_downloadTimeout);
+          if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+            // 先落缓存再返回：注册失败重试时不再重复下载。
+            await _cache.write(key, response.bodyBytes);
+            return ByteData.sublistView(response.bodyBytes);
+          }
+          failures.add('$source：HTTP ${response.statusCode}');
+        } catch (error) {
+          failures.add('$source：$error');
+        }
       }
-      // 先落缓存再返回：注册失败重试时不再重复下载。
-      await _cache.write(key, response.bodyBytes);
-      return ByteData.sublistView(response.bodyBytes);
+      throw StateError(
+        '下载 $name 失败，${sources.length} 个源均不可用：${failures.join('；')}',
+      );
     } finally {
       client.close();
     }
