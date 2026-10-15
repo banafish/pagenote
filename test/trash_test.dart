@@ -84,15 +84,15 @@ void main() {
   test('超期 30 天的回收站条目在 load 时被物理清除（REQ-02.4）', () async {
     final db = AppDatabase.inMemory();
 
-    final old = entry('old')..deletedAt = DateTime(2026, 7, 1);
-    final fresh = entry('fresh')..deletedAt = DateTime(2026, 8, 10);
+    final now = DateTime.now();
+    final old = entry('old')..deletedAt = now.subtract(const Duration(days: 45));
+    final fresh = entry('fresh')..deletedAt = now.subtract(const Duration(days: 5));
     await db.insertEntry(old);
     await db.insertEntry(fresh);
 
     final provider = JournalProvider(database: db);
     await provider.load();
-    // 以 2026-08-16 为当前时间：old 超过 30 天被清除，fresh 保留。
-    await provider.purgeExpiredTrash(now: DateTime(2026, 8, 16));
+    // old 超过 30 天在 load 时被自动清除，fresh 保留。
     expect(provider.trashedEntries.map((e) => e.id), ['fresh']);
 
     final rows = await db.getTrashedEntries();
