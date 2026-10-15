@@ -69,7 +69,7 @@ flutter build web --release
 # 见下文「花样字体下载源」一节）后其余字体才可按需下载；
 # debug 构建全量随包，不受影响。
 flutter build apk --release --split-per-abi \
-  --dart-define=PAGENOTE_FONT_BASE_URL=https://pagenote-web.pages.dev/assets/fonts,https://cdn.jsdelivr.net/gh/banafish/pagenote@v1.4.0/fonts
+  --dart-define=PAGENOTE_FONT_BASE_URL=https://pagenote-web.pages.dev/assets/fonts,https://cdn.jsdelivr.net/gh/banafish/pagenote@v1.5.0/fonts
 flutter build apk --release
 ```
 
@@ -102,7 +102,7 @@ SDK（默认钉住 3.44.6，可用环境变量 `FLUTTER_VERSION` 覆盖），因
 「Pages 站点 + jsDelivr 仓库源」双源组合：
 
 ```
---dart-define=PAGENOTE_FONT_BASE_URL=https://pagenote-web.pages.dev/assets/fonts,https://cdn.jsdelivr.net/gh/banafish/pagenote@v1.4.0/fonts
+--dart-define=PAGENOTE_FONT_BASE_URL=https://pagenote-web.pages.dev/assets/fonts,https://cdn.jsdelivr.net/gh/banafish/pagenote@v1.5.0/fonts
 ```
 
 - **Pages 源**（`…/assets/fonts`）：随 web 部署自动同步最新字体，但依赖
@@ -114,8 +114,8 @@ SDK（默认钉住 3.44.6，可用环境变量 `FLUTTER_VERSION` 覆盖），因
 
 debug / Windows / web 构建全量随包，不需要该变量。
 
-**tag 维护约定**：jsDelivr 对 tag 内容永久缓存，`@v1.4.0` 必须是已推送、
-包含当前字体内容的 tag（`git tag v1.4.0 && git push origin v1.4.0`）。
+**tag 维护约定**：jsDelivr 对 tag 内容永久缓存，`@v1.5.0` 必须是已推送、
+包含当前字体内容的 tag（`git tag v1.5.0 && git push origin v1.5.0`）。
 字体一旦重新子集化或增删（`fontPackVersion` 随之 +1），须同步打新 tag
 并更新构建命令里的 tag 名——只改代码不打 tag 的话，jsDelivr 源仍会下发
 旧字体字节。
